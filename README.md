@@ -1,6 +1,6 @@
 # Auto Trading Bot
 
-A simulated trading bot: a Java Spring Boot backend that runs the trading logic, and a plain HTML/JavaScript frontend that displays it.
+A simulated trading bot: a Java Spring Boot backend that runs the trading logic, and a React frontend that displays it.
 
 ## Project structure
 
@@ -8,11 +8,7 @@ A simulated trading bot: a Java Spring Boot backend that runs the trading logic,
 .
 ├── README.md
 ├── pom.xml            aggregator: open the repository root in an IDE and the backend is picked up
-├── frontend/          static UI (HTML, CSS, JavaScript)
-│   ├── index.html
-│   ├── app.js
-│   ├── styles.css
-│   └── charts.js
+├── frontend/          React UI (not set up yet)
 └── backend/           Java Spring Boot project (Maven)
 ```
 
@@ -48,4 +44,4 @@ java -jar target/t212-spring-boot-project-0.0.1-SNAPSHOT.jar
 
 ## Frontend
 
-The frontend is static and needs no build step. Open `frontend/index.html` in a browser.
+Not set up yet. Setup and run instructions will be added together with the React project.

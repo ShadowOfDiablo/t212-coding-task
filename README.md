@@ -42,6 +42,15 @@ Build a runnable jar:
 java -jar target/t212-spring-boot-project-0.0.1-SNAPSHOT.jar
 ```
 
+### Code quality
+
+Code follows the [Google Java Style](https://google.github.io/styleguide/javaguide.html).
+
+```bash
+./mvnw verify          # tests + format check (Spotless) + Checkstyle + SpotBugs
+./mvnw spotless:apply  # format the code
+```
+
 ## Frontend
 
 Not set up yet. Setup and run instructions will be added together with the React project.

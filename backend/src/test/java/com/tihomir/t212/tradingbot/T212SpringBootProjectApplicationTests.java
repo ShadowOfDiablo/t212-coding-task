@@ -6,9 +6,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class T212SpringBootProjectApplicationTests {
 
-    @Test
-    void contextLoads() {
-        System.out.println("T212SpringBootProjectApplicationTests started");
-    }
-
+  @Test
+  void contextLoads() {
+    System.out.println("T212SpringBootProjectApplicationTests started");
+  }
 }

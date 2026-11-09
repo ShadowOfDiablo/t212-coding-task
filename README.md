@@ -8,6 +8,7 @@ A simulated trading bot: a Java Spring Boot backend that runs the trading logic,
 .
 ├── README.md
 ├── pom.xml            aggregator: open the repository root in an IDE and the backend is picked up
+├── docs/              architecture and design (see docs/ARCHITECTURE.md)
 ├── frontend/          React UI (not set up yet)
 └── backend/           Java Spring Boot project (Maven)
 ```

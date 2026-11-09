@@ -1,0 +1,76 @@
+name: Backend build and checks
+
+on:
+  push:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: ./mvnw -B spotless:check
+
+  checkstyle:
+    name: Checkstyle
+    needs: formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: ./mvnw -B checkstyle:check
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checkstyle-report
+          path: backend/target/checkstyle-result.xml
+
+  spotbugs:
+    name: SpotBugs
+    needs: checkstyle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: ./mvnw -B compile spotbugs:check
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spotbugs-report
+          path: backend/target/spotbugsXml.xml
+
+  tests:
+    name: Tests
+    needs: spotbugs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: ./mvnw -B test
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: backend/target/surefire-reports/

@@ -15,15 +15,17 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 
 | Component | Responsibility |
 |---|---|
-| `BrokerClient` | Exchange-independent access to market data. `BinanceBrokerClient` is the first implementation |
-| `CandleFeedService` | Produces candle-update events for the selected mode and puts them on the event queue. Never touches the account |
-| `TradingBotService` | Owns the event loop, the bot state and the runs. The only writer of the `PriceBook` |
+| `Broker` | One exchange: name, tickers, candle feeder and ticker price map. `AbstractBroker` is the abstract factory; `BinanceBroker` is the first implementation. One singleton per exchange |
+| `BrokerRegistryService` | Holds every broker by name, so several brokers can run at once. Rejects duplicate names |
+| `CandleFeeder` | One shared class for all brokers: WebSocket connections, grouping streams by connection, reconnect, history paging. Writes the broker's ticker price map and hands `CandleUpdate`s to listeners. Never touches the account |
+| `ExchangeMarketDataProtocol` | The exchange-specific part of market data: stream names, URLs, limits, message parsing |
+| `TradingBotService` | Owns the event loop, the bot state and the runs |
 | `SignalGenerator` | Interface for trading logic, with several implementations chosen by config. Returns `Buy`, `Sell` or `Hold` |
 | `OrderValidator` | Turns a signal into a valid `OrderRequest`, or rejects it |
 | `FeeService` | Provides fee rates (exact Binance rates with an API key, the standard schedule otherwise) and calculates fees |
 | `OrderExecutionService` | Fills a valid `OrderRequest` and produces an `ExecutedOrder`. No validation or fee logic |
 | `AccountService` | Applies `ExecutedOrder`s to cash and positions, and calculates P&L and portfolio value |
-| `PriceBook` | Latest price per ticker. Write access through `PriceWriter`, read access through `PriceReader` |
+| `TickerPriceMap` | Latest quote per ticker, per broker. Written by the candle feeder (`TickerPriceWriter`), read by everyone else (`TickerPriceReader`) |
 | Repositories | Raw SQL persistence (`JdbcClient`), with no ORM |
 | REST API | Controls and read endpoints for the React dashboard |
 
@@ -32,42 +34,55 @@ Components exchange immutable DTOs (Java records): `CandleUpdate`, `Signal`, `Or
 ## 3. Event pipeline
 
 ```
- Binance REST (1s klines)      Binance WebSocket (kline + bookTicker)
+ Binance REST (1s candles)     Binance WebSocket (candle + bookTicker)
           │ TRAINING                      │ TRADING
           └──────────────┬────────────────┘
-                 CandleFeedService
+          Broker.candleFeeder()  (writes the broker's ticker price map)
                          │ CandleUpdate
           PriorityBlockingQueue  (ordered by execution time)
                          │
                  TradingBotService  (per event)
-   1. PriceWriter.update(ticker, price)
-   2. SignalGenerator.onUpdate(update, context)   → Buy | Sell | Hold
-   3. OrderValidator.validate(signal, account)    → OrderRequest | Rejected
-   4. FeeService.fee(orderRequest)
-   5. OrderExecutionService.execute(orderRequest) → ExecutedOrder
-   6. AccountService.apply(executedOrder)
-   7. Persistence (trade, position, snapshot)
+   1. SignalGenerator.onUpdate(update, context)   → Buy | Sell | Hold
+   2. OrderValidator.validate(signal, account)    → OrderRequest | Rejected
+   3. FeeService.fee(orderRequest)
+   4. OrderExecutionService.execute(orderRequest) → ExecutedOrder
+   5. AccountService.apply(executedOrder)
+   6. Persistence (trade, position, snapshot)
                          │
                      REST API  →  React dashboard
 ```
 
 ## 4. Market data
 
-**`BrokerClient`**
-- `getKlines(symbol, interval, from, to)`: historical klines, paged.
-- `subscribeKlines(symbol, interval, listener)`: live candle updates. Returns a closeable `Subscription`.
-- `subscribeBookTicker(symbol, listener)`: live best bid and ask.
+**Brokers**
+```
+BrokerRegistryService  (singleton, Map<name, Broker>)
+   └── «interface» Broker: name(), tickers(), candleFeeder(), tickerPrices()
+         └── «abstract» AbstractBroker  (abstract factory: shared state, builds the CandleFeeder
+               │                        from createMarketDataProtocol())
+               ├── BinanceBroker   (singleton)
+               └── KrakenBroker    (later, singleton)
+```
+- Every broker is a Spring singleton. The registry fails at startup if two brokers share a name.
+- Each broker *has* a `CandleFeeder` (composition). The feeder logic is shared; only the `ExchangeMarketDataProtocol` differs per exchange.
+- Planned: a portfolio per broker, transfers between brokers (which take time), and an `OrderGateway` factory method. Orders go to the Binance Spot Testnet first, then to real Binance's validate-only `POST /api/v3/order/test`.
+
+**`CandleFeeder`**
+- Streams all of a broker's tickers over **combined streams**: one connection carries up to 1,024 streams (Binance's limit). With 2 streams per ticker (candle + bookTicker), that's about 500 tickers per connection. Further connections are opened only beyond that.
+- The receive path stays fast: parse the message, update the price map (lock-free), put the `CandleUpdate` on a bounded queue for a separate dispatcher thread, then ask the socket for the next message. A full queue drops and counts updates; the socket is never blocked.
+- It tracks messages, parse errors, parse time, lag (receive time minus exchange event time), dropped updates and queue depth.
+- `history(ticker, interval, from, to)` pages historical candles over REST.
 
 **Binance (public endpoints, no key needed)**
-- REST `GET /api/v3/klines` on `data-api.binance.vision`, with up to 1,000 klines per request, paged by `startTime`.
+- REST `GET /api/v3/klines` on `data-api.binance.vision` (Binance calls candles "klines"), with up to 1,000 candles per request, paged by `startTime`.
 - WebSocket `<symbol>@kline_<interval>` and `<symbol>@bookTicker` on `data-stream.binance.vision`, using the JDK `java.net.http.WebSocket`.
-  - It reconnects with backoff, because Binance drops connections after 24 hours.
+  - After a drop it waits a fixed 5 seconds and reconnects (Binance drops connections after 24 hours, and allows 300 connection attempts per 5 minutes per IP).
 - `GET /api/v3/exchangeInfo` gives the trading rules per symbol (minimum quantity, step size, minimum order value).
 
 **Candle updates.** A `CandleUpdate` is the current state of the forming candle (open, high, low, close, volume) plus `isClosed` and its execution time.
-- **Trading:** the kline stream sends an update every 1–2 seconds. Each update becomes an event.
-- **Training:** the same updates are rebuilt from historical **`1s` klines**. They're aggregated into the forming candle of the chosen interval and emitted one second at a time. A day is about 86,400 `1s` klines, which is 87 requests.
-- **Cache:** historical klines are stored in the database after the first download, so re-runs use identical data and don't call Binance again.
+- **Trading:** the candle stream sends an update every 1–2 seconds. Each update becomes an event.
+- **Training:** the same updates are rebuilt from historical **`1s` candles**. They're aggregated into the forming candle of the chosen interval and emitted one second at a time. A day is about 86,400 `1s` candles, which is 87 requests.
+- **Cache:** historical candles are stored in the database after the first download, so re-runs use identical data and don't call Binance again.
 
 ## 5. Signals
 
@@ -126,7 +141,7 @@ Quantities are rounded down to the symbol's step size before validation.
 | Mode | Buy | Sell |
 |---|---|---|
 | `TRADING` | Best **ask** at the moment of the signal (`bookTicker`) | Best **bid** |
-| `TRAINING` | Open of the next `1s` kline after the signal | Same |
+| `TRAINING` | Open of the next `1s` candle after the signal | Same |
 
 ### Fees
 
@@ -162,14 +177,17 @@ They add a `PENDING` state, held in an in-memory open-orders book and checked on
 **Position states:** `OPEN` stays `OPEN` through further buys and partial sells, then becomes `CLOSED` on a full sell. A new buy afterwards opens a new position.
 - While a position is open, its MAE and MFE are updated on every price update. They feed the position review (§9).
 
-- **Unrealised P&L and portfolio value** (cash + Σ quantity × latest price) use the `PriceReader`.
+- **Unrealised P&L and portfolio value** (cash + Σ quantity × latest price) use the broker's `TickerPriceReader`.
 - **Money:** all amounts and quantities use `BigDecimal`.
 
-## 8. Price book
+## 8. Ticker price map
 
-`PriceBook` is backed by a `ConcurrentHashMap<ticker, price>`.
-- **`PriceWriter`:** only `TradingBotService` receives it. It's updated on every event.
-- **`PriceReader`:** every other component receives it. Read-only by type.
+Each broker has a `TickerPriceMap`: its configured tickers mapped to the latest `TickerQuote` (bid, ask, last price, update time, source).
+- The key set is fixed at startup. Each value starts as **null** (no data yet) and is filled only by a valid REST fetch or a WebSocket message for that ticker. Updates for other tickers are ignored.
+- Values are `AtomicReference<TickerQuote>`s, so updates are lock-free and readers never see a half-written quote.
+- **`TickerPriceWriter`:** only the broker's `CandleFeeder` receives it.
+- **`TickerPriceReader`:** every other component receives it. Read-only by type, `Optional<TickerQuote> get(ticker)`.
+- **Training mode:** the feeder must not run ahead of the bot, so in Training it releases events one at a time and writes each price only as it releases that event. The map never shows a "future" price.
 
 ## 9. Bot and run lifecycle
 
@@ -220,7 +238,7 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
   - **MAE** (maximum adverse excursion: the worst unrealised loss while it was open)
   - **MFE** (maximum favourable excursion: the best unrealised profit while it was open)
 - **Top 10 worst positions:** closed positions ranked by realised P&L. Each one can be opened as a chart showing:
-  - the price path from a little before the entry to a little after the exit, from the kline cache
+  - the price path from a little before the entry to a little after the exit, from the candle cache
   - the entry and exit points marked
   - the MAE and MFE points marked
 
@@ -247,16 +265,16 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
 | `trade` | deterministic id, run id, sequence, execution time, side, symbol, quantity, price, fee, fee asset, realised P&L |
 | `position` | id, run id, symbol, status, quantity, average entry price, opened and closed time, realised P&L, MAE, MFE |
 | `portfolio_snapshot` | run id, time, cash, holdings value, total value |
-| `kline` | symbol, interval, open time, OHLCV (historical data cache) |
+| `candle` | symbol, interval, open time, OHLCV (historical data cache) |
 
 **Write policy:**
-- **Trading and live training:** each trade and its position change are written in **one transaction** before the next event is processed, so a crash never loses a confirmed trade. Snapshots are written in batches, and always on pause, stop and reset. They can be rebuilt from trades and klines.
+- **Trading and live training:** each trade and its position change are written in **one transaction** before the next event is processed, so a crash never loses a confirmed trade. Snapshots are written in batches, and always on pause, stop and reset. They can be rebuilt from trades and candles.
 - **Archived training:** everything is written once, at completion.
 
 **Idempotency:**
 - **Training:**
   - A run is identified by a hash of its inputs: mode, symbol, interval, date range, generator and parameters, starting balance and fee rates.
-  - Processing is deterministic and uses cached klines, so identical inputs always give identical trades.
+  - Processing is deterministic and uses cached candles, so identical inputs always give identical trades.
   - Re-running replaces the archived run instead of duplicating it.
 - **Trading:**
   - Trades and events have deterministic ids (run id, execution time, sequence).
@@ -296,10 +314,11 @@ The optional read-only API key is set through the environment variables `BINANCE
 ```
 com.tihomir.t212.tradingbot
 ├── bot            BotMode, BotState, TradingBotService, BotRun, RunStatus
-├── broker         BrokerClient, Subscription
-│   └── binance    BinanceBrokerClient, BinanceProperties, mappers
-├── marketdata     CandleUpdate, CandleInterval, PriceBook, PriceReader, PriceWriter
-│   └── feed       CandleFeedService, HistoricalCandleFeed, LiveCandleFeed
+├── broker         Broker, AbstractBroker, BrokerRegistryService
+│   └── binance    BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol
+├── marketdata     CandleFeeder, ExchangeMarketDataProtocol, CandleUpdate, BestBidAskUpdate,
+│                  CandleInterval, TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote
+│   └── stream     MarketDataStreamConnection, MarketDataStreamConnectionFactory (JDK WebSocket, reconnect)
 ├── signal         SignalGenerator, Signal, SignalContext
 │   └── indicator  SMA, EMA, RSI, ...
 ├── order          OrderRequest, OrderStatus, RejectionReason, OrderValidator,

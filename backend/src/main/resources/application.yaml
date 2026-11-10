@@ -1,3 +1,15 @@
 spring:
   application:
     name: t212-spring-boot-project
+
+binance:
+  name: binance
+  stream-url: wss://data-stream.binance.vision
+  rest-url: https://data-api.binance.vision
+  interval: ONE_MINUTE
+  tickers:
+    - BTCUSDT
+    - ETHUSDT
+
+smoke:
+  duration: 30s

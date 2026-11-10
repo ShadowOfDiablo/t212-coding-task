@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,6 +69,18 @@ class OrderControllerTest {
         .perform(get("/api/brokers/binance/balances"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[0].asset").value("USDT"));
+  }
+
+  @Test
+  void amountsArePlainDecimals() throws Exception {
+    when(orderService.accountBalances("binance"))
+        .thenReturn(
+            List.of(new AssetBalance("BTC", new BigDecimal("1.3E-7"), new BigDecimal("0E-8"))));
+
+    mockMvc
+        .perform(get("/api/brokers/binance/balances"))
+        .andExpect(
+            content().string("[{\"asset\":\"BTC\",\"free\":0.00000013,\"locked\":0.00000000}]"));
   }
 
   @Test

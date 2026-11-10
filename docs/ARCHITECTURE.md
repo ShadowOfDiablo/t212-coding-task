@@ -559,6 +559,33 @@ stateDiagram-v2
 
 ## 9. Bot and run lifecycle (planned)
 
+### Profiles (built)
+
+Each bot mode has its own Spring profile. Only the parts that mode needs are started.
+
+```mermaid
+flowchart TD
+    Start["java -jar / spring-boot:run"] --> P{"active profile"}
+    P -- "none (default)" --> T["trading"]
+    P -- trading --> T
+    P -- training --> Tr["training"]
+    P -- smoke --> S["smoke"]
+
+    T --> T1["LiveMarketDataStarter<br/>starts every broker's CandleFeeder"]
+    T --> T2["Order endpoints<br/>on when API key variables are set"]
+    Tr --> Tr1["No live streams"]
+    Tr --> Tr2["Trading gateway always off<br/>(keys blanked in application-training.yaml)"]
+    S --> S1["MarketDataSmokeRunner, no web server, exits"]
+```
+
+| Profile | Config | Web server | Live streams | Demo orders |
+|---|---|---|---|---|
+| `trading` | `application.yaml`, `spring.profiles.default: trading` | Yes | Started on startup | With keys |
+| `training` | `application-training.yaml` | Yes | No | Never |
+| `smoke` | `application-smoke.yaml` | No | 30 seconds | Never |
+
+Once `TradingBotService` exists, `trading` and `training` will start it in the matching `BotMode`. The application context test runs with `training`, so tests never open a network connection.
+
 ### Bot states
 
 ```mermaid
@@ -698,6 +725,11 @@ Everything goes in `backend/src/main/resources/application.yaml`. Current settin
 
 ```yaml
 spring:
+  profiles:
+    default: trading                          # used when no profile is given
+  jackson:
+    write:
+      write-bigdecimal-as-plain: true         # 0.00000000, not 0E-8, in API answers
   http:
     clients:
       connect-timeout: 5s                     # every REST call to Binance
@@ -721,7 +753,7 @@ smoke:
   duration: 30s                               # how long the smoke run streams
 ```
 
-`application-smoke.yaml` turns the web server off for the `smoke` profile, so the smoke run exits by itself.
+`spring.profiles.default: trading` makes `trading` the profile when none is given. `application-training.yaml` blanks the API key so Training can never trade, and `application-smoke.yaml` turns the web server off so the smoke run exits by itself (§9, Profiles).
 
 Planned additions: the database connection, starting balance, the active signal generator and its parameters, and the default training range.
 
@@ -740,6 +772,7 @@ com.tihomir.t212.tradingbot
 │   ├── candlefeed   CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
 │   └── websocket    MarketDataStreamConnection, MarketDataStreamConnectionFactory, MarketDataMessageHandler,
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
+├── mode             LiveMarketDataStarter (profile "trading")
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
 ├── bot              (planned) BotMode, BotState, TradingBotService, BotRun, RunStatus
 ├── signal           (planned) SignalGenerator, Signal, SignalContext

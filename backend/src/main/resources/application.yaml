@@ -1,6 +1,11 @@
 spring:
+  profiles:
+    default: trading
   application:
     name: t212-spring-boot-project
+  jackson:
+    write:
+      write-bigdecimal-as-plain: true
   http:
     clients:
       connect-timeout: 5s

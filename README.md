@@ -45,6 +45,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
     └── src/main/java/com/tihomir/t212/tradingbot
         ├── api            REST controllers
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
+        ├── mode           what each profile (trading, training) starts
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
         ├── order          market orders, balances, the trading gateway interface
         └── smoke          a short live check of the market data feed
@@ -98,12 +99,21 @@ binance:
 
 ### Start the application
 
+The application has one profile per bot mode. Without a profile it starts in `trading`.
+
+| Profile | Live market data | Demo account orders | Use |
+|---|---|---|---|
+| `trading` (default) | Streams every configured ticker | On when the API key variables are set | Live trading on the demo account |
+| `training` | Off | Always off, even with keys set | Replaying history (the bot comes later) |
+| `smoke` | 30 seconds, logged | Off (no web server) | A quick check of the market data feed |
+
 ```bash
-./mvnw spring-boot:run
-.\mvnw.cmd spring-boot:run
+./mvnw spring-boot:run                                          # trading
+./mvnw spring-boot:run -Dspring-boot.run.profiles=training
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=training"
 ```
 
-The server listens on `http://localhost:8080`. The market data feed doesn't start by default yet; use the `smoke` profile above to see it.
+The server listens on `http://localhost:8080`.
 
 Build a runnable jar:
 

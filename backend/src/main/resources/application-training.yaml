@@ -1,0 +1,5 @@
+# Training replays history and never touches an exchange account.
+binance:
+  trading:
+    api-key: ""
+    private-key-path: ""

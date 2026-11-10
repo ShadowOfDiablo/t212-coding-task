@@ -25,4 +25,11 @@ public interface ExchangeMarketDataProtocol {
   URI candlesUri(String ticker, CandleInterval interval, Instant from, Instant to, int maxCandles);
 
   List<CandleUpdate> parseCandles(String body, String ticker, CandleInterval interval);
+
+  URI serverTimeUri();
+
+  /**
+   * @throws IllegalArgumentException if the body is missing or malformed
+   */
+  Instant parseServerTime(String body);
 }

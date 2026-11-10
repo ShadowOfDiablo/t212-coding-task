@@ -70,7 +70,7 @@ BrokerRegistryService  (singleton, Map<name, Broker>)
 **`CandleFeeder`**
 - Streams all of a broker's tickers over **combined streams**: one connection carries up to 1,024 streams (Binance's limit). With 2 streams per ticker (candle + bookTicker), that's about 500 tickers per connection. Further connections are opened only beyond that.
 - The receive path stays fast: parse the message, update the price map (lock-free), put the `CandleUpdate` on a bounded queue for a separate dispatcher thread, then ask the socket for the next message. A full queue drops and counts updates; the socket is never blocked.
-- It tracks messages, parse errors, parse time, lag (receive time minus exchange event time), dropped updates and queue depth.
+- It tracks messages, parse errors, parse time, lag, dropped updates and queue depth. Lag is measured against the **exchange's clock**: on start the feeder reads the server time (`GET /api/v3/time` on Binance) and corrects for the local clock offset. If that fails it falls back to the local clock and logs a warning.
 - `history(ticker, interval, from, to)` pages historical candles over REST.
 
 **Binance (public endpoints, no key needed)**

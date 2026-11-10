@@ -123,6 +123,19 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
     return candles;
   }
 
+  @Override
+  public URI serverTimeUri() {
+    return UriComponentsBuilder.fromUri(restUrl).path("/api/v3/time").build().toUri();
+  }
+
+  @Override
+  public Instant parseServerTime(String body) {
+    if (body == null) {
+      throw new IllegalArgumentException("Empty server time response");
+    }
+    return instant(jsonMapper.readTree(body), "serverTime");
+  }
+
   static String intervalCode(CandleInterval interval) {
     return switch (interval) {
       case ONE_SECOND -> "1s";

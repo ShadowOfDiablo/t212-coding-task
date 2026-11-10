@@ -34,6 +34,7 @@ public final class CandleFeeder implements AutoCloseable {
   private final List<MarketDataStreamConnection> connections = new CopyOnWriteArrayList<>();
   private Thread dispatcher;
   private volatile boolean running;
+  private volatile Duration exchangeClockOffset = Duration.ZERO;
 
   private final LongAdder messages = new LongAdder();
   private final LongAdder parseErrors = new LongAdder();
@@ -69,6 +70,7 @@ public final class CandleFeeder implements AutoCloseable {
     if (running) {
       return;
     }
+    exchangeClockOffset = measureExchangeClockOffset();
     running = true;
     dispatcher = new Thread(this::dispatchLoop, name + "-candle-dispatcher");
     dispatcher.setDaemon(true);
@@ -81,6 +83,25 @@ public final class CandleFeeder implements AutoCloseable {
     }
     log.info(
         "{}: streaming {} tickers over {} connection(s)", name, tickers.size(), connections.size());
+  }
+
+  private Duration measureExchangeClockOffset() {
+    try {
+      Instant requestSent = Instant.now();
+      String body = restClient.get().uri(protocol.serverTimeUri()).retrieve().body(String.class);
+      Instant responseReceived = Instant.now();
+      Instant serverTime = protocol.parseServerTime(body);
+      Duration halfRoundTrip = Duration.between(requestSent, responseReceived).dividedBy(2);
+      Duration offset = Duration.between(requestSent.plus(halfRoundTrip), serverTime);
+      log.info("{}: exchange clock is {} ms ahead of the local clock", name, offset.toMillis());
+      return offset;
+    } catch (RuntimeException e) {
+      log.warn(
+          "{}: could not read the exchange clock, lag uses the local clock: {}",
+          name,
+          e.toString());
+      return Duration.ZERO;
+    }
   }
 
   private void openConnections() {
@@ -139,6 +160,7 @@ public final class CandleFeeder implements AutoCloseable {
         parseNanosMax.get() / 1_000,
         average(lagMillisTotal.get(), samples),
         lagMillisMax.get(),
+        exchangeClockOffset.toMillis(),
         connections.size(),
         open);
   }
@@ -191,7 +213,8 @@ public final class CandleFeeder implements AutoCloseable {
   private void applyCandleUpdate(CandleUpdate candle, Instant receivedAt) {
     priceWriter.updateLastPrice(
         candle.ticker(), candle.close(), candle.eventTime(), TickerQuoteSource.WEBSOCKET);
-    recordLag(Duration.between(candle.eventTime(), receivedAt).toMillis());
+    recordLag(
+        Duration.between(candle.eventTime(), receivedAt.plus(exchangeClockOffset)).toMillis());
     if (!queue.offer(candle)) {
       droppedUpdates.increment();
     }

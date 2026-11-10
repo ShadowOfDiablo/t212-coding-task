@@ -101,6 +101,17 @@ class BinanceMarketDataProtocolTest {
   }
 
   @Test
+  void readsTheServerTime() {
+    assertThat(protocol.serverTimeUri()).hasToString("https://rest.test/api/v3/time");
+    assertThat(protocol.parseServerTime("{\"serverTime\":1762779782136}"))
+        .isEqualTo(Instant.ofEpochMilli(1762779782136L));
+    assertThatThrownBy(() -> protocol.parseServerTime(null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> protocol.parseServerTime("{}"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void buildsCandlesUriWithExclusiveEnd() {
     URI uri =
         protocol.candlesUri(

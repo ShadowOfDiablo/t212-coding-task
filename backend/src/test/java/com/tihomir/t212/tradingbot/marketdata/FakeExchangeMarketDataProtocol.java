@@ -15,6 +15,7 @@ import java.util.Optional;
 public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataProtocol {
 
   static final int MAX_STREAMS = 1024;
+  static final String SERVER_TIME_URI = "http://rest.test/time";
   static final int MAX_CANDLES_PER_REST_HISTORY_REQUEST = 2;
 
   @Override
@@ -63,6 +64,16 @@ public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataP
       candles.add(candle(ticker, open, BigDecimal.ONE, (open + 1) * 1000, true));
     }
     return candles;
+  }
+
+  @Override
+  public URI serverTimeUri() {
+    return URI.create(SERVER_TIME_URI);
+  }
+
+  @Override
+  public Instant parseServerTime(String body) {
+    return Instant.ofEpochMilli(Long.parseLong(body));
   }
 
   private static CandleUpdate liveCandle(String[] parts) {

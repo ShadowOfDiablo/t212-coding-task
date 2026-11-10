@@ -5,9 +5,10 @@ public record CandleFeederStatistics(
     long parseErrors,
     long droppedUpdates,
     int queueDepth,
-    long avgParseMicros,
+    long averageParseMicros,
     long maxParseMicros,
-    long avgLagMillis,
+    long averageLagMillis,
     long maxLagMillis,
+    long exchangeClockOffsetMillis,
     int connections,
     int openConnections) {}

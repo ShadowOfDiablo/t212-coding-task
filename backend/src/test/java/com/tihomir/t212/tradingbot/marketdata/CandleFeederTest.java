@@ -3,6 +3,7 @@ package com.tihomir.t212.tradingbot.marketdata;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.time.Instant;
@@ -61,6 +62,7 @@ class CandleFeederTest {
   void opensOneConnectionPerStreamGroupAndClosesThemOnStop() {
     List<String> tickers = IntStream.range(0, 600).mapToObj(i -> "T" + i).toList();
     feeder = feeder(tickers, new TickerPriceMap(tickers));
+    expectServerTime(Instant.now());
 
     feeder.start();
     assertThat(connections.opened()).hasSize(2);
@@ -75,6 +77,7 @@ class CandleFeederTest {
     List<String> tickers = IntStream.range(0, 1300).mapToObj(i -> "T" + i).toList();
     feeder = feeder(tickers, new TickerPriceMap(tickers));
     connections.failOnOpenNumber(3);
+    expectServerTime(Instant.now());
 
     assertThatThrownBy(feeder::start).isInstanceOf(IllegalStateException.class);
 
@@ -83,11 +86,38 @@ class CandleFeederTest {
   }
 
   @Test
+  void measuresLagAgainstTheExchangeClock() {
+    feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
+    expectServerTime(Instant.now().plusSeconds(10));
+    feeder.start();
+
+    long eventMillis = RECEIVED.toEpochMilli();
+    connections.opened().getFirst().receive("C|BTCUSDT|101.5|" + eventMillis, RECEIVED);
+
+    CandleFeederStatistics statistics = feeder.statistics();
+    assertThat(statistics.exchangeClockOffsetMillis()).isBetween(9_000L, 11_000L);
+    assertThat(statistics.averageLagMillis()).isBetween(9_000L, 11_000L);
+  }
+
+  @Test
+  void startsWithTheLocalClockWhenTheExchangeClockIsUnavailable() {
+    feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
+    rest.expect(requestTo(FakeExchangeMarketDataProtocol.SERVER_TIME_URI))
+        .andRespond(withServerError());
+
+    feeder.start();
+
+    assertThat(connections.opened()).hasSize(1);
+    assertThat(feeder.statistics().exchangeClockOffsetMillis()).isZero();
+  }
+
+  @Test
   void candleUpdatesPricesAndReachesListeners() throws InterruptedException {
     TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT"));
     feeder = feeder(List.of("BTCUSDT"), prices);
     BlockingQueue<CandleUpdate> received = new LinkedBlockingQueue<>();
     feeder.addListener(received::add);
+    expectServerTime(Instant.now());
     feeder.start();
 
     connections.opened().getFirst().receive("C|BTCUSDT|101.5|1762779600000", RECEIVED);
@@ -157,6 +187,11 @@ class CandleFeederTest {
         prices,
         connections,
         restBuilder.build());
+  }
+
+  private void expectServerTime(Instant serverTime) {
+    rest.expect(requestTo(FakeExchangeMarketDataProtocol.SERVER_TIME_URI))
+        .andRespond(text(String.valueOf(serverTime.toEpochMilli())));
   }
 
   private static ResponseCreator text(String body) {

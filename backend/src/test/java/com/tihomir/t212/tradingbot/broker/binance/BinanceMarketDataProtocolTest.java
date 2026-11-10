@@ -3,10 +3,10 @@ package com.tihomir.t212.tradingbot.broker.binance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.update.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.update.MarketDataEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;

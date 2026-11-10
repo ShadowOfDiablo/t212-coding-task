@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.price;
+package com.tihomir.t212.tradingbot.marketdata.tickerprice;
 
 import java.util.Optional;
 import java.util.Set;

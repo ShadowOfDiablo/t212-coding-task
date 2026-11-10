@@ -1,8 +1,8 @@
-package com.tihomir.t212.tradingbot.marketdata.feed;
+package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.update.MarketDataEvent;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;

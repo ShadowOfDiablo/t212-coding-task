@@ -1,8 +1,8 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.AbstractBroker;
-import com.tihomir.t212.tradingbot.marketdata.feed.ExchangeMarketDataProtocol;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnectionFactory;
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnectionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;

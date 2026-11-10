@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.event;
+package com.tihomir.t212.tradingbot.marketdata.update;
 
 import java.time.Duration;
 

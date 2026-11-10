@@ -1,13 +1,13 @@
-package com.tihomir.t212.tradingbot.marketdata.feed;
+package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
-import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
-import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceWriter;
-import com.tihomir.t212.tradingbot.marketdata.price.TickerQuoteSource;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnectionFactory;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceWriter;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuoteSource;
+import com.tihomir.t212.tradingbot.marketdata.update.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.update.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnectionFactory;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;

@@ -1,8 +1,8 @@
-package com.tihomir.t212.tradingbot.marketdata.feed;
+package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataMessageHandler;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnectionFactory;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnectionFactory;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;

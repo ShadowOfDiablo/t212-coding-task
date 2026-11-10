@@ -1,7 +1,7 @@
-package com.tihomir.t212.tradingbot.marketdata.feed;
+package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataMessageHandler;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
 import java.time.Instant;
 
 final class FakeMarketDataStreamConnection implements MarketDataStreamConnection {

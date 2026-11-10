@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.stream;
+package com.tihomir.t212.tradingbot.marketdata.websocket;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -19,7 +19,6 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
   private static final Logger log = LoggerFactory.getLogger(JdkWebSocketConnection.class);
   private static final CompletionStage<Void> MESSAGE_HANDLED =
       CompletableFuture.completedFuture(null);
-  private static final int MAX_MESSAGE_CHARS = 1_000_000;
   private static final int MESSAGES_PER_REQUEST = 1;
 
   private final URI uri;
@@ -97,7 +96,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
   @Override
   public CompletionStage<Void> onText(WebSocket socket, CharSequence data, boolean last) {
     try {
-      appendFragment(data, last);
+      handleFragment(data, last);
     } catch (RuntimeException e) {
       log.error("Handling a message from {} failed", uri.getHost(), e);
     } finally {
@@ -106,17 +105,22 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
     return MESSAGE_HANDLED;
   }
 
-  private void appendFragment(CharSequence data, boolean last) {
-    messageBuffer.append(data);
-    if (messageBuffer.length() > MAX_MESSAGE_CHARS) {
-      messageBuffer.setLength(0);
-      throw new IllegalStateException("Message exceeded " + MAX_MESSAGE_CHARS + " characters");
+  private void handleFragment(CharSequence data, boolean last) {
+    if (last && messageBuffer.isEmpty()) {
+      handler.onMessage(data.toString(), Instant.now());
+      return;
     }
+    messageBuffer.append(data);
     if (last) {
       String message = messageBuffer.toString();
-      messageBuffer.setLength(0);
+      discardMessageBuffer();
       handler.onMessage(message, Instant.now());
     }
+  }
+
+  private void discardMessageBuffer() {
+    messageBuffer.setLength(0);
+    messageBuffer.trimToSize();
   }
 
   @Override
@@ -152,7 +156,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
 
   private void resetAndReconnect() {
     webSocket = null;
-    messageBuffer.setLength(0);
+    discardMessageBuffer();
     scheduleReconnect();
   }
 

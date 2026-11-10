@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.feed;
+package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -6,10 +6,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceMap;
-import com.tihomir.t212.tradingbot.marketdata.price.TickerQuote;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceMap;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;

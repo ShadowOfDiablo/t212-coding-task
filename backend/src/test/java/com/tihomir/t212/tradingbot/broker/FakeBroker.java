@@ -1,10 +1,10 @@
 package com.tihomir.t212.tradingbot.broker;
 
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.feed.ExchangeMarketDataProtocol;
-import com.tihomir.t212.tradingbot.marketdata.feed.FakeExchangeMarketDataProtocol;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataMessageHandler;
-import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.FakeExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
+import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
 import java.net.URI;
 import java.util.List;
 import org.springframework.web.client.RestClient;

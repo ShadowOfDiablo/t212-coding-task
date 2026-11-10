@@ -317,10 +317,10 @@ com.tihomir.t212.tradingbot
 ├── broker         Broker, AbstractBroker, BrokerRegistryService
 │   └── binance    BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol
 ├── marketdata
-│   ├── event      MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
-│   ├── price      TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
-│   ├── feed       CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
-│   └── stream     MarketDataStreamConnection, MarketDataStreamConnectionFactory (JDK WebSocket, reconnect)
+│   ├── update      MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
+│   ├── tickerprice TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
+│   ├── candlefeed  CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
+│   └── websocket   MarketDataStreamConnection, MarketDataStreamConnectionFactory (JDK WebSocket, reconnect)
 ├── signal         SignalGenerator, Signal, SignalContext
 │   └── indicator  SMA, EMA, RSI, ...
 ├── order          OrderRequest, OrderStatus, RejectionReason, OrderValidator,

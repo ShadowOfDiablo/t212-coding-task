@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.stream;
+package com.tihomir.t212.tradingbot.marketdata.websocket;
 
 import java.time.Instant;
 

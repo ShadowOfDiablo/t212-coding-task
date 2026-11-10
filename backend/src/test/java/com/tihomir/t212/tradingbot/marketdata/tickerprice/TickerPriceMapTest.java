@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.price;
+package com.tihomir.t212.tradingbot.marketdata.tickerprice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.stream;
+package com.tihomir.t212.tradingbot.marketdata.websocket;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -48,14 +48,15 @@ class JdkWebSocketConnectionTest {
   }
 
   @Test
-  void dropsOversizedMessagesAndKeepsReading() {
+  void startsEachMessageWithAnEmptyBuffer() {
     JdkWebSocketConnection connection = connection(this::record);
 
-    connection.onText(socket, "x".repeat(1_000_001), false);
-    connection.onText(socket, "next", true);
+    connection.onText(socket, "first ", false);
+    connection.onText(socket, "message", true);
+    connection.onText(socket, "second", true);
 
-    assertThat(received).containsExactly("next");
-    assertThat(socket.requestedMessages()).isEqualTo(2);
+    assertThat(received).containsExactly("first message", "second");
+    assertThat(socket.requestedMessages()).isEqualTo(3);
   }
 
   @Test

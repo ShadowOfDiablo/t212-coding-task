@@ -2,10 +2,10 @@ package com.tihomir.t212.tradingbot.smoke;
 
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.feed.CandleFeeder;
-import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceReader;
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleFeeder;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;

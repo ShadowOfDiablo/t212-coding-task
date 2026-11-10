@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.stream;
+package com.tihomir.t212.tradingbot.marketdata.websocket;
 
 public interface MarketDataStreamConnection extends AutoCloseable {
 

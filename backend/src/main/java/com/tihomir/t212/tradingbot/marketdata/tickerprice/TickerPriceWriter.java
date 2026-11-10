@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata.price;
+package com.tihomir.t212.tradingbot.marketdata.tickerprice;
 
 import java.math.BigDecimal;
 import java.time.Instant;

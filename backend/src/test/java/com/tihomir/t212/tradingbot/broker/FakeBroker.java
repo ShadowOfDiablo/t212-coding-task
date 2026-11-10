@@ -5,19 +5,30 @@ import com.tihomir.t212.tradingbot.marketdata.candlefeed.FakeExchangeMarketDataP
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
+import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.web.client.RestClient;
 
-final class FakeBroker extends AbstractBroker {
+public final class FakeBroker extends AbstractBroker {
+
+  public static final String TRADED_TICKER = "BTCUSDT";
+
+  private final Optional<ExchangeTradingGateway> tradingGateway;
 
   FakeBroker(String name) {
+    this(name, Optional.empty());
+  }
+
+  public FakeBroker(String name, Optional<ExchangeTradingGateway> tradingGateway) {
     super(
         name,
-        List.of("BTCUSDT"),
+        List.of(TRADED_TICKER),
         CandleInterval.ONE_MINUTE,
         FakeBroker::refuseConnection,
         RestClient.create());
+    this.tradingGateway = tradingGateway;
   }
 
   private static MarketDataStreamConnection refuseConnection(
@@ -28,5 +39,10 @@ final class FakeBroker extends AbstractBroker {
   @Override
   protected ExchangeMarketDataProtocol createMarketDataProtocol() {
     return new FakeExchangeMarketDataProtocol();
+  }
+
+  @Override
+  protected Optional<ExchangeTradingGateway> createTradingGateway() {
+    return tradingGateway;
   }
 }

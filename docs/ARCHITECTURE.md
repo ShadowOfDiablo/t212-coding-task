@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes **simulated** orders against a virtual account. No real orders are ever sent to an exchange.
+The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes orders. Orders go either to a virtual account (Training) or to a **Binance Demo Mode** account with fake funds. Nothing is ever sent to a live trading account; the configuration refuses any trading host other than `demo-api.binance.com`.
 
 | Mode | Data source | Purpose |
 |---|---|---|
@@ -16,11 +16,12 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Part | Status |
 |---|---|
 | Market data: brokers, candle feeder, WebSocket streams, REST history, ticker price map | **Built** |
-| Account, orders, fees | Planned |
+| Demo account orders: signed market orders and balances on Binance Demo Mode, REST endpoints | **Built** |
+| Virtual account, order validation, fees (Training) | Planned |
 | Signal generators and indicators | Planned |
 | `TradingBotService`: event loop, states, controls | Planned |
-| Persistence (raw SQL) | Planned |
-| REST API and React dashboard | Planned |
+| Persistence: PostgreSQL, raw SQL (candle history, orders and fills) | Planned, next |
+| Rest of the REST API and the React dashboard | Planned |
 
 ### System overview
 
@@ -28,16 +29,19 @@ Solid boxes are built; dashed boxes are planned.
 
 ```mermaid
 flowchart LR
-    subgraph Binance["Binance (public endpoints)"]
-        WS["WebSocket<br/>data-stream.binance.vision"]
-        REST["REST<br/>data-api.binance.vision"]
+    subgraph Binance["Binance"]
+        WS["WebSocket, demo<br/>demo-stream.binance.com"]
+        REST["REST, real history<br/>data-api.binance.vision"]
+        DemoApi["REST, demo account<br/>demo-api.binance.com"]
     end
 
     subgraph Backend["Spring Boot backend"]
+        OrderApi["OrderController<br/>OrderService"]
         Registry["BrokerRegistryService"]
         Broker["BinanceBroker"]
         Feeder["CandleFeeder"]
         Prices["TickerPriceMap"]
+        Gateway["BinanceTradingGateway<br/>Ed25519 signed"]
         Bot["TradingBotService"]
         Signal["SignalGenerator"]
         Orders["OrderValidator<br/>FeeService<br/>OrderExecutionService"]
@@ -53,6 +57,10 @@ flowchart LR
     Registry --> Broker
     Broker --> Feeder
     Broker --> Prices
+    Broker --> Gateway
+    OrderApi --> Registry
+    OrderApi -- "market orders, balances" --> Gateway
+    Gateway -- "signed HTTPS" --> DemoApi
     Feeder -- writes --> Prices
     Feeder -- CandleUpdate --> Bot
     Bot --> Signal
@@ -64,6 +72,7 @@ flowchart LR
     Api --> Bot
     Api --> Db
     Ui -- "HTTP, SSE" --> Api
+    Ui -. HTTP .-> OrderApi
 
     classDef planned stroke-dasharray: 5 5
     class Bot,Signal,Orders,Account,Db,Api,Ui planned
@@ -79,6 +88,9 @@ flowchart LR
 | `ExchangeMarketDataProtocol` | Built | The exchange-specific part of market data: stream names, URLs, limits, message parsing |
 | `MarketDataStreamConnection` | Built | One WebSocket connection with a fixed 5-second reconnect (`JdkWebSocketConnection`) |
 | `TickerPriceMap` | Built | Latest quote per ticker, per broker. Written by the candle feeder (`TickerPriceWriter`), read by everyone else (`TickerPriceReader`) |
+| `ExchangeTradingGateway` | Built | The exchange-specific part of trading: place a market order, read balances. `BinanceTradingGateway` signs every request with Ed25519. A broker has one only when its API key is configured |
+| `OrderService` | Built | Finds the broker, checks the ticker is one it trades, and sends the order to its trading gateway |
+| `OrderController` | Built | `POST /api/brokers/{broker}/orders` and `GET /api/brokers/{broker}/balances`. `ApiExceptionHandler` turns failures into HTTP problem responses |
 | `TradingBotService` | Planned | Owns the event loop, the bot state and the runs |
 | `SignalGenerator` | Planned | Interface for trading logic, with several implementations chosen by config. Returns `Buy`, `Sell` or `Hold` |
 | `OrderValidator` | Planned | Turns a signal into a valid `OrderRequest`, or rejects it |
@@ -242,7 +254,7 @@ flowchart LR
 Each connection URI is a combined stream, for example:
 
 ```
-wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@bookTicker/ethusdt@kline_1m/ethusdt@bookTicker
+wss://demo-stream.binance.com/stream?streams=btcusdt@kline_1m/btcusdt@bookTicker/ethusdt@kline_1m/ethusdt@bookTicker
 ```
 
 With the two default tickers this is a single connection.
@@ -341,9 +353,11 @@ A `CandleUpdate` is the current state of the forming candle plus `closed`.
 
 ### 4.9 Binance endpoints (public, no key needed)
 
+Live streams come from the **demo** stream host, so the price map shows the prices that demo orders fill at. Candle history comes from **real** Binance data, so Training learns on real prices.
+
 | Endpoint | Used for |
 |---|---|
-| `wss://data-stream.binance.vision/stream?streams=…` | `<symbol>@kline_<interval>` candles and `<symbol>@bookTicker` best bid/ask, JDK `java.net.http.WebSocket` |
+| `wss://demo-stream.binance.com/stream?streams=…` | `<symbol>@kline_<interval>` candles and `<symbol>@bookTicker` best bid/ask, JDK `java.net.http.WebSocket` |
 | `GET /api/v3/klines` on `data-api.binance.vision` | Candle history, 1,000 per request |
 | `GET /api/v3/time` | Exchange clock offset |
 | `GET /api/v3/exchangeInfo` (planned) | Trading rules per symbol: minimum quantity, step size, minimum order value |
@@ -383,9 +397,75 @@ Each broker has a `TickerPriceMap`: its configured tickers mapped to the latest 
 
 Indicators (SMA, EMA, RSI, …) are separate, reusable classes under `signal/indicator`.
 
-## 7. Orders (planned)
+## 7. Orders
 
-### Order lifecycle (first version: market orders only)
+### 7.1 Demo account orders (built)
+
+Real market orders go to a **Binance Demo Mode** account: fake funds, with the same features and trading rules as the live exchange. For now they are placed by hand through the REST API. The bot will use the same `OrderService` later.
+
+```mermaid
+sequenceDiagram
+    participant C as curl / dashboard
+    participant API as OrderController
+    participant S as OrderService
+    participant R as BrokerRegistryService
+    participant G as BinanceTradingGateway
+    participant B as demo-api.binance.com
+
+    C->>API: POST /api/brokers/binance/orders<br/>{ticker, side, amount, amountType}
+    API->>S: placeMarketOrder(broker, request)
+    S->>R: get(broker)
+    Note over S: 404 unknown broker<br/>400 ticker not traded by it<br/>409 no API key configured
+    S->>G: placeMarketOrder(request)
+    Note over G: params + recvWindow + timestamp<br/>signature = Ed25519(query string)
+    G->>B: POST /api/v3/order (X-MBX-APIKEY)
+    B-->>G: FULL response: status, executed qty, fills with commission
+    G-->>S: ExecutedOrder (average price = quote amount / quantity)
+    S-->>API: ExecutedOrder
+    API-->>C: 201 Created
+```
+
+**Request:**
+
+| Field | Values | Binance parameter |
+|---|---|---|
+| `ticker` | one of the broker's configured tickers | `symbol` |
+| `side` | `BUY`, `SELL` | `side` |
+| `amount` | greater than zero | |
+| `amountType` | `QUOTE_AMOUNT`: spend or receive this much USDT | `quoteOrderQty` |
+| | `BASE_QUANTITY`: buy or sell this much of the coin | `quantity` |
+
+Each order gets a client order id (`tb-` plus a random UUID), sent as `newClientOrderId`. If the outcome is unknown, the order can be found on Binance by that id.
+
+**Outcomes:**
+
+```mermaid
+stateDiagram-v2
+    [*] --> SENT: signed request
+    SENT --> EXECUTED: 2xx, response read
+    SENT --> REJECTED: 4xx, nothing executed
+    SENT --> UNKNOWN: 5xx, timeout, unreadable 2xx
+    EXECUTED --> [*]: 201
+    REJECTED --> [*]: 422 + Binance code and message
+    UNKNOWN --> [*]: 502 + clientOrderId
+```
+
+| Failure | Example | HTTP |
+|---|---|---|
+| Binance refused the order | `-2010` insufficient balance, `-1013` `LOT_SIZE` / `NOTIONAL` filter, `-1021` timestamp outside `recvWindow`, `-2015` bad key | 422, with `exchangeErrorCode` |
+| No answer, or a server error | timeout, connection reset, 5xx. Binance may still have executed it | 502, with `clientOrderId` |
+| Balances unreachable | timeout, 5xx | 502 |
+| Unreadable request body, or an amount of zero or less | | 400 |
+
+**Safety:**
+- `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `demo-api.binance.com`.
+- The API key and the path to the Ed25519 private key come only from the environment variables `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`. Without them, the broker has no trading gateway and the order endpoints answer 409.
+- A key file that can't be read stops the application at startup.
+- Timestamps use the local clock. Binance accepts requests that arrive within `recv-window` (5 seconds) of it.
+
+**Not covered yet:** rounding quantities to the symbol's step size and checking the minimum order value (via `exchangeInfo`). Binance rejects such orders with a filter failure, which comes back as a 422. Orders aren't stored yet; that comes with the database (§11).
+
+### 7.2 Order lifecycle in the bot (planned, first version: market orders only)
 
 ```mermaid
 stateDiagram-v2
@@ -422,21 +502,21 @@ stateDiagram-v2
 
 Quantities are rounded down to the symbol's step size before validation.
 
-### Fill price
+### 7.3 Fill price
 
 | Mode | Buy | Sell |
 |---|---|---|
 | `TRADING` | Best **ask** at the moment of the signal (`bookTicker`) | Best **bid** |
 | `TRAINING` | Open of the next `1s` candle after the signal | Same |
 
-### Fees
+### 7.4 Fees
 
 `FeeService` uses the exact rates from Binance's signed `GET /api/v3/account/commission` when a **read-only** API key is configured. The key comes from environment variables and is never committed. Without a key, it uses the standard schedule: 0.1% maker and 0.1% taker.
 - Market orders pay the taker rate.
 - The fee is charged in the received asset: the base coin on a buy, the quote coin on a sell.
 - Rates are cached and refreshed periodically. Calculating a fee is a direct call.
 
-### Later order types
+### 7.5 Later order types
 
 These plug into the same lifecycle:
 - `LIMIT`, `STOP_LOSS` and `TAKE_PROFIT` orders, plus their `*_LIMIT` variants.
@@ -592,12 +672,14 @@ erDiagram
   - Trades and events have deterministic ids (run id, execution time, sequence).
   - Unique constraints, plus inserts that ignore conflicts, mean a WebSocket reconnect that re-sends updates never creates duplicate trades.
 
-## 12. REST API (planned)
+## 12. REST API (orders built, the rest planned)
 
-Everything is under `/api`.
+Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`ProblemDetail`).
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/brokers/{broker}/orders` | **Built.** Market order on the demo account (§7.1) |
+| GET | `/brokers/{broker}/balances` | **Built.** Non-zero balances of the demo account |
 | GET | `/bot/status` | State, mode, current run, latest price |
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
 | POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
@@ -615,22 +697,33 @@ Everything is under `/api`.
 Everything goes in `backend/src/main/resources/application.yaml`. Current settings:
 
 ```yaml
+spring:
+  http:
+    clients:
+      connect-timeout: 5s                     # every REST call to Binance
+      read-timeout: 10s
+
 binance:
   name: binance                               # broker name in the registry
-  stream-url: wss://data-stream.binance.vision
-  rest-url: https://data-api.binance.vision
+  stream-url: wss://demo-stream.binance.com   # live candles and bid/ask (demo prices)
+  rest-url: https://data-api.binance.vision   # candle history (real prices)
   interval: ONE_MINUTE                        # ONE_SECOND … ONE_DAY
   tickers:                                    # at least one
     - BTCUSDT
     - ETHUSDT
+  trading:
+    rest-url: https://demo-api.binance.com    # any other host is refused at startup
+    api-key: ${BINANCE_DEMO_API_KEY:}
+    private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}   # Ed25519 private key, PKCS#8 PEM
+    recv-window: 5s
 
 smoke:
   duration: 30s                               # how long the smoke run streams
 ```
 
-Planned additions: starting balance, the active signal generator and its parameters, and the default training range.
+`application-smoke.yaml` turns the web server off for the `smoke` profile, so the smoke run exits by itself.
 
-The optional read-only API key (for exact fee rates) will be set through the environment variables `BINANCE_API_KEY` and `BINANCE_API_SECRET`.
+Planned additions: the database connection, starting balance, the active signal generator and its parameters, and the default training range.
 
 ## 14. Package layout
 
@@ -638,8 +731,9 @@ Built packages are listed with their classes; the rest are planned.
 
 ```
 com.tihomir.t212.tradingbot
-├── broker           Broker, AbstractBroker, BrokerRegistryService
-│   └── binance      BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol
+├── broker           Broker, AbstractBroker, BrokerRegistryService, BrokerNotFoundException
+│   └── binance      BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol,
+│                    BinanceTradingProperties, BinanceTradingGateway, BinanceRequestSigner, BinanceResponse
 ├── marketdata
 │   ├── update       MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
 │   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
@@ -650,10 +744,14 @@ com.tihomir.t212.tradingbot
 ├── bot              (planned) BotMode, BotState, TradingBotService, BotRun, RunStatus
 ├── signal           (planned) SignalGenerator, Signal, SignalContext
 │   └── indicator    (planned) SMA, EMA, RSI, ...
-├── order            (planned) OrderRequest, OrderStatus, RejectionReason, OrderValidator,
-│                    OrderExecutionService, ExecutedOrder
+├── order            OrderService, ExchangeTradingGateway, MarketOrderRequest, OrderSide, OrderAmountType,
+│                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
+│                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
+│                    TradingNotConfiguredException
+│                    (planned) OrderValidator, OrderExecutionService, RejectionReason
 │   └── fee          (planned) FeeService
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
 ├── persistence      (planned) repositories (JdbcClient)
-└── api              (planned) REST controllers and DTOs
+└── api              OrderController, ApiExceptionHandler
+                     (planned) bot controls and read endpoints
 ```

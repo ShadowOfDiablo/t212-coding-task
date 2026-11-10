@@ -1,15 +1,24 @@
 spring:
   application:
     name: t212-spring-boot-project
+  http:
+    clients:
+      connect-timeout: 5s
+      read-timeout: 10s
 
 binance:
   name: binance
-  stream-url: wss://data-stream.binance.vision
+  stream-url: wss://demo-stream.binance.com
   rest-url: https://data-api.binance.vision
   interval: ONE_MINUTE
   tickers:
     - BTCUSDT
     - ETHUSDT
+  trading:
+    rest-url: https://demo-api.binance.com
+    api-key: ${BINANCE_DEMO_API_KEY:}
+    private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}
+    recv-window: 5s
 
 smoke:
   duration: 30s

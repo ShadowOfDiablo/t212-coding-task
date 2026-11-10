@@ -1,6 +1,6 @@
 # Auto Trading Bot
 
-A simulated crypto trading bot: a Java Spring Boot backend that runs the trading logic, and a React frontend that displays it. It reads real market data from Binance and trades against a virtual account. No real orders are ever sent.
+A simulated crypto trading bot: a Java Spring Boot backend that runs the trading logic, and a React frontend that displays it. It reads market data from Binance and places orders on a **Binance Demo Mode** account, which uses fake funds. Orders are never sent to a live trading account.
 
 The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with diagrams of how each part works.
 
@@ -9,11 +9,12 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Part | Status |
 |---|---|
 | Market data: Binance WebSocket streams, REST candle history, ticker price map | Built |
-| Account, orders and fees | Planned |
+| Demo account orders: market buy and sell, balances, over a REST API | Built |
+| Virtual account, order validation and fees (Training) | Planned |
 | Signal generators | Planned |
 | Trading bot loop: Training and Trading modes | Planned |
-| Database (raw SQL, no ORM) | Planned |
-| REST API and React dashboard | Planned |
+| Database: PostgreSQL, raw SQL, no ORM | Planned, next |
+| Rest of the REST API and the React dashboard | Planned |
 
 ## How market data works
 
@@ -42,8 +43,10 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 ├── frontend/          React UI (not set up yet)
 └── backend/           Java Spring Boot project (Maven)
     └── src/main/java/com/tihomir/t212/tradingbot
-        ├── broker         brokers (Binance) and the broker registry
+        ├── api            REST controllers
+        ├── broker         brokers (Binance: market data, signed trading) and the broker registry
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
+        ├── order          market orders, balances, the trading gateway interface
         └── smoke          a short live check of the market data feed
 ```
 
@@ -51,7 +54,8 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 
 - Java 21 (JDK)
 - No Maven installation needed: the backend ships with the Maven wrapper (`mvnw` / `mvnw.cmd`), which downloads the correct Maven version on first use.
-- Internet access to `data-stream.binance.vision` and `data-api.binance.vision` for live data. The tests don't need it.
+- Internet access to `demo-stream.binance.com`, `data-api.binance.vision` and, for orders, `demo-api.binance.com`. The tests don't need it.
+- For orders: a Binance account with Demo Trading enabled, and `openssl` to create a key pair (it ships with Git for Windows).
 
 ## Backend
 
@@ -99,14 +103,63 @@ binance:
 .\mvnw.cmd spring-boot:run
 ```
 
-Without a profile the application starts and stops straight away for now, because nothing runs by default yet. Use the `smoke` profile above to see it work.
+The server listens on `http://localhost:8080`. The market data feed doesn't start by default yet; use the `smoke` profile above to see it.
 
 Build a runnable jar:
 
 ```bash
 ./mvnw package
+java -jar target/t212-spring-boot-project-0.0.1-SNAPSHOT.jar
 java -jar target/t212-spring-boot-project-0.0.1-SNAPSHOT.jar --spring.profiles.active=smoke
 ```
+
+### Trade on the demo account
+
+```mermaid
+flowchart LR
+    Curl["curl"] -- "POST /api/brokers/binance/orders" --> App["Backend<br/>OrderService"]
+    App -- "signed with your Ed25519 key" --> Demo["demo-api.binance.com<br/>(fake funds)"]
+    Demo -- "fills, fees" --> App --> Curl
+```
+
+1. Create an Ed25519 key pair. Keep it **outside** the repository:
+   ```bash
+   mkdir -p ~/binance-demo
+   openssl genpkey -algorithm ed25519 -out ~/binance-demo/private.pem
+   openssl pkey -in ~/binance-demo/private.pem -pubout -out ~/binance-demo/public.pem
+   ```
+2. Log in to Binance, open **Demo Trading**, then **API Management**. Create a key of type **Ed25519** (self-generated) and paste the contents of `public.pem`. Copy the API key it shows.
+3. Set the environment variables in the shell that starts the backend:
+   ```bash
+   export BINANCE_DEMO_API_KEY="<api key>"                                 # bash
+   export BINANCE_DEMO_PRIVATE_KEY_PATH="$HOME/binance-demo/private.pem"
+   ```
+   ```powershell
+   $env:BINANCE_DEMO_API_KEY = "<api key>"                                  # PowerShell
+   $env:BINANCE_DEMO_PRIVATE_KEY_PATH = "$HOME\binance-demo\private.pem"
+   ```
+4. Start the backend (`./mvnw spring-boot:run`). The log says `binance: trading on the demo account at https://demo-api.binance.com`.
+5. Check your balances, buy 10 USDT worth of BTC, then sell it again:
+   ```bash
+   curl localhost:8080/api/brokers/binance/balances
+
+   curl -X POST localhost:8080/api/brokers/binance/orders -H "Content-Type: application/json" \
+        -d '{"ticker":"BTCUSDT","side":"BUY","amount":"10","amountType":"QUOTE_AMOUNT"}'
+
+   curl -X POST localhost:8080/api/brokers/binance/orders -H "Content-Type: application/json" \
+        -d '{"ticker":"BTCUSDT","side":"SELL","amount":"0.00013","amountType":"BASE_QUANTITY"}'
+   ```
+   `QUOTE_AMOUNT` spends (or receives) that much USDT. `BASE_QUANTITY` is an amount of the coin. Binance requires it to be a multiple of the symbol's step size (`0.00001` for BTCUSDT) and worth at least the minimum order value (5 USDT for BTCUSDT). The buy's fee is taken in BTC, so sell a little less than the executed quantity, rounded down to the step size.
+
+| Answer | Meaning |
+|---|---|
+| `201` | Executed. The body has the executed quantity, the USDT amount, the average price and each fill with its fee |
+| `400` | Bad request body, or a ticker that isn't configured |
+| `409` | The environment variables aren't set |
+| `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
+| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` |
+
+The configuration only accepts `demo-api.binance.com` as the trading host, so a live account can't be traded by mistake.
 
 ### Code quality
 

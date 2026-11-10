@@ -2,11 +2,10 @@ package com.tihomir.t212.tradingbot.smoke;
 
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
-import com.tihomir.t212.tradingbot.marketdata.CandleFeeder;
-import com.tihomir.t212.tradingbot.marketdata.CandleFeederStatistics;
-import com.tihomir.t212.tradingbot.marketdata.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.TickerPriceReader;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.feed.CandleFeeder;
+import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceReader;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -50,7 +49,6 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
     while (Instant.now().isBefore(end)) {
       Thread.sleep(REPORT_EVERY.toMillis());
       for (Broker broker : brokers.all()) {
-        logStatistics(broker);
         logPrices(broker);
       }
     }
@@ -93,25 +91,6 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
         update.close(),
         update.closed(),
         update.eventTime());
-  }
-
-  private static void logStatistics(Broker broker) {
-    CandleFeederStatistics statistics = broker.candleFeeder().statistics();
-    log.info(
-        "{} statistics: messages={} parseErrors={} dropped={} queue={} parse average/max={}/{}us"
-            + " lag average/max={}/{}ms exchangeClockOffset={}ms connections={}/{} open",
-        broker.name(),
-        statistics.messages(),
-        statistics.parseErrors(),
-        statistics.droppedUpdates(),
-        statistics.queueDepth(),
-        statistics.averageParseMicros(),
-        statistics.maxParseMicros(),
-        statistics.averageLagMillis(),
-        statistics.maxLagMillis(),
-        statistics.exchangeClockOffsetMillis(),
-        statistics.openConnections(),
-        statistics.connections());
   }
 
   private static void logPrices(Broker broker) {

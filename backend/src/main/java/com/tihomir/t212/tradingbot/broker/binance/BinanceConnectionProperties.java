@@ -1,6 +1,6 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
-import com.tihomir.t212.tradingbot.marketdata.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
 import java.net.URI;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;

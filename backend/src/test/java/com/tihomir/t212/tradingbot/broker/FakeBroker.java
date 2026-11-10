@@ -1,8 +1,8 @@
 package com.tihomir.t212.tradingbot.broker;
 
-import com.tihomir.t212.tradingbot.marketdata.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.ExchangeMarketDataProtocol;
-import com.tihomir.t212.tradingbot.marketdata.FakeExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.feed.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.feed.FakeExchangeMarketDataProtocol;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataMessageHandler;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
 import java.net.URI;

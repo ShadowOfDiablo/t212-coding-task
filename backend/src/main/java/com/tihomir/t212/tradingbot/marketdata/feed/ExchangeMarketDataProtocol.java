@@ -1,5 +1,8 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.feed;
 
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
@@ -16,9 +19,11 @@ public interface ExchangeMarketDataProtocol {
   /**
    * Returns empty for messages that carry no market data, such as subscription acknowledgements.
    *
+   * @param exchangeReceivedAt receive time on the exchange clock, the event time of messages that
+   *     carry none
    * @throws IllegalArgumentException if the message is malformed
    */
-  Optional<MarketDataEvent> parse(String message);
+  Optional<MarketDataEvent> parse(String message, Instant exchangeReceivedAt);
 
   int maxCandlesPerRestHistoryRequest();
 

@@ -1,7 +1,7 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.AbstractBroker;
-import com.tihomir.t212.tradingbot.marketdata.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.feed.ExchangeMarketDataProtocol;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnectionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;

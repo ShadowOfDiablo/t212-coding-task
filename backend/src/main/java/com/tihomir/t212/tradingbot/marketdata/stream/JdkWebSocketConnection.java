@@ -20,6 +20,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
   private static final CompletionStage<Void> MESSAGE_HANDLED =
       CompletableFuture.completedFuture(null);
   private static final int MAX_MESSAGE_CHARS = 1_000_000;
+  private static final int MESSAGES_PER_REQUEST = 1;
 
   private final URI uri;
   private final MarketDataMessageHandler handler;
@@ -90,7 +91,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
   public void onOpen(WebSocket socket) {
     this.webSocket = socket;
     log.info("Connected to {}", uri.getHost());
-    socket.request(1);
+    socket.request(MESSAGES_PER_REQUEST);
   }
 
   @Override
@@ -100,7 +101,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
     } catch (RuntimeException e) {
       log.error("Handling a message from {} failed", uri.getHost(), e);
     } finally {
-      socket.request(1);
+      socket.request(MESSAGES_PER_REQUEST);
     }
     return MESSAGE_HANDLED;
   }
@@ -125,7 +126,7 @@ final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSoc
     } catch (RuntimeException e) {
       log.warn("Answering a ping from {} failed", uri.getHost(), e);
     } finally {
-      socket.request(1);
+      socket.request(MESSAGES_PER_REQUEST);
     }
     return MESSAGE_HANDLED;
   }

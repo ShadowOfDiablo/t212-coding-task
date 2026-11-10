@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.event;
 
 import java.math.BigDecimal;
 import java.time.Instant;

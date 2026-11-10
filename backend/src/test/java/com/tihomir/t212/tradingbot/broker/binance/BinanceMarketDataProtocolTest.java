@@ -3,10 +3,10 @@ package com.tihomir.t212.tradingbot.broker.binance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.tihomir.t212.tradingbot.marketdata.BestBidAskUpdate;
-import com.tihomir.t212.tradingbot.marketdata.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 class BinanceMarketDataProtocolTest {
+
+  private static final Instant RECEIVED = Instant.ofEpochMilli(1762779782500L);
 
   private final BinanceMarketDataProtocol protocol =
       new BinanceMarketDataProtocol(
@@ -54,7 +56,7 @@ class BinanceMarketDataProtocolTest {
 
   @Test
   void parsesCandleMessage() throws IOException {
-    Optional<MarketDataEvent> event = protocol.parse(fixture("candle-stream.json"));
+    Optional<MarketDataEvent> event = protocol.parse(fixture("candle-stream.json"), RECEIVED);
 
     assertThat(event).containsInstanceOf(CandleUpdate.class);
     CandleUpdate candle = (CandleUpdate) event.orElseThrow();
@@ -69,23 +71,28 @@ class BinanceMarketDataProtocolTest {
 
   @Test
   void parsesBookTickerMessage() throws IOException {
-    Optional<MarketDataEvent> event = protocol.parse(fixture("book-ticker-stream.json"));
+    Optional<MarketDataEvent> event = protocol.parse(fixture("book-ticker-stream.json"), RECEIVED);
 
     assertThat(event)
         .contains(
-            new BestBidAskUpdate(
-                "BTCUSDT", new BigDecimal("101520.50000000"), new BigDecimal("101520.60000000")));
+            new BidAskUpdate(
+                "BTCUSDT",
+                new BigDecimal("101520.50000000"),
+                new BigDecimal("101520.60000000"),
+                RECEIVED));
   }
 
   @Test
   void ignoresSubscriptionAcknowledgements() {
-    assertThat(protocol.parse("{\"result\":null,\"id\":1}")).isEmpty();
+    assertThat(protocol.parse("{\"result\":null,\"id\":1}", RECEIVED)).isEmpty();
   }
 
   @Test
   void rejectsMalformedMessages() {
-    assertThatThrownBy(() -> protocol.parse("not json")).isInstanceOf(RuntimeException.class);
-    assertThatThrownBy(() -> protocol.parse("{\"stream\":\"btcusdt@bookTicker\",\"data\":{}}"))
+    assertThatThrownBy(() -> protocol.parse("not json", RECEIVED))
+        .isInstanceOf(RuntimeException.class);
+    assertThatThrownBy(
+            () -> protocol.parse("{\"stream\":\"btcusdt@bookTicker\",\"data\":{}}", RECEIVED))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

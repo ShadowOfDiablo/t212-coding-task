@@ -69,8 +69,8 @@ BrokerRegistryService  (singleton, Map<name, Broker>)
 
 **`CandleFeeder`**
 - Streams all of a broker's tickers over **combined streams**: one connection carries up to 1,024 streams (Binance's limit). With 2 streams per ticker (candle + bookTicker), that's about 500 tickers per connection. Further connections are opened only beyond that.
-- The receive path stays fast: parse the message, update the price map (lock-free), put the `CandleUpdate` on a bounded queue for a separate dispatcher thread, then ask the socket for the next message. A full queue drops and counts updates; the socket is never blocked.
-- It tracks messages, parse errors, parse time, lag, dropped updates and queue depth. Lag is measured against the **exchange's clock**: on start the feeder reads the server time (`GET /api/v3/time` on Binance) and corrects for the local clock offset. If that fails it falls back to the local clock and logs a warning.
+- The receive path stays fast: parse the message, update the price map (lock-free), put the `CandleUpdate` on a bounded queue for a separate dispatcher thread, then ask the socket for the next message. A full queue drops the update and logs a warning; the socket is never blocked.
+- Event times are on the **exchange's clock**. Messages without one (Binance's spot `@bookTicker`) are stamped with the receive time, corrected by the clock offset the feeder measures on start (`GET /api/v3/time` on Binance). If that fails it falls back to the local clock and logs a warning.
 - `history(ticker, interval, from, to)` pages historical candles over REST.
 
 **Binance (public endpoints, no key needed)**
@@ -316,8 +316,10 @@ com.tihomir.t212.tradingbot
 ├── bot            BotMode, BotState, TradingBotService, BotRun, RunStatus
 ├── broker         Broker, AbstractBroker, BrokerRegistryService
 │   └── binance    BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol
-├── marketdata     CandleFeeder, ExchangeMarketDataProtocol, CandleUpdate, BestBidAskUpdate,
-│                  CandleInterval, TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote
+├── marketdata
+│   ├── event      MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
+│   ├── price      TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
+│   ├── feed       CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
 │   └── stream     MarketDataStreamConnection, MarketDataStreamConnectionFactory (JDK WebSocket, reconnect)
 ├── signal         SignalGenerator, Signal, SignalContext
 │   └── indicator  SMA, EMA, RSI, ...

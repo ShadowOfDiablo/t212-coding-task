@@ -1,5 +1,9 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.feed;
 
+import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
@@ -9,12 +13,14 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Text protocol for tests: "C|ticker|close|eventMillis" is a candle, "B|ticker|bid|ask" a best
- * bid/ask, "ack" carries no data, anything else is malformed.
+ * Text protocol for tests: "C|ticker|close|eventMillis" is a candle, "B|ticker|bid|ask" a bid/ask
+ * update, "ack" carries no data, anything else is malformed.
  */
 public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataProtocol {
 
   static final int MAX_STREAMS = 1024;
+  static final String STREAM_URI_PREFIX = "ws://stream.test/?streams=";
+  static final String STREAM_SEPARATOR = "/";
   static final String SERVER_TIME_URI = "http://rest.test/time";
   static final int MAX_CANDLES_PER_REST_HISTORY_REQUEST = 2;
 
@@ -31,15 +37,15 @@ public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataP
 
   @Override
   public URI connectionUri(List<String> streams) {
-    return URI.create("ws://stream.test/" + streams.size());
+    return URI.create(STREAM_URI_PREFIX + String.join(STREAM_SEPARATOR, streams));
   }
 
   @Override
-  public Optional<MarketDataEvent> parse(String message) {
+  public Optional<MarketDataEvent> parse(String message, Instant exchangeReceivedAt) {
     String[] parts = message.split("\\|");
     return switch (parts[0]) {
       case "C" -> Optional.of(liveCandle(parts));
-      case "B" -> Optional.of(bestBidAsk(parts));
+      case "B" -> Optional.of(bidAsk(parts, exchangeReceivedAt));
       case "ack" -> Optional.empty();
       default -> throw new IllegalArgumentException("bad message");
     };
@@ -80,8 +86,9 @@ public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataP
     return candle(parts[1], 0, new BigDecimal(parts[2]), Long.parseLong(parts[3]), false);
   }
 
-  private static BestBidAskUpdate bestBidAsk(String[] parts) {
-    return new BestBidAskUpdate(parts[1], new BigDecimal(parts[2]), new BigDecimal(parts[3]));
+  private static BidAskUpdate bidAsk(String[] parts, Instant eventTime) {
+    return new BidAskUpdate(
+        parts[1], new BigDecimal(parts[2]), new BigDecimal(parts[3]), eventTime);
   }
 
   private static CandleUpdate candle(

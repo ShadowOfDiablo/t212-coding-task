@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -6,6 +6,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceMap;
+import com.tihomir.t212.tradingbot.marketdata.price.TickerQuote;
+import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,6 +31,11 @@ import org.springframework.web.client.RestClient;
 class CandleFeederTest {
 
   private static final Instant RECEIVED = Instant.parse("2026-11-10T10:00:01Z");
+  private static final Duration EXCHANGE_CLOCK_AHEAD = Duration.ofSeconds(10);
+  private static final Duration CLOCK_TOLERANCE = Duration.ofSeconds(1);
+  private static final int STREAMS_PER_TICKER = 2;
+  private static final int TICKERS_PER_CONNECTION =
+      FakeExchangeMarketDataProtocol.MAX_STREAMS / STREAMS_PER_TICKER;
 
   private final FakeMarketDataStreamConnectionFactory connections =
       new FakeMarketDataStreamConnectionFactory();
@@ -41,32 +52,34 @@ class CandleFeederTest {
 
   @Test
   void groupsStreamsByConnectionWithoutSplittingATicker() {
-    List<String> tickers = IntStream.range(0, 1300).mapToObj(i -> "T" + i).toList();
+    int tickerCount = 2 * TICKERS_PER_CONNECTION + 276;
+    List<String> tickers = tickers(tickerCount);
     feeder = feeder(tickers, new TickerPriceMap(tickers));
 
-    List<List<String>> streamGroups = feeder.groupStreamsByConnection();
+    List<List<String>> streamsPerConnection =
+        feeder.connectionUris().stream().map(CandleFeederTest::streamsOf).toList();
 
-    assertThat(streamGroups).hasSize(3);
-    assertThat(streamGroups)
-        .allMatch(group -> group.size() <= FakeExchangeMarketDataProtocol.MAX_STREAMS);
-    assertThat(streamGroups.get(2)).hasSize((1300 - 2 * 512) * 2);
-    Set<String> streams = new HashSet<>();
-    streamGroups.forEach(streams::addAll);
-    assertThat(streams).hasSize(2600);
-    assertThat(streamGroups.get(0))
-        .contains("t511@candle", "t511@book")
-        .doesNotContain("t512@candle");
+    assertThat(streamsPerConnection).hasSize(3);
+    assertThat(streamsPerConnection)
+        .allMatch(streams -> streams.size() <= FakeExchangeMarketDataProtocol.MAX_STREAMS);
+    assertThat(streamsPerConnection.get(2)).hasSize(276 * STREAMS_PER_TICKER);
+    Set<String> allStreams = new HashSet<>();
+    streamsPerConnection.forEach(allStreams::addAll);
+    assertThat(allStreams).hasSize(tickerCount * STREAMS_PER_TICKER);
+    String lastTickerOfFirstConnection = "t" + (TICKERS_PER_CONNECTION - 1);
+    assertThat(streamsPerConnection.get(0))
+        .contains(lastTickerOfFirstConnection + "@candle", lastTickerOfFirstConnection + "@book")
+        .doesNotContain("t" + TICKERS_PER_CONNECTION + "@candle");
   }
 
   @Test
   void opensOneConnectionPerStreamGroupAndClosesThemOnStop() {
-    List<String> tickers = IntStream.range(0, 600).mapToObj(i -> "T" + i).toList();
+    List<String> tickers = tickers(TICKERS_PER_CONNECTION + 1);
     feeder = feeder(tickers, new TickerPriceMap(tickers));
     expectServerTime(Instant.now());
 
     feeder.start();
-    assertThat(connections.opened()).hasSize(2);
-    assertThat(feeder.statistics().openConnections()).isEqualTo(2);
+    assertThat(connections.opened()).hasSize(2).allMatch(FakeMarketDataStreamConnection::isOpen);
 
     feeder.stop();
     assertThat(connections.opened()).allMatch(connection -> !connection.isOpen());
@@ -74,7 +87,7 @@ class CandleFeederTest {
 
   @Test
   void startIsAllOrNothingWhenAConnectionFails() {
-    List<String> tickers = IntStream.range(0, 1300).mapToObj(i -> "T" + i).toList();
+    List<String> tickers = tickers(2 * TICKERS_PER_CONNECTION + 1);
     feeder = feeder(tickers, new TickerPriceMap(tickers));
     connections.failOnOpenNumber(3);
     expectServerTime(Instant.now());
@@ -82,33 +95,34 @@ class CandleFeederTest {
     assertThatThrownBy(feeder::start).isInstanceOf(IllegalStateException.class);
 
     assertThat(connections.opened()).hasSize(2).allMatch(connection -> !connection.isOpen());
-    assertThat(feeder.statistics().connections()).isZero();
   }
 
   @Test
-  void measuresLagAgainstTheExchangeClock() {
-    feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
-    expectServerTime(Instant.now().plusSeconds(10));
+  void stampsBidAskUpdatesWithTheExchangeClock() {
+    TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT"));
+    feeder = feeder(List.of("BTCUSDT"), prices);
+    expectServerTime(Instant.now().plus(EXCHANGE_CLOCK_AHEAD));
     feeder.start();
 
-    long eventMillis = RECEIVED.toEpochMilli();
-    connections.opened().getFirst().receive("C|BTCUSDT|101.5|" + eventMillis, RECEIVED);
+    connections.opened().getFirst().receive("B|BTCUSDT|100.1|100.2", RECEIVED);
 
-    CandleFeederStatistics statistics = feeder.statistics();
-    assertThat(statistics.exchangeClockOffsetMillis()).isBetween(9_000L, 11_000L);
-    assertThat(statistics.averageLagMillis()).isBetween(9_000L, 11_000L);
+    Instant expected = RECEIVED.plus(EXCHANGE_CLOCK_AHEAD);
+    assertThat(prices.get("BTCUSDT").orElseThrow().updatedAt())
+        .isBetween(expected.minus(CLOCK_TOLERANCE), expected.plus(CLOCK_TOLERANCE));
   }
 
   @Test
   void startsWithTheLocalClockWhenTheExchangeClockIsUnavailable() {
-    feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
+    TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT"));
+    feeder = feeder(List.of("BTCUSDT"), prices);
     rest.expect(requestTo(FakeExchangeMarketDataProtocol.SERVER_TIME_URI))
         .andRespond(withServerError());
 
     feeder.start();
+    connections.opened().getFirst().receive("B|BTCUSDT|100.1|100.2", RECEIVED);
 
     assertThat(connections.opened()).hasSize(1);
-    assertThat(feeder.statistics().exchangeClockOffsetMillis()).isZero();
+    assertThat(prices.get("BTCUSDT").orElseThrow().updatedAt()).isEqualTo(RECEIVED);
   }
 
   @Test
@@ -126,11 +140,10 @@ class CandleFeederTest {
     assertThat(update).isNotNull();
     assertThat(update.close()).isEqualByComparingTo("101.5");
     assertThat(prices.get("BTCUSDT").orElseThrow().lastPrice()).isEqualByComparingTo("101.5");
-    assertThat(feeder.statistics().messages()).isEqualTo(1);
   }
 
   @Test
-  void bookTickerUpdatesBidAndAskOnly() {
+  void bidAskUpdateChangesBidAndAskOnly() {
     TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT"));
     feeder = feeder(List.of("BTCUSDT"), prices);
     List<CandleUpdate> received = new ArrayList<>();
@@ -142,20 +155,21 @@ class CandleFeederTest {
     assertThat(quote.bid()).isEqualByComparingTo("100.1");
     assertThat(quote.ask()).isEqualByComparingTo("100.2");
     assertThat(quote.lastPrice()).isNull();
+    assertThat(quote.updatedAt()).isEqualTo(RECEIVED);
     assertThat(received).isEmpty();
   }
 
   @Test
-  void countsUnreadableMessagesWithoutFailing() {
+  void keepsProcessingAfterUnreadableMessages() {
     TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT"));
     feeder = feeder(List.of("BTCUSDT"), prices);
 
     feeder.onMessage("garbage", RECEIVED);
     feeder.onMessage("ack", RECEIVED);
-
-    assertThat(feeder.statistics().parseErrors()).isEqualTo(1);
-    assertThat(feeder.statistics().messages()).isEqualTo(1);
     assertThat(prices.get("BTCUSDT")).isEmpty();
+
+    feeder.onMessage("B|BTCUSDT|100.1|100.2", RECEIVED);
+    assertThat(prices.get("BTCUSDT")).isPresent();
   }
 
   @Test
@@ -187,6 +201,18 @@ class CandleFeederTest {
         prices,
         connections,
         restBuilder.build());
+  }
+
+  private static List<String> tickers(int count) {
+    return IntStream.range(0, count).mapToObj(index -> "T" + index).toList();
+  }
+
+  private static List<String> streamsOf(URI connectionUri) {
+    String streams =
+        connectionUri
+            .toString()
+            .substring(FakeExchangeMarketDataProtocol.STREAM_URI_PREFIX.length());
+    return List.of(streams.split(FakeExchangeMarketDataProtocol.STREAM_SEPARATOR));
   }
 
   private void expectServerTime(Instant serverTime) {

@@ -1,4 +1,4 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.feed;
 
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataMessageHandler;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;

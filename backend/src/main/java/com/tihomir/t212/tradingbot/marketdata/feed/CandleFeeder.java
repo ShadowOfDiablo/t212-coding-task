@@ -1,7 +1,14 @@
-package com.tihomir.t212.tradingbot.marketdata;
+package com.tihomir.t212.tradingbot.marketdata.feed;
 
+import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.price.TickerPriceWriter;
+import com.tihomir.t212.tradingbot.marketdata.price.TickerQuoteSource;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnection;
 import com.tihomir.t212.tradingbot.marketdata.stream.MarketDataStreamConnectionFactory;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,8 +17,7 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -20,6 +26,7 @@ public final class CandleFeeder implements AutoCloseable {
 
   private static final Logger log = LoggerFactory.getLogger(CandleFeeder.class);
   private static final int QUEUE_CAPACITY = 10_000;
+  private static final int MIN_TICKERS_PER_CONNECTION = 1;
 
   private final String name;
   private final ExchangeMarketDataProtocol protocol;
@@ -35,15 +42,6 @@ public final class CandleFeeder implements AutoCloseable {
   private Thread dispatcher;
   private volatile boolean running;
   private volatile Duration exchangeClockOffset = Duration.ZERO;
-
-  private final LongAdder messages = new LongAdder();
-  private final LongAdder parseErrors = new LongAdder();
-  private final LongAdder droppedUpdates = new LongAdder();
-  private final AtomicLong parseNanosTotal = new AtomicLong();
-  private final AtomicLong parseNanosMax = new AtomicLong();
-  private final AtomicLong lagMillisTotal = new AtomicLong();
-  private final AtomicLong lagMillisMax = new AtomicLong();
-  private final LongAdder lagSamples = new LongAdder();
 
   public CandleFeeder(
       String name,
@@ -97,7 +95,7 @@ public final class CandleFeeder implements AutoCloseable {
       return offset;
     } catch (RuntimeException e) {
       log.warn(
-          "{}: could not read the exchange clock, lag uses the local clock: {}",
+          "{}: could not read the exchange clock, event times use the local clock: {}",
           name,
           e.toString());
       return Duration.ZERO;
@@ -105,8 +103,8 @@ public final class CandleFeeder implements AutoCloseable {
   }
 
   private void openConnections() {
-    for (List<String> streams : groupStreamsByConnection()) {
-      connections.add(connectionFactory.open(protocol.connectionUri(streams), this::onMessage));
+    for (URI connectionUri : connectionUris()) {
+      connections.add(connectionFactory.open(connectionUri, this::onMessage));
     }
   }
 
@@ -147,99 +145,65 @@ public final class CandleFeeder implements AutoCloseable {
     return candles;
   }
 
-  public CandleFeederStatistics statistics() {
-    long count = messages.sum();
-    long samples = lagSamples.sum();
-    int open = (int) connections.stream().filter(MarketDataStreamConnection::isOpen).count();
-    return new CandleFeederStatistics(
-        count,
-        parseErrors.sum(),
-        droppedUpdates.sum(),
-        queue.size(),
-        average(parseNanosTotal.get(), count) / 1_000,
-        parseNanosMax.get() / 1_000,
-        average(lagMillisTotal.get(), samples),
-        lagMillisMax.get(),
-        exchangeClockOffset.toMillis(),
-        connections.size(),
-        open);
+  List<URI> connectionUris() {
+    int tickersPerConnection = tickersPerConnection();
+    int tickerCount = tickers.size();
+    return IntStream.iterate(0, start -> start < tickerCount, start -> start + tickersPerConnection)
+        .mapToObj(start -> tickerGroupStartingAt(start, tickersPerConnection))
+        .map(tickerGroup -> protocol.connectionUri(streamNamesFor(tickerGroup)))
+        .toList();
   }
 
-  List<List<String>> groupStreamsByConnection() {
+  private int tickersPerConnection() {
     int streamsPerTicker = protocol.streamNames(tickers.getFirst(), interval).size();
-    int tickersPerConnection = Math.max(1, protocol.maxStreamsPerConnection() / streamsPerTicker);
-    int tickerCount = tickers.size();
-    List<List<String>> streamGroups = new ArrayList<>();
-    for (int start = 0; start < tickerCount; start += tickersPerConnection) {
-      int end = Math.min(start + tickersPerConnection, tickerCount);
-      List<String> tickerGroup = tickers.subList(start, end);
-      streamGroups.add(streamNamesFor(tickerGroup));
-    }
-    return streamGroups;
+    return Math.max(
+        MIN_TICKERS_PER_CONNECTION, protocol.maxStreamsPerConnection() / streamsPerTicker);
+  }
+
+  private List<String> tickerGroupStartingAt(int start, int tickersPerConnection) {
+    int end = Math.min(start + tickersPerConnection, tickers.size());
+    return tickers.subList(start, end);
   }
 
   private List<String> streamNamesFor(List<String> tickerGroup) {
-    List<String> streams = new ArrayList<>();
-    for (String ticker : tickerGroup) {
-      streams.addAll(protocol.streamNames(ticker, interval));
-    }
-    return streams;
+    return tickerGroup.stream()
+        .flatMap(ticker -> protocol.streamNames(ticker, interval).stream())
+        .toList();
   }
 
   void onMessage(String message, Instant receivedAt) {
-    long start = System.nanoTime();
     Optional<MarketDataEvent> event;
     try {
-      event = protocol.parse(message);
+      event = protocol.parse(message, receivedAt.plus(exchangeClockOffset));
     } catch (RuntimeException e) {
-      parseErrors.increment();
-      log.debug("{}: unreadable message: {}", name, message, e);
+      log.warn("{}: unreadable message: {}", name, message, e);
       return;
     }
-    long parseNanos = System.nanoTime() - start;
-    messages.increment();
-    parseNanosTotal.addAndGet(parseNanos);
-    parseNanosMax.accumulateAndGet(parseNanos, Math::max);
-    event.ifPresent(e -> applyMarketDataEvent(e, receivedAt));
+    event.ifPresent(this::applyMarketDataEvent);
   }
 
-  private void applyMarketDataEvent(MarketDataEvent event, Instant receivedAt) {
+  private void applyMarketDataEvent(MarketDataEvent event) {
     switch (event) {
-      case CandleUpdate candle -> applyCandleUpdate(candle, receivedAt);
-      case BestBidAskUpdate bestBidAsk -> applyBestBidAskUpdate(bestBidAsk, receivedAt);
+      case CandleUpdate candle -> applyCandleUpdate(candle);
+      case BidAskUpdate bidAsk -> applyBidAskUpdate(bidAsk);
     }
   }
 
-  private void applyCandleUpdate(CandleUpdate candle, Instant receivedAt) {
+  private void applyCandleUpdate(CandleUpdate candle) {
     priceWriter.updateLastPrice(
         candle.ticker(), candle.close(), candle.eventTime(), TickerQuoteSource.WEBSOCKET);
-    recordLag(
-        Duration.between(candle.eventTime(), receivedAt.plus(exchangeClockOffset)).toMillis());
     if (!queue.offer(candle)) {
-      droppedUpdates.increment();
+      log.warn("{}: dispatch queue is full, dropped a candle update for {}", name, candle.ticker());
     }
   }
 
-  private void applyBestBidAskUpdate(BestBidAskUpdate bestBidAsk, Instant receivedAt) {
+  private void applyBidAskUpdate(BidAskUpdate bidAsk) {
     priceWriter.updateBidAsk(
-        bestBidAsk.ticker(),
-        bestBidAsk.bid(),
-        bestBidAsk.ask(),
-        receivedAt,
+        bidAsk.ticker(),
+        bidAsk.bid(),
+        bidAsk.ask(),
+        bidAsk.eventTime(),
         TickerQuoteSource.WEBSOCKET);
-  }
-
-  private static long average(long total, long count) {
-    if (count == 0) {
-      return 0;
-    }
-    return total / count;
-  }
-
-  private void recordLag(long lagMillis) {
-    lagSamples.increment();
-    lagMillisTotal.addAndGet(lagMillis);
-    lagMillisMax.accumulateAndGet(lagMillis, Math::max);
   }
 
   private void dispatchLoop() {

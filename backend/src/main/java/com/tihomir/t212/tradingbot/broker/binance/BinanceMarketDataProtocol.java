@@ -1,12 +1,13 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
-import com.tihomir.t212.tradingbot.marketdata.BestBidAskUpdate;
-import com.tihomir.t212.tradingbot.marketdata.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.CandleUpdate;
-import com.tihomir.t212.tradingbot.marketdata.ExchangeMarketDataProtocol;
-import com.tihomir.t212.tradingbot.marketdata.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.event.BidAskUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.event.CandleUpdate;
+import com.tihomir.t212.tradingbot.marketdata.event.MarketDataEvent;
+import com.tihomir.t212.tradingbot.marketdata.feed.ExchangeMarketDataProtocol;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,14 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
   private static final int MAX_CANDLES_PER_REST_HISTORY_REQUEST = 1000;
   private static final String CANDLE_STREAM = "@kline_";
   private static final String BOOK_TICKER_STREAM = "@bookTicker";
+  private static final int OPEN_TIME_COLUMN = 0;
+  private static final int OPEN_COLUMN = 1;
+  private static final int HIGH_COLUMN = 2;
+  private static final int LOW_COLUMN = 3;
+  private static final int CLOSE_COLUMN = 4;
+  private static final int VOLUME_COLUMN = 5;
+  private static final int CLOSE_TIME_COLUMN = 6;
+  private static final Duration INCLUSIVE_END_TIME_OFFSET = Duration.ofMillis(1);
 
   private final URI streamUrl;
   private final URI restUrl;
@@ -50,7 +59,7 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
   }
 
   @Override
-  public Optional<MarketDataEvent> parse(String message) {
+  public Optional<MarketDataEvent> parse(String message, Instant exchangeReceivedAt) {
     JsonNode root = jsonMapper.readTree(message);
     JsonNode stream = root.get("stream");
     JsonNode data = root.get("data");
@@ -60,8 +69,11 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
     String name = stream.asString();
     if (name.endsWith(BOOK_TICKER_STREAM)) {
       return Optional.of(
-          new BestBidAskUpdate(
-              required(data, "s").asString(), decimal(data, "b"), decimal(data, "a")));
+          new BidAskUpdate(
+              required(data, "s").asString(),
+              decimal(data, "b"),
+              decimal(data, "a"),
+              exchangeReceivedAt));
     }
     if (name.contains(CANDLE_STREAM)) {
       JsonNode candle = required(data, "k");
@@ -95,7 +107,7 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
         .queryParam("symbol", ticker)
         .queryParam("interval", intervalCode(interval))
         .queryParam("startTime", from.toEpochMilli())
-        .queryParam("endTime", to.toEpochMilli() - 1)
+        .queryParam("endTime", to.minus(INCLUSIVE_END_TIME_OFFSET).toEpochMilli())
         .queryParam("limit", maxCandles)
         .build()
         .toUri();
@@ -105,18 +117,18 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
   public List<CandleUpdate> parseCandles(String body, String ticker, CandleInterval interval) {
     List<CandleUpdate> candles = new ArrayList<>();
     for (JsonNode row : jsonMapper.readTree(body)) {
-      Instant closeTime = Instant.ofEpochMilli(row.get(6).asLong());
+      Instant closeTime = Instant.ofEpochMilli(row.get(CLOSE_TIME_COLUMN).asLong());
       candles.add(
           new CandleUpdate(
               ticker,
               interval,
-              Instant.ofEpochMilli(row.get(0).asLong()),
+              Instant.ofEpochMilli(row.get(OPEN_TIME_COLUMN).asLong()),
               closeTime,
-              new BigDecimal(row.get(1).asString()),
-              new BigDecimal(row.get(2).asString()),
-              new BigDecimal(row.get(3).asString()),
-              new BigDecimal(row.get(4).asString()),
-              new BigDecimal(row.get(5).asString()),
+              new BigDecimal(row.get(OPEN_COLUMN).asString()),
+              new BigDecimal(row.get(HIGH_COLUMN).asString()),
+              new BigDecimal(row.get(LOW_COLUMN).asString()),
+              new BigDecimal(row.get(CLOSE_COLUMN).asString()),
+              new BigDecimal(row.get(VOLUME_COLUMN).asString()),
               true,
               closeTime));
     }

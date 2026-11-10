@@ -1,0 +1,181 @@
+package com.tihomir.t212.tradingbot.marketdata.stream;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+final class JdkWebSocketConnection implements MarketDataStreamConnection, WebSocket.Listener {
+
+  private static final Logger log = LoggerFactory.getLogger(JdkWebSocketConnection.class);
+  private static final CompletionStage<Void> MESSAGE_HANDLED =
+      CompletableFuture.completedFuture(null);
+  private static final int MAX_MESSAGE_CHARS = 1_000_000;
+
+  private final URI uri;
+  private final MarketDataMessageHandler handler;
+  private final HttpClient httpClient;
+  private final ScheduledExecutorService reconnectScheduler;
+  private final Duration connectTimeout;
+  private final Duration reconnectDelay;
+  private final StringBuilder messageBuffer = new StringBuilder();
+  private volatile WebSocket webSocket;
+  private volatile boolean closed;
+
+  JdkWebSocketConnection(
+      URI uri,
+      MarketDataMessageHandler handler,
+      HttpClient httpClient,
+      ScheduledExecutorService reconnectScheduler,
+      Duration connectTimeout,
+      Duration reconnectDelay) {
+    this.uri = uri;
+    this.handler = handler;
+    this.httpClient = httpClient;
+    this.reconnectScheduler = reconnectScheduler;
+    this.connectTimeout = connectTimeout;
+    this.reconnectDelay = reconnectDelay;
+  }
+
+  void connect() {
+    if (closed) {
+      return;
+    }
+    httpClient
+        .newWebSocketBuilder()
+        .connectTimeout(connectTimeout)
+        .buildAsync(uri, this)
+        .whenComplete(this::onConnectCompleted);
+  }
+
+  private void reconnect() {
+    try {
+      connect();
+    } catch (RuntimeException e) {
+      log.error("Reconnecting to {} failed", uri.getHost(), e);
+      scheduleReconnect();
+    }
+  }
+
+  private void onConnectCompleted(WebSocket socket, Throwable error) {
+    if (error != null) {
+      log.warn("Connecting to {} failed: {}", uri.getHost(), error.toString());
+      scheduleReconnect();
+    }
+  }
+
+  private void scheduleReconnect() {
+    if (closed || reconnectScheduler.isShutdown()) {
+      return;
+    }
+    log.info("Reconnecting to {} in {}", uri.getHost(), reconnectDelay);
+    try {
+      reconnectScheduler.schedule(
+          this::reconnect, reconnectDelay.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (RejectedExecutionException e) {
+      log.info("Not reconnecting to {}: the scheduler is shutting down", uri.getHost());
+    }
+  }
+
+  @Override
+  public void onOpen(WebSocket socket) {
+    this.webSocket = socket;
+    log.info("Connected to {}", uri.getHost());
+    socket.request(1);
+  }
+
+  @Override
+  public CompletionStage<Void> onText(WebSocket socket, CharSequence data, boolean last) {
+    try {
+      appendFragment(data, last);
+    } catch (RuntimeException e) {
+      log.error("Handling a message from {} failed", uri.getHost(), e);
+    } finally {
+      socket.request(1);
+    }
+    return MESSAGE_HANDLED;
+  }
+
+  private void appendFragment(CharSequence data, boolean last) {
+    messageBuffer.append(data);
+    if (messageBuffer.length() > MAX_MESSAGE_CHARS) {
+      messageBuffer.setLength(0);
+      throw new IllegalStateException("Message exceeded " + MAX_MESSAGE_CHARS + " characters");
+    }
+    if (last) {
+      String message = messageBuffer.toString();
+      messageBuffer.setLength(0);
+      handler.onMessage(message, Instant.now());
+    }
+  }
+
+  @Override
+  public CompletionStage<Void> onPing(WebSocket socket, ByteBuffer message) {
+    try {
+      socket.sendPong(message).whenComplete(this::onPongSent);
+    } catch (RuntimeException e) {
+      log.warn("Answering a ping from {} failed", uri.getHost(), e);
+    } finally {
+      socket.request(1);
+    }
+    return MESSAGE_HANDLED;
+  }
+
+  private void onPongSent(WebSocket socket, Throwable error) {
+    if (error != null) {
+      log.warn("Sending a pong to {} failed: {}", uri.getHost(), error.toString());
+    }
+  }
+
+  @Override
+  public CompletionStage<Void> onClose(WebSocket socket, int statusCode, String reason) {
+    log.info("Connection to {} closed: {} {}", uri.getHost(), statusCode, reason);
+    resetAndReconnect();
+    return MESSAGE_HANDLED;
+  }
+
+  @Override
+  public void onError(WebSocket socket, Throwable error) {
+    log.warn("Connection to {} failed: {}", uri.getHost(), error.toString());
+    resetAndReconnect();
+  }
+
+  private void resetAndReconnect() {
+    webSocket = null;
+    messageBuffer.setLength(0);
+    scheduleReconnect();
+  }
+
+  @Override
+  public boolean isOpen() {
+    WebSocket socket = webSocket;
+    if (socket == null) {
+      return false;
+    }
+    return !socket.isInputClosed();
+  }
+
+  @Override
+  public void close() {
+    closed = true;
+    WebSocket socket = webSocket;
+    if (socket != null) {
+      socket.sendClose(WebSocket.NORMAL_CLOSURE, "").whenComplete(this::onCloseSent);
+    }
+  }
+
+  private void onCloseSent(WebSocket socket, Throwable error) {
+    if (error != null) {
+      log.debug("Closing the connection to {} failed: {}", uri.getHost(), error.toString());
+    }
+  }
+}

@@ -164,8 +164,9 @@ flowchart LR
    $env:BINANCE_DEMO_PRIVATE_KEY_PATH = "$HOME\binance-demo\private.pem"
    ```
 4. Start the backend (`./mvnw spring-boot:run`). The log says `binance: trading on the demo account at https://demo-api.binance.com`.
-5. Check your balances, buy 10 USDT worth of BTC, then sell it again:
+5. Check the traded tickers and your balances, buy 10 USDT worth of BTC, then sell it again:
    ```bash
+   curl localhost:8080/api/brokers/binance/tickers
    curl localhost:8080/api/brokers/binance/balance
 
    curl -X POST localhost:8080/api/brokers/binance/orders -H "Content-Type: application/json" \
@@ -193,6 +194,15 @@ curl localhost:8080/api/brokers/binance/orders/open
 curl localhost:8080/api/brokers/binance/orders/history
 curl localhost:8080/api/brokers/binance/orders/rejected
 ```
+
+**Live round-trip test.** `DemoAccountRoundTripLiveTest` starts the whole application and places **real orders on your demo account**. It buys 10 USDT of the first traded ticker and checks the order is `FILLED`, in the history, and that the coin balance goes up. Then it sells 9.5 USDT of it (a little less, because the buy fee was taken in the coin) and checks the balance goes down. A little dust stays behind. It only runs when you ask for it, with the API key variables set and Docker running:
+
+```bash
+BINANCE_DEMO_LIVE_TESTS=true ./mvnw test -Dtest=DemoAccountRoundTripLiveTest           # bash
+$env:BINANCE_DEMO_LIVE_TESTS = "true"; .\mvnw.cmd test "-Dtest=DemoAccountRoundTripLiveTest"   # PowerShell
+```
+
+In normal builds and in CI it is skipped.
 
 The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
 

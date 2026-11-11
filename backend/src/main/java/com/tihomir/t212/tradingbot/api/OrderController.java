@@ -30,7 +30,22 @@ public class OrderController {
   }
 
   @GetMapping("/balance")
-  public AccountBalanceResponse accountBalance(@PathVariable String broker) {
-    return new AccountBalanceResponse(orderService.accountBalances(broker));
+  public AccountBalanceResponse getAccountBalances(@PathVariable String broker) {
+    return new AccountBalanceResponse(orderService.getAccountBalances(broker).balances());
+  }
+
+  @GetMapping("/orders/open")
+  public OpenOrderListResponse getOpenOrders(@PathVariable String broker) {
+    return new OpenOrderListResponse(orderService.getOpenOrders(broker).openOrders());
+  }
+
+  @GetMapping("/orders/history")
+  public OrderHistoryResponse getOrderHistory(@PathVariable String broker) {
+    return new OrderHistoryResponse(orderService.getOrderHistory(broker).orders());
+  }
+
+  @GetMapping("/orders/rejected")
+  public RejectedOrderListResponse getRejectedOrders(@PathVariable String broker) {
+    return new RejectedOrderListResponse(orderService.getRejectedOrders(broker).rejectedOrders());
   }
 }

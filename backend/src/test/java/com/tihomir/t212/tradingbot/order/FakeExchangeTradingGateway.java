@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public final class FakeExchangeTradingGateway implements ExchangeTradingGateway {
 
+  public static final long EXCHANGE_ORDER_ID = 28;
   public static final Instant SNAPSHOT_TIME = Instant.ofEpochMilli(1_000);
   public static final List<AssetBalance> BALANCES =
       List.of(new AssetBalance("USDT", new BigDecimal("100"), BigDecimal.ZERO));
@@ -26,7 +27,7 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
     }
     placedOrders.add(request);
     return new ExecutedOrder(
-        1,
+        EXCHANGE_ORDER_ID,
         "tb-fake",
         request.ticker(),
         request.side(),

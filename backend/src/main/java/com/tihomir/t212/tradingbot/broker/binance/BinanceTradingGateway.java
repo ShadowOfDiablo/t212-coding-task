@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.RequestSigner;
 import com.tihomir.t212.tradingbot.broker.binance.util.OrderUtil;
+import com.tihomir.t212.tradingbot.broker.binance.util.QueryParameters;
 import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
@@ -14,7 +15,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpRequest;
@@ -77,7 +77,10 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
   public AccountBalanceSnapshot accountBalances() {
     try {
       BinanceResponse response =
-          sendSignedRequest(HttpMethod.GET, ACCOUNT_PATH, Map.of("omitZeroBalances", "true"));
+          sendSignedRequest(
+              HttpMethod.GET,
+              ACCOUNT_PATH,
+              new QueryParameters(Map.of("omitZeroBalances", "true")));
       if (!response.successful()) {
         throw accountFailure(response);
       }
@@ -90,13 +93,14 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
   }
 
   private BinanceResponse sendSignedRequest(
-      HttpMethod method, String path, Map<String, String> parameters) {
-    Map<String, String> signedParameters = new LinkedHashMap<>(parameters);
-    signedParameters.put("recvWindow", String.valueOf(tradingProperties.recvWindow().toMillis()));
-    signedParameters.put("timestamp", String.valueOf(clock.millis()));
+      HttpMethod method, String path, QueryParameters parameters) {
+    QueryParameters signedParameters =
+        parameters
+            .withParameter("recvWindow", String.valueOf(tradingProperties.recvWindow().toMillis()))
+            .withParameter("timestamp", String.valueOf(clock.millis()));
     return restClient
         .method(method)
-        .uri(signedUri(path, OrderUtil.queryString(signedParameters)))
+        .uri(signedUri(path, signedParameters.queryString()))
         .header(API_KEY_HEADER, tradingProperties.apiKey())
         .exchange(BinanceTradingGateway::readResponse);
   }

@@ -155,7 +155,7 @@ public final class CandleFeeder implements AutoCloseable {
   }
 
   private int tickersPerConnection() {
-    int streamsPerTicker = protocol.streamNames(tickers.getFirst(), interval).size();
+    int streamsPerTicker = protocol.streamNames(tickers.getFirst(), interval).streamNames().size();
     return Math.max(
         MIN_TICKERS_PER_CONNECTION, protocol.maxStreamsPerConnection() / streamsPerTicker);
   }
@@ -167,7 +167,7 @@ public final class CandleFeeder implements AutoCloseable {
 
   private List<String> streamNamesFor(List<String> tickerGroup) {
     return tickerGroup.stream()
-        .flatMap(ticker -> protocol.streamNames(ticker, interval).stream())
+        .flatMap(ticker -> protocol.streamNames(ticker, interval).streamNames().stream())
         .toList();
   }
 

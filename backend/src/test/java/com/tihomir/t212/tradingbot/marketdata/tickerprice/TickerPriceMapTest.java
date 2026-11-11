@@ -49,8 +49,8 @@ class TickerPriceMapTest {
   }
 
   @Test
-  void tickerSetCannotBeModified() {
-    assertThatThrownBy(() -> prices.tickers().remove("BTCUSDT"))
+  void tickerListCannotBeModified() {
+    assertThatThrownBy(() -> prices.tickers().tickers().remove("BTCUSDT"))
         .isInstanceOf(UnsupportedOperationException.class);
   }
 }

@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.broker;
 
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleFeeder;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerList;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceMap;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
@@ -12,7 +13,7 @@ import org.springframework.web.client.RestClient;
 public abstract class AbstractBroker implements Broker, AutoCloseable {
 
   private final String name;
-  private final List<String> tickers;
+  private final TickerList tickers;
   private final CandleInterval interval;
   private final TickerPriceMap prices;
   private final MarketDataStreamConnectionFactory connectionFactory;
@@ -26,9 +27,9 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
       MarketDataStreamConnectionFactory connectionFactory,
       RestClient restClient) {
     this.name = name;
-    this.tickers = List.copyOf(tickers);
+    this.tickers = new TickerList(tickers);
     this.interval = interval;
-    this.prices = new TickerPriceMap(this.tickers);
+    this.prices = new TickerPriceMap(this.tickers.tickers());
     this.connectionFactory = connectionFactory;
     this.restClient = restClient;
   }
@@ -41,7 +42,7 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
   }
 
   @Override
-  public final List<String> tickers() {
+  public final TickerList tickers() {
     return tickers;
   }
 
@@ -52,7 +53,7 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
           new CandleFeeder(
               name,
               createMarketDataProtocol(),
-              tickers,
+              tickers.tickers(),
               interval,
               prices,
               connectionFactory,

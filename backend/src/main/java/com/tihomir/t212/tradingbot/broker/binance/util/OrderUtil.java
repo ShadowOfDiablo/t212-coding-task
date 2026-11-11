@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.broker.binance.util;
 
+import com.tihomir.t212.tradingbot.order.AccountBalanceList;
 import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
@@ -8,46 +9,36 @@ import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderFill;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import tools.jackson.databind.JsonNode;
 
 public final class OrderUtil {
 
   private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
-  private static final String MARKET_ORDER_TYPE = "MARKET";
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
 
   private OrderUtil() {}
 
+  /** Marks the order as the bot's, so orders placed by hand can be told apart. */
   public static String newClientOrderId() {
     return CLIENT_ORDER_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
   }
 
-  public static Map<String, String> orderParameters(
-      MarketOrderRequest request, String clientOrderId) {
+  public static QueryParameters orderParameters(MarketOrderRequest request, String clientOrderId) {
     Map<String, String> parameters = new LinkedHashMap<>();
     parameters.put("symbol", request.ticker());
     parameters.put("side", request.side().name());
-    parameters.put("type", MARKET_ORDER_TYPE);
+    parameters.put("type", MarketOrderRequest.ORDER_TYPE);
     parameters.put(amountParameter(request.amountType()), request.amount().toPlainString());
     parameters.put("newClientOrderId", clientOrderId);
     parameters.put("newOrderRespType", FULL_ORDER_RESPONSE);
-    return parameters;
-  }
-
-  public static String queryString(Map<String, String> parameters) {
-    return parameters.entrySet().stream()
-        .map(parameter -> parameter.getKey() + "=" + encode(parameter.getValue()))
-        .collect(Collectors.joining("&"));
+    return new QueryParameters(parameters);
   }
 
   public static ExecutedOrder executedOrder(MarketOrderRequest request, JsonNode order) {
@@ -79,10 +70,11 @@ public final class OrderUtil {
         Instant.ofEpochMilli(required(account, "updateTime").asLong()), balances);
   }
 
-  public static List<AssetBalance> accountPositionBalances(JsonNode accountPositionEvent) {
-    return StreamSupport.stream(required(accountPositionEvent, "B").spliterator(), false)
-        .map(OrderUtil::accountPositionBalance)
-        .toList();
+  public static AccountBalanceList accountPositionBalances(JsonNode accountPositionEvent) {
+    return new AccountBalanceList(
+        StreamSupport.stream(required(accountPositionEvent, "B").spliterator(), false)
+            .map(OrderUtil::accountPositionBalance)
+            .toList());
   }
 
   public static JsonNode required(JsonNode node, String field) {
@@ -98,10 +90,6 @@ public final class OrderUtil {
       case BASE_QUANTITY -> "quantity";
       case QUOTE_AMOUNT -> "quoteOrderQty";
     };
-  }
-
-  private static String encode(String value) {
-    return URLEncoder.encode(value, StandardCharsets.UTF_8);
   }
 
   private static BigDecimal averagePrice(BigDecimal executedQuantity, BigDecimal quoteAmount) {

@@ -13,8 +13,8 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Virtual account, order validation and fees (Training) | Planned |
 | Signal generators | Planned |
 | Trading bot loop: Training and Trading modes | Planned |
-| Database: PostgreSQL + Flyway, raw SQL, no ORM. Order tables created | Built |
-| Database: storing orders, restart reconciliation, positions and trades with PnL | Planned, next |
+| Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
+| Database: restart reconciliation, positions and trades with PnL | Planned, next |
 | Rest of the REST API and the React dashboard | Planned |
 
 ## How market data works
@@ -46,6 +46,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
     └── src/main/java/com/tihomir/t212/tradingbot
         ├── api            REST controllers
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
+        ├── database       PostgreSQL access (raw SQL through JdbcClient)
         ├── mode           the bot mode (trading, training), switched at runtime, and the live data starter
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
         ├── order          market orders, the balance cache and its sync, the trading gateway interface
@@ -60,7 +61,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 - Internet access to `demo-stream.binance.com`, `data-api.binance.vision` and, for orders, `demo-api.binance.com`. The tests don't need it.
 - For orders: a Binance account with Demo Trading enabled, and `openssl` to create a key pair (it ships with Git for Windows).
 - Node.js 20.19 or newer (with npm) for the frontend.
-- Docker (Docker Desktop on Windows and macOS), running. The application's database is PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
+- Docker (Docker Desktop on Windows and macOS), running. The application stores orders in PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
 
 ## Backend
 
@@ -103,7 +104,7 @@ binance:
 
 ### The database
 
-The database is **PostgreSQL 17**, and **Flyway** creates the tables at startup from the SQL scripts in `backend/src/main/resources/db/migration`. `spring-boot:run` starts the database from `backend/compose.yaml` and leaves it running, so Docker must be running first. To manage it yourself:
+Orders are stored in **PostgreSQL 17**, and **Flyway** creates the tables at startup from the SQL scripts in `backend/src/main/resources/db/migration`. `spring-boot:run` starts the database from `backend/compose.yaml` and leaves it running, so Docker must be running first. To manage it yourself:
 
 ```bash
 docker compose up -d      # start PostgreSQL (from backend/)
@@ -164,8 +165,9 @@ flowchart LR
    $env:BINANCE_DEMO_PRIVATE_KEY_PATH = "$HOME\binance-demo\private.pem"
    ```
 4. Start the backend (`./mvnw spring-boot:run`). The log says `binance: trading on the demo account at https://demo-api.binance.com`.
-5. Check your balances, buy 10 USDT worth of BTC, then sell it again:
+5. Check the traded tickers and your balances, buy 10 USDT worth of BTC, then sell it again:
    ```bash
+   curl localhost:8080/api/brokers/binance/tickers
    curl localhost:8080/api/brokers/binance/balance
 
    curl -X POST localhost:8080/api/brokers/binance/orders -H "Content-Type: application/json" \
@@ -183,7 +185,25 @@ flowchart LR
 | `400` | Bad request body, or a ticker that isn't configured |
 | `409` | The environment variables aren't set |
 | `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
-| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` |
+| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` (the bot's `tb-…` id) |
+| `503` | The database is unavailable (when reading orders) |
+
+Once Binance answers, an executed order is stored in the history with its fills, under Binance's order id. A refused order goes to the rejected orders. Open orders will list orders still resting on Binance once take-profit and stop-loss orders exist:
+
+```bash
+curl localhost:8080/api/brokers/binance/orders/open
+curl localhost:8080/api/brokers/binance/orders/history
+curl localhost:8080/api/brokers/binance/orders/rejected
+```
+
+**Live round-trip test.** `DemoAccountRoundTripLiveTest` starts the whole application and places **real orders on your demo account**. It buys 10 USDT of the first traded ticker and checks the order is `FILLED`, in the history, and that the coin balance goes up. Then it sells 9.5 USDT of it (a little less, because the buy fee was taken in the coin) and checks the balance goes down. A little dust stays behind. It only runs when you ask for it, with the API key variables set and Docker running:
+
+```bash
+BINANCE_DEMO_LIVE_TESTS=true ./mvnw test -Dtest=DemoAccountRoundTripLiveTest           # bash
+$env:BINANCE_DEMO_LIVE_TESTS = "true"; .\mvnw.cmd test "-Dtest=DemoAccountRoundTripLiveTest"   # PowerShell
+```
+
+In normal builds and in CI it is skipped.
 
 The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
 

@@ -5,9 +5,9 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class TickerPriceMap implements TickerPriceReader, TickerPriceWriter {
@@ -21,8 +21,8 @@ public final class TickerPriceMap implements TickerPriceReader, TickerPriceWrite
   }
 
   @Override
-  public Set<String> tickers() {
-    return quotes.keySet();
+  public TickerList tickers() {
+    return new TickerList(List.copyOf(quotes.keySet()));
   }
 
   @Override

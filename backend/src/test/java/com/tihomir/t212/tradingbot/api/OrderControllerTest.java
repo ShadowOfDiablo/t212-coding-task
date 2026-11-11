@@ -66,9 +66,9 @@ class OrderControllerTest {
         .thenReturn(List.of(new AssetBalance("USDT", new BigDecimal("5000"), BigDecimal.ZERO)));
 
     mockMvc
-        .perform(get("/api/brokers/binance/balances"))
+        .perform(get("/api/brokers/binance/balance"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].asset").value("USDT"));
+        .andExpect(jsonPath("$.balances[0].asset").value("USDT"));
   }
 
   @Test
@@ -78,9 +78,11 @@ class OrderControllerTest {
             List.of(new AssetBalance("BTC", new BigDecimal("1.3E-7"), new BigDecimal("0E-8"))));
 
     mockMvc
-        .perform(get("/api/brokers/binance/balances"))
+        .perform(get("/api/brokers/binance/balance"))
         .andExpect(
-            content().string("[{\"asset\":\"BTC\",\"free\":0.00000013,\"locked\":0.00000000}]"));
+            content()
+                .string(
+                    "{\"balances\":[{\"asset\":\"BTC\",\"free\":0.00000013,\"locked\":0.00000000}]}"));
   }
 
   @Test
@@ -112,7 +114,7 @@ class OrderControllerTest {
 
   @Test
   void missingKeysIsAConflict() throws Exception {
-    whenBuying().thenThrow(new TradingNotConfiguredException("binance"));
+    whenBuying().thenThrow(new TradingNotConfiguredException());
 
     postBuy().andExpect(status().isConflict());
   }
@@ -141,7 +143,7 @@ class OrderControllerTest {
     when(orderService.accountBalances("binance"))
         .thenThrow(new ExchangeUnavailableException("connect timed out"));
 
-    mockMvc.perform(get("/api/brokers/binance/balances")).andExpect(status().isBadGateway());
+    mockMvc.perform(get("/api/brokers/binance/balance")).andExpect(status().isBadGateway());
   }
 
   private OngoingStubbing<ExecutedOrder> whenBuying() {

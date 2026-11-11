@@ -24,7 +24,7 @@ public class OrderService {
     if (!broker.tickers().contains(request.ticker())) {
       throw new TickerNotTradedException(brokerName, request.ticker());
     }
-    ExecutedOrder order = tradingGateway(broker).placeMarketOrder(request);
+    ExecutedOrder order = broker.tradingGateway().placeMarketOrder(request);
     log.info(
         "{}: {} {} {} executed {} for {} ({}), client order id {}",
         brokerName,
@@ -39,16 +39,10 @@ public class OrderService {
   }
 
   public List<AssetBalance> accountBalances(String brokerName) {
-    return tradingGateway(broker(brokerName)).accountBalances();
+    return broker(brokerName).tradingGateway().accountBalances();
   }
 
   private Broker broker(String brokerName) {
     return brokers.get(brokerName).orElseThrow(() -> new BrokerNotFoundException(brokerName));
-  }
-
-  private static ExchangeTradingGateway tradingGateway(Broker broker) {
-    return broker
-        .tradingGateway()
-        .orElseThrow(() -> new TradingNotConfiguredException(broker.name()));
   }
 }

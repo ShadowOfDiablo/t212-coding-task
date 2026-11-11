@@ -8,21 +8,15 @@ import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class OrderServiceTest {
 
   private static final String TRADING_BROKER = "demo";
-  private static final String MARKET_DATA_ONLY_BROKER = "watch-only";
 
   private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
   private final OrderService orderService =
-      new OrderService(
-          new BrokerRegistryService(
-              List.of(
-                  new FakeBroker(TRADING_BROKER, Optional.of(gateway)),
-                  new FakeBroker(MARKET_DATA_ONLY_BROKER, Optional.empty()))));
+      new OrderService(new BrokerRegistryService(List.of(new FakeBroker(TRADING_BROKER, gateway))));
 
   @Test
   void sendsTheOrderToTheBrokersGateway() {
@@ -45,15 +39,6 @@ class OrderServiceTest {
     assertThatThrownBy(() -> orderService.placeMarketOrder(TRADING_BROKER, buy("DOGEUSDT")))
         .isInstanceOf(TickerNotTradedException.class);
     assertThat(gateway.placedOrders()).isEmpty();
-  }
-
-  @Test
-  void refusesABrokerWithoutTradingKeys() {
-    assertThatThrownBy(() ->
-            orderService.placeMarketOrder(MARKET_DATA_ONLY_BROKER, buy(FakeBroker.TRADED_TICKER)))
-        .isInstanceOf(TradingNotConfiguredException.class);
-    assertThatThrownBy(() -> orderService.accountBalances(MARKET_DATA_ONLY_BROKER))
-        .isInstanceOf(TradingNotConfiguredException.class);
   }
 
   @Test

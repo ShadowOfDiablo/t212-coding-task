@@ -6,22 +6,22 @@ import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
 import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
 import java.net.URI;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.web.client.RestClient;
 
 public final class FakeBroker extends AbstractBroker {
 
   public static final String TRADED_TICKER = "BTCUSDT";
 
-  private final Optional<ExchangeTradingGateway> tradingGateway;
+  private final ExchangeTradingGateway tradingGateway;
 
   FakeBroker(String name) {
-    this(name, Optional.empty());
+    this(name, new FakeExchangeTradingGateway());
   }
 
-  public FakeBroker(String name, Optional<ExchangeTradingGateway> tradingGateway) {
+  public FakeBroker(String name, ExchangeTradingGateway tradingGateway) {
     super(
         name,
         List.of(TRADED_TICKER),
@@ -42,7 +42,7 @@ public final class FakeBroker extends AbstractBroker {
   }
 
   @Override
-  protected Optional<ExchangeTradingGateway> createTradingGateway() {
+  public ExchangeTradingGateway tradingGateway() {
     return tradingGateway;
   }
 }

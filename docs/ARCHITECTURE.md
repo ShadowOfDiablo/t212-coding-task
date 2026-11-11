@@ -37,6 +37,7 @@ flowchart LR
 
     subgraph Backend["Spring Boot backend"]
         OrderApi["OrderController<br/>OrderService"]
+        ModeApi["BotModeController<br/>BotModeService"]
         Registry["BrokerRegistryService"]
         Broker["BinanceBroker"]
         Feeder["CandleFeeder"]
@@ -73,6 +74,8 @@ flowchart LR
     Api --> Db
     Ui -- "HTTP, SSE" --> Api
     Ui -. HTTP .-> OrderApi
+    Ui -. "HTTP, mode button" .-> ModeApi
+    Bot -. reads mode .-> ModeApi
 
     classDef planned stroke-dasharray: 5 5
     class Bot,Signal,Orders,Account,Db,Api,Ui planned
@@ -88,9 +91,12 @@ flowchart LR
 | `ExchangeMarketDataProtocol` | Built | The exchange-specific part of market data: stream names, URLs, limits, message parsing |
 | `MarketDataStreamConnection` | Built | One WebSocket connection with a fixed 5-second reconnect (`JdkWebSocketConnection`) |
 | `TickerPriceMap` | Built | Latest quote per ticker, per broker. Written by the candle feeder (`TickerPriceWriter`), read by everyone else (`TickerPriceReader`) |
-| `ExchangeTradingGateway` | Built | The exchange-specific part of trading: place a market order, read balances. `BinanceTradingGateway` signs every request with Ed25519. A broker has one only when its API key is configured |
+| `ExchangeTradingGateway` | Built | The exchange-specific part of trading: place a market order, read balances. `BinanceTradingGateway` is a singleton Spring bean, injected into `BinanceBroker`. Its Binance JSON mapping lives in `broker.binance.util.OrderUtil` |
+| `RequestSigner` | Built | Signs a request's query string. `BinanceRequestSigner` uses Ed25519. Without an API key, `MissingKeyRequestSigner` is used instead and refuses every signed request, so trading is off |
+| `BalanceCachingTradingGateway` | Built | Wraps a broker's trading gateway and caches its account balances: loaded at startup, replaced with Binance's answer after every executed order, so balance reads send no request (§7.1) |
 | `OrderService` | Built | Finds the broker, checks the ticker is one it trades, and sends the order to its trading gateway |
-| `OrderController` | Built | `POST /api/brokers/{broker}/orders` and `GET /api/brokers/{broker}/balances`. `ApiExceptionHandler` turns failures into HTTP problem responses |
+| `OrderController` | Built | `POST /api/brokers/{broker}/orders` and `GET /api/brokers/{broker}/balance`. `ApiExceptionHandler` turns failures into HTTP problem responses |
+| `BotModeService` | Built | The current `BotMode` (`TRADING` or `TRAINING`). Switched at runtime, without a restart, through `PUT /api/bot/mode` |
 | `TradingBotService` | Planned | Owns the event loop, the bot state and the runs |
 | `SignalGenerator` | Planned | Interface for trading logic, with several implementations chosen by config. Returns `Buy`, `Sell` or `Hold` |
 | `OrderValidator` | Planned | Turns a signal into a valid `OrderRequest`, or rejects it |
@@ -410,14 +416,18 @@ sequenceDiagram
     participant S as OrderService
     participant R as BrokerRegistryService
     participant G as BinanceTradingGateway
+    participant K as RequestSigner
     participant B as demo-api.binance.com
 
     C->>API: POST /api/brokers/binance/orders<br/>{ticker, side, amount, amountType}
     API->>S: placeMarketOrder(broker, request)
     S->>R: get(broker)
-    Note over S: 404 unknown broker<br/>400 ticker not traded by it<br/>409 no API key configured
+    Note over S: 404 unknown broker<br/>400 ticker not traded by it
     S->>G: placeMarketOrder(request)
-    Note over G: params + recvWindow + timestamp<br/>signature = Ed25519(query string)
+    Note over G: params + recvWindow + timestamp
+    G->>K: sign(query string)
+    Note over K: Ed25519 signature<br/>409 when no API key is configured
+    K-->>G: signature
     G->>B: POST /api/v3/order (X-MBX-APIKEY)
     B-->>G: FULL response: status, executed qty, fills with commission
     G-->>S: ExecutedOrder (average price = quote amount / quantity)
@@ -459,9 +469,31 @@ stateDiagram-v2
 
 **Safety:**
 - `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `demo-api.binance.com`.
-- The API key and the path to the Ed25519 private key come only from the environment variables `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`. Without them, the broker has no trading gateway and the order endpoints answer 409.
+- The API key and the path to the Ed25519 private key come only from the environment variables `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`. Without them, `BinanceTradingConfiguration` provides a `MissingKeyRequestSigner`: nothing is sent to Binance and the order and balance endpoints answer 409.
+- `GET /api/brokers/{broker}/balance` answers `{"balances": [{"asset", "free", "locked"}, …]}`, non-zero balances only.
 - A key file that can't be read stops the application at startup.
 - Timestamps use the local clock. Binance accepts requests that arrive within `recv-window` (5 seconds) of it.
+
+**Balance cache:** to send as few requests to Binance as possible, balances are not read from Binance on every request. `BinanceBroker` wraps its gateway in a `BalanceCachingTradingGateway` that keeps the last balances Binance returned.
+
+```mermaid
+flowchart TD
+    Start["BrokerStartupRunner<br/>at startup / restart"] -- "load" --> Cache["BalanceCachingTradingGateway<br/>cached balances"]
+    Read["GET /balance"] --> Cache
+    Cache -- "cache empty" --> Account["GET /api/v3/account"]
+    Cache -- "cache filled" --> Answer["answer from cache<br/>(no request)"]
+    Order["POST /orders"] --> Cache
+    Cache -- "order executed" --> Refresh["GET /api/v3/account<br/>replace the cache"]
+    Cache -- "order status unknown" --> Clear["clear the cache<br/>reload on the next read"]
+    Cache -- "order rejected" --> Keep["keep the cache<br/>nothing changed"]
+```
+
+- **Binance is the source of truth.** After every executed order the cache is replaced with Binance's account answer, never computed from what we expected. An order can fill for a slightly different quantity or price, and the fee is taken from the received asset, so only Binance's numbers are trusted.
+- Rejected orders change nothing, so they cost no extra request.
+- If the refresh after an executed order fails, the order is still returned as executed. The cache is cleared and reloaded on the next read.
+- If loading at startup fails, the application still starts. The first read tries again.
+- Cost: one account request at startup, plus one per executed order. Balance reads in between are free.
+- Balances changed outside the application (for example a demo balance reset on the Binance website) only show after the next executed order or a restart. Binance's user data stream (a WebSocket that pushes balance changes) could remove both the polling and this gap later.
 
 **Not covered yet:** rounding quantities to the symbol's step size and checking the minimum order value (via `exchangeInfo`). Binance rejects such orders with a filter failure, which comes back as a 422. Orders aren't stored yet; that comes with the database (§11).
 
@@ -559,32 +591,26 @@ stateDiagram-v2
 
 ## 9. Bot and run lifecycle (planned)
 
-### Profiles (built)
+### Bot mode (built)
 
-Each bot mode has its own Spring profile. Only the parts that mode needs are started.
+The bot mode is application state, not a Spring profile, so it can be switched with one button without restarting the application. `bot.mode` in `application.yaml` sets the mode at startup; `BotModeService` holds it after that.
 
 ```mermaid
 flowchart TD
-    Start["java -jar / spring-boot:run"] --> P{"active profile"}
-    P -- "none (default)" --> T["trading"]
-    P -- trading --> T
-    P -- training --> Tr["training"]
-    P -- smoke --> S["smoke"]
-
-    T --> T1["LiveMarketDataStarter<br/>starts every broker's CandleFeeder"]
-    T --> T2["Order endpoints<br/>on when API key variables are set"]
-    Tr --> Tr1["No live streams"]
-    Tr --> Tr2["Trading gateway always off<br/>(keys blanked in application-training.yaml)"]
-    S --> S1["MarketDataSmokeRunner, no web server, exits"]
+    Start["java -jar / spring-boot:run"] --> Init["BotModeService<br/>starts in bot.mode (TRADING)"]
+    Start --> Live["BrokerStartupRunner<br/>starts every broker's CandleFeeder<br/>and loads its account balances"]
+    Ui["Dashboard button / curl"] -- "PUT /api/bot/mode {mode}" --> Init
+    Ui -- "GET /api/bot/mode" --> Init
+    Init --> Mode{"mode"}
+    Mode -- TRADING --> T["Trades live on the demo account"]
+    Mode -- TRAINING --> Tr["Training runs over history,<br/>can trade live between runs"]
+    Tr -. uses .-> T
 ```
 
-| Profile | Config | Web server | Live streams | Demo orders |
-|---|---|---|---|---|
-| `trading` | `application.yaml`, `spring.profiles.default: trading` | Yes | Started on startup | With keys |
-| `training` | `application-training.yaml` | Yes | No | Never |
-| `smoke` | `application-smoke.yaml` | No | 30 seconds | Never |
-
-Once `TradingBotService` exists, `trading` and `training` will start it in the matching `BotMode`. The application context test runs with `training`, so tests never open a network connection.
+- **Training uses trading, not the other way around.** A training session iterates over several training runs and can trade live in between, so the live streams and the trading gateway are available in both modes. Live streams always start at startup.
+- Switching only changes the stored mode for now. Once `TradingBotService` exists, it reads the mode to decide what to run.
+- The only remaining profile is `smoke`: `MarketDataSmokeRunner` streams for `smoke.duration`, logs what it receives, then shuts the application down.
+- The application context test replaces `BrokerStartupRunner` with a mock, so tests never open a network connection.
 
 ### Bot states
 
@@ -706,7 +732,8 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/brokers/{broker}/orders` | **Built.** Market order on the demo account (§7.1) |
-| GET | `/brokers/{broker}/balances` | **Built.** Non-zero balances of the demo account |
+| GET | `/brokers/{broker}/balance` | **Built.** `{"balances": […]}`, the non-zero balances of the demo account |
+| GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
 | GET | `/bot/status` | State, mode, current run, latest price |
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
 | POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
@@ -725,8 +752,6 @@ Everything goes in `backend/src/main/resources/application.yaml`. Current settin
 
 ```yaml
 spring:
-  profiles:
-    default: trading                          # used when no profile is given
   jackson:
     write:
       write-bigdecimal-as-plain: true         # 0.00000000, not 0E-8, in API answers
@@ -734,6 +759,9 @@ spring:
     clients:
       connect-timeout: 5s                     # every REST call to Binance
       read-timeout: 10s
+
+bot:
+  mode: TRADING                               # mode at startup; switched at runtime via PUT /api/bot/mode
 
 binance:
   name: binance                               # broker name in the registry
@@ -753,7 +781,7 @@ smoke:
   duration: 30s                               # how long the smoke run streams
 ```
 
-`spring.profiles.default: trading` makes `trading` the profile when none is given. `application-training.yaml` blanks the API key so Training can never trade, and `application-smoke.yaml` turns the web server off so the smoke run exits by itself (§9, Profiles).
+There are no mode profiles: the bot mode is switched at runtime (§9, Bot mode). The only profile is `smoke`, which needs no extra configuration file.
 
 Planned additions: the database connection, starting balance, the active signal generator and its parameters, and the default training range.
 
@@ -763,21 +791,25 @@ Built packages are listed with their classes; the rest are planned.
 
 ```
 com.tihomir.t212.tradingbot
-├── broker           Broker, AbstractBroker, BrokerRegistryService, BrokerNotFoundException
+├── broker           Broker, AbstractBroker, BrokerRegistryService, BrokerNotFoundException,
+│   │                RequestSigner, MissingKeyRequestSigner
 │   └── binance      BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol,
-│                    BinanceTradingProperties, BinanceTradingGateway, BinanceRequestSigner, BinanceResponse
+│       │            BinanceTradingProperties, BinanceTradingConfiguration, BinanceTradingGateway,
+│       │            BinanceRequestSigner, BinanceResponse
+│       └── util     OrderUtil (order parameters, query string, Binance order and balance JSON)
 ├── marketdata
 │   ├── update       MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
 │   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
 │   ├── candlefeed   CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
 │   └── websocket    MarketDataStreamConnection, MarketDataStreamConnectionFactory, MarketDataMessageHandler,
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
-├── mode             LiveMarketDataStarter (profile "trading")
+├── mode             BotMode, BotModeService, BrokerStartupRunner
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
-├── bot              (planned) BotMode, BotState, TradingBotService, BotRun, RunStatus
+├── bot              (planned) BotState, TradingBotService, BotRun, RunStatus
 ├── signal           (planned) SignalGenerator, Signal, SignalContext
 │   └── indicator    (planned) SMA, EMA, RSI, ...
-├── order            OrderService, ExchangeTradingGateway, MarketOrderRequest, OrderSide, OrderAmountType,
+├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
+│                    MarketOrderRequest, OrderSide, OrderAmountType,
 │                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
 │                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
 │                    TradingNotConfiguredException
@@ -785,6 +817,7 @@ com.tihomir.t212.tradingbot
 │   └── fee          (planned) FeeService
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
 ├── persistence      (planned) repositories (JdbcClient)
-└── api              OrderController, ApiExceptionHandler
+└── api              OrderController, AccountBalanceResponse, BotModeController, BotModeSetting,
+                     ApiExceptionHandler
                      (planned) bot controls and read endpoints
 ```

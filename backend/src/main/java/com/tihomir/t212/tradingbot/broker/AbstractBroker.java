@@ -6,9 +6,7 @@ import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceMap;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnectionFactory;
-import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.web.client.RestClient;
 
 public abstract class AbstractBroker implements Broker, AutoCloseable {
@@ -20,8 +18,6 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
   private final MarketDataStreamConnectionFactory connectionFactory;
   private final RestClient restClient;
   private CandleFeeder candleFeeder;
-  private Optional<ExchangeTradingGateway> tradingGateway = Optional.empty();
-  private boolean tradingGatewayCreated;
 
   protected AbstractBroker(
       String name,
@@ -38,8 +34,6 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
   }
 
   protected abstract ExchangeMarketDataProtocol createMarketDataProtocol();
-
-  protected abstract Optional<ExchangeTradingGateway> createTradingGateway();
 
   @Override
   public final String name() {
@@ -70,15 +64,6 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
   @Override
   public final TickerPriceReader tickerPrices() {
     return prices;
-  }
-
-  @Override
-  public final synchronized Optional<ExchangeTradingGateway> tradingGateway() {
-    if (!tradingGatewayCreated) {
-      tradingGateway = createTradingGateway();
-      tradingGatewayCreated = true;
-    }
-    return tradingGateway;
   }
 
   @Override

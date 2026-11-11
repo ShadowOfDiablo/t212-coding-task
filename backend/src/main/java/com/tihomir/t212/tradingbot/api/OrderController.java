@@ -1,10 +1,8 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OrderService;
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,8 +29,8 @@ public class OrderController {
     return orderService.placeMarketOrder(broker, request);
   }
 
-  @GetMapping("/balances")
-  public List<AssetBalance> accountBalances(@PathVariable String broker) {
-    return orderService.accountBalances(broker);
+  @GetMapping("/balance")
+  public AccountBalanceResponse accountBalance(@PathVariable String broker) {
+    return new AccountBalanceResponse(orderService.accountBalances(broker));
   }
 }

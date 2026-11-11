@@ -4,7 +4,7 @@ public class TradingNotConfiguredException extends RuntimeException {
 
   private static final long serialVersionUID = 1L;
 
-  public TradingNotConfiguredException(String brokerName) {
-    super("Trading is not configured for " + brokerName + ": no API key is set");
+  public TradingNotConfiguredException() {
+    super("Trading is off: no demo API key is configured");
   }
 }

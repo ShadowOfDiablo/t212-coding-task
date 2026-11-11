@@ -45,7 +45,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
     └── src/main/java/com/tihomir/t212/tradingbot
         ├── api            REST controllers
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
-        ├── mode           what each profile (trading, training) starts
+        ├── mode           the bot mode (trading, training), switched at runtime, and the live data starter
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
         ├── order          market orders, balances, the trading gateway interface
         └── smoke          a short live check of the market data feed
@@ -71,7 +71,7 @@ Run the tests (no network needed):
 
 ### See live market data
 
-The `smoke` profile streams live Binance data for 30 seconds and logs it, then exits:
+The `smoke` profile streams live Binance data for 30 seconds and logs it, then shuts the application down. It also starts the web server, so stop any running instance first (port 8080):
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=smoke
@@ -99,21 +99,21 @@ binance:
 
 ### Start the application
 
-The application has one profile per bot mode. Without a profile it starts in `trading`.
-
-| Profile | Live market data | Demo account orders | Use |
-|---|---|---|---|
-| `trading` (default) | Streams every configured ticker | On when the API key variables are set | Live trading on the demo account |
-| `training` | Off | Always off, even with keys set | Replaying history (the bot comes later) |
-| `smoke` | 30 seconds, logged | Off (no web server) | A quick check of the market data feed |
-
 ```bash
-./mvnw spring-boot:run                                          # trading
-./mvnw spring-boot:run -Dspring-boot.run.profiles=training
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=training"
+./mvnw spring-boot:run
+.\mvnw.cmd spring-boot:run
 ```
 
-The server listens on `http://localhost:8080`.
+The server listens on `http://localhost:8080`. It streams live market data for every configured ticker, and demo account orders are on when the API key variables are set (see below).
+
+The bot starts in `TRADING` mode (`bot.mode` in `application.yaml`) and can be switched to `TRAINING` and back while it runs, without a restart:
+
+```bash
+curl localhost:8080/api/bot/mode
+curl -X PUT localhost:8080/api/bot/mode -H "Content-Type: application/json" -d '{"mode":"TRAINING"}'
+```
+
+Training uses trading: a training session can trade live between its training runs, so live data and orders stay available in both modes. Switching only changes the mode for now; the bot that acts on it comes later.
 
 Build a runnable jar:
 
@@ -151,7 +151,7 @@ flowchart LR
 4. Start the backend (`./mvnw spring-boot:run`). The log says `binance: trading on the demo account at https://demo-api.binance.com`.
 5. Check your balances, buy 10 USDT worth of BTC, then sell it again:
    ```bash
-   curl localhost:8080/api/brokers/binance/balances
+   curl localhost:8080/api/brokers/binance/balance
 
    curl -X POST localhost:8080/api/brokers/binance/orders -H "Content-Type: application/json" \
         -d '{"ticker":"BTCUSDT","side":"BUY","amount":"10","amountType":"QUOTE_AMOUNT"}'
@@ -163,6 +163,7 @@ flowchart LR
 
 | Answer | Meaning |
 |---|---|
+| `200` | Balances: `{"balances": [{"asset": "USDT", "free": …, "locked": …}, …]}`. They're loaded at startup and refreshed from Binance after every executed order, so reading them sends no request to Binance |
 | `201` | Executed. The body has the executed quantity, the USDT amount, the average price and each fill with its fee |
 | `400` | Bad request body, or a ticker that isn't configured |
 | `409` | The environment variables aren't set |

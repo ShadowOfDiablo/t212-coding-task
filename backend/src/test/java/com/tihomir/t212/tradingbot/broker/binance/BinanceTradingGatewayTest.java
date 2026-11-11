@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
@@ -19,6 +20,7 @@ import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
+import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -64,7 +66,7 @@ class BinanceTradingGatewayTest {
       MockRestServiceServer.bindTo(restClientBuilder).build();
   private final BinanceTradingGateway gateway =
       new BinanceTradingGateway(
-          restClientBuilder.build(),
+          restClientBuilder,
           new BinanceTradingProperties(
               URI.create("https://demo-api.binance.com"),
               API_KEY,
@@ -217,6 +219,24 @@ class BinanceTradingGatewayTest {
         .andRespond(withException(new SocketTimeoutException("connect timed out")));
 
     assertThatThrownBy(gateway::accountBalances).isInstanceOf(ExchangeUnavailableException.class);
+  }
+
+  @Test
+  void missingKeyTurnsTradingOffWithoutSendingAnything() {
+    BinanceTradingGateway gatewayWithoutKey =
+        new BinanceTradingGateway(
+            restClientBuilder,
+            new BinanceTradingProperties(
+                URI.create("https://demo-api.binance.com"), "", "", Duration.ofSeconds(5)),
+            new MissingKeyRequestSigner(),
+            JsonMapper.builder().build(),
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+    assertThatThrownBy(() -> gatewayWithoutKey.placeMarketOrder(buyForQuoteAmount()))
+        .isInstanceOf(TradingNotConfiguredException.class);
+    assertThatThrownBy(gatewayWithoutKey::accountBalances)
+        .isInstanceOf(TradingNotConfiguredException.class);
+    server.verify();
   }
 
   private void signedWithTheTestKey(ClientHttpRequest request) {

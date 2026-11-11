@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
+import com.tihomir.t212.tradingbot.broker.RequestSigner;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,7 +12,7 @@ import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 
-final class BinanceRequestSigner {
+final class BinanceRequestSigner implements RequestSigner {
 
   private static final String ALGORITHM = "Ed25519";
   private static final String PEM_LINE = "-----";
@@ -37,7 +38,8 @@ final class BinanceRequestSigner {
     }
   }
 
-  String sign(String payload) {
+  @Override
+  public String sign(String payload) {
     try {
       Signature signature = Signature.getInstance(ALGORITHM);
       signature.initSign(privateKey);

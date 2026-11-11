@@ -23,7 +23,8 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
 | Database: restart reconciliation, positions (FIFO lots), trades with PnL | Planned, next |
 | Database: candle history | Planned |
-| Rest of the REST API and the React dashboard | Planned |
+| React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
+| Rest of the REST API (bot controls, runs, charts) | Planned |
 
 ### System overview
 
@@ -53,7 +54,7 @@ flowchart LR
         Api["REST API"]
     end
 
-    Ui["React dashboard"]
+    Ui["React dashboard<br/>frontend/"]
 
     WS -- "candles + bid/ask" --> Feeder
     REST -- "candle history, server time" --> Feeder
@@ -81,7 +82,7 @@ flowchart LR
     Bot -. reads mode .-> ModeApi
 
     classDef planned stroke-dasharray: 5 5
-    class Bot,Signal,Orders,Account,Api,Ui planned
+    class Bot,Signal,Orders,Account,Api planned
 ```
 
 ## 2. Components
@@ -949,3 +950,36 @@ com.tihomir.t212.tradingbot
                      BotModeController, BotModeSetting, ApiExceptionHandler
                      (planned) bot controls and read endpoints
 ```
+
+## 15. Frontend (dashboard built)
+
+A React app in plain JavaScript (`.jsx`), HTML and CSS, in `frontend/`, built with Vite. In development the Vite server forwards `/api` to the backend on port 8080. The accent colour is `#00A7E1`; the logo is the project's own.
+
+```mermaid
+flowchart LR
+    subgraph Dashboard["Dashboard (one page)"]
+        Header["Header<br/>live dot, Trading/Training switch, theme toggle"]
+        Tickers["Ticker cards<br/>last price, bid, ask, flash on change"]
+        Orders["Orders card<br/>Executed / Rejected / Open tabs"]
+        Holdings["Holdings card<br/>balances valued in USDT, share of total"]
+    end
+
+    Header -- "GET / PUT /api/bot/mode" --> Api["Backend REST API"]
+    Tickers -- "GET /tickers every 2 s" --> Api
+    Orders -- "GET /orders/history, /rejected, /open every 5 s" --> Api
+    Holdings -- "GET /balance every 5 s" --> Api
+    Holdings -. "prices from" .-> Tickers
+```
+
+- **Polling:** each card polls its endpoint (`usePolling`). On a failed request the card keeps its last data, and a banner says the backend is unreachable until it answers again.
+- **Holdings** stand in for open positions until the positions work (FIFO lots, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't traded show no value.
+- **Mode switch:** it updates at once and reverts if `PUT /api/bot/mode` fails.
+- **Theme:** light or dark, from the system setting at first, then remembered in `localStorage`. Colours are CSS variables switched with `data-theme` on `<html>`.
+- **Motion:** cards rise in, the mode switch and tabs slide, prices flash green or red when they move, and loading uses shimmering skeletons. All motion is turned off when the system asks for reduced motion.
+
+| File | Role |
+|---|---|
+| `src/api.js` | Every REST call |
+| `src/hooks/usePolling.js`, `useTheme.js` | Polling with last-good data; light and dark theme |
+| `src/components/` | `Header`, `ModeSwitch`, `ThemeToggle`, `TickerStrip`, `TickerCard`, `OrdersCard`, `HoldingsCard`, `Logo` |
+| `src/styles.css` | Design tokens for both themes, layout and animations |

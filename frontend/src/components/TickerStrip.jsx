@@ -1,3 +1,4 @@
+import './TickerStrip.css'
 import { TickerCard } from './TickerCard.jsx'
 
 const PLACEHOLDER_CARDS = 2

@@ -1,0 +1,87 @@
+/* Holdings */
+
+.holdings {
+  animation-delay: 0.1s;
+}
+
+.total {
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 16px;
+}
+
+.total .muted {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.holding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.holding {
+  padding: 10px 8px;
+  border-radius: var(--radius-small);
+  transition: background-color 0.2s var(--ease);
+}
+
+.holding:hover {
+  background: var(--surface-raised);
+}
+
+.holding-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.asset-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.holding-name,
+.holding-value {
+  display: grid;
+}
+
+.holding-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.holding-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.share-bar {
+  height: 4px;
+  margin: 8px 0 0 46px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.share-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), var(--brand-strong));
+  transform-origin: left;
+  transition: transform 0.8s var(--ease);
+}
+

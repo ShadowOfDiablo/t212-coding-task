@@ -1,3 +1,4 @@
+import './OrdersCard.css'
 import { useState } from 'react'
 import { formatPrice, formatQuantity, formatTime } from '../format.js'
 

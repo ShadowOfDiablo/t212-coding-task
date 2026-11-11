@@ -106,7 +106,8 @@ flowchart LR
 | `FeeService` | Planned | Provides fee rates (exact Binance rates with an API key, the standard schedule otherwise) and calculates fees |
 | `OrderExecutionService` | Planned | Fills a valid `OrderRequest` and produces an `ExecutedOrder`. No validation or fee logic |
 | `AccountService` | Planned | Applies `ExecutedOrder`s to cash and positions, and calculates P&L and portfolio value |
-| Repositories | Planned | Raw SQL access to the PostgreSQL tables (`JdbcClient`), with no ORM |
+| `OrderRepository` | Built | PostgreSQL access for the order tables (`JdbcClient`, raw SQL, no ORM). Implements `OrderStore`, so the order code doesn't depend on the database code |
+| Other repositories | Planned | Lots, trades, candles, runs |
 | REST API | Planned | Controls and read endpoints for the React dashboard |
 
 Components exchange immutable DTOs (Java records): `CandleUpdate`, `BidAskUpdate`, `Signal`, `OrderRequest`, `ExecutedOrder`, `TradeHistoryEntry`, `PortfolioSnapshot`.
@@ -728,7 +729,7 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
 ## 11. Database (setup and order tables built, the rest planned)
 
 - **PostgreSQL 17** holds every table. Locally it runs from `backend/compose.yaml` (Docker), which Spring Boot's Docker Compose support starts on `spring-boot:run` and leaves running. Tests use Testcontainers.
-- **Flyway** creates and upgrades the tables at startup from numbered raw-SQL scripts in `backend/src/main/resources/db/migration` (`V1__create_order_tables.sql`, …). There's no ORM: queries will be plain SQL through Spring's `JdbcClient`.
+- **Flyway** creates and upgrades the tables at startup from numbered raw-SQL scripts in `backend/src/main/resources/db/migration` (`V1__create_order_tables.sql`, …). There's no ORM: the `database` package uses Spring's `JdbcClient` with plain SQL.
 - **Rule:** a "current" table holds only active rows; a history table only ever gets rows added. Moving a row from one to the other always happens in **one transaction**.
 
 ```mermaid
@@ -772,9 +773,12 @@ erDiagram
 
 - `order_history` also keeps the order's broker, ticker, side, type and amount, copied from `open_order`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
+- **`OrderRepository`:** inserts open orders, marks their status, and settles them. Settling copies the open order into `order_history` with the result, inserts the fills and deletes the open row, all in **one transaction**.
+- **Idempotent:** settling an order twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
+- A failed settlement rolls back completely: no history row, no fills, and the order stays open.
+- Reads: open orders by broker, and the latest 100 finished orders with their fills.
 
 **Planned next (stacked PRs):**
-- **Order repository:** `OrderRepository` reads and writes these tables with raw SQL.
 - **Storing orders:** `OrderService` writes each order to `open_order` before sending it, then moves it to the history with its fills in one transaction.
 - **Reconciliation:** at startup and after each user data stream subscription, every `SENDING`/`UNKNOWN` order is looked up on Binance by `clientOrderId` and settled. `executionReport` events settle them too.
 - **Positions and trades:** `open_lot` (current, one row per buy that still holds coins) and `trade` (history: FIFO matches of buy and sell lots with entry/exit price, fees and PnL), written in the same settlement transaction. A position is the sum of its open lots.
@@ -902,13 +906,15 @@ com.tihomir.t212.tradingbot
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
 │                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
 │                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
+│                    OrderStore, OpenOrder, OpenOrderStatus, OrderHistoryEntry,
 │                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
 │                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
 │                    TradingNotConfiguredException
 │                    (planned) OrderValidator, OrderExecutionService, RejectionReason
 │   └── fee          (planned) FeeService
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
-├── database         (planned) OrderRepository, OpenLotRepository, TradeRepository (JdbcClient, raw SQL)
+├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
+│                    (planned) OpenLotRepository, TradeRepository
 └── api              OrderController, AccountBalanceResponse, BotModeController, BotModeSetting,
                      ApiExceptionHandler
                      (planned) bot controls and read endpoints

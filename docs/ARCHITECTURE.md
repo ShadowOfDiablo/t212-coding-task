@@ -793,7 +793,7 @@ erDiagram
 - `order_history` holds executed orders only and `rejected_order` holds refused orders only, so every column is always set: no nullable execution or error columns, and one fixed shape per list for the dashboard (`V2__split_rejected_orders.sql`).
 - Each keeps the order's broker, ticker, side, type and amount.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (history row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service and controller pass on unchanged.
+- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (history row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records.
 - **Idempotent:** inserting the same executed order twice changes nothing (`ON CONFLICT DO NOTHING` on `exchange_order_id` and on `(exchange_order_id, trade_id)` for fills).
 - **Failures:**
   - Database fails after Binance executed the order: the answer is still 201 and the error is logged. Reconciliation will fill the gap.
@@ -941,6 +941,7 @@ com.tihomir.t212.tradingbot
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    (planned) OpenLotRepository, TradeRepository
-└── api              OrderController, BotModeController, BotModeSetting, ApiExceptionHandler
+└── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
+                     RejectedOrderListResponse, BotModeController, BotModeSetting, ApiExceptionHandler
                      (planned) bot controls and read endpoints
 ```

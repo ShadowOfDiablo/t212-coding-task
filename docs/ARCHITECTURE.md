@@ -838,6 +838,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/brokers/{broker}/orders/open` | **Built.** `{"openOrders": […]}`, orders resting on Binance (empty until take-profit and stop-loss orders exist) |
 | GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 executed orders with their fills |
 | GET | `/brokers/{broker}/orders/rejected` | **Built.** `{"rejectedOrders": […]}`, the latest 100 orders Binance refused, with its error |
+| GET | `/brokers/{broker}/tickers` | **Built.** `{"tickers": [{"ticker", "quote": {"bid", "ask", "lastPrice", "updatedAt", "source"}}, …]}`, every traded ticker with its latest quote from the ticker price map (`quote` is `null` until market data arrives) |
 | GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
 | GET | `/bot/status` | State, mode, current run, latest price |
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
@@ -920,7 +921,8 @@ com.tihomir.t212.tradingbot
 │                    JdkUserDataStreamConnection, JdkUserDataStreamConnectionFactory
 ├── marketdata
 │   ├── update       MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
-│   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerList, TickerPriceWriter, TickerQuote, TickerQuoteSource
+│   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerList, TickerPriceWriter, TickerQuote, TickerQuoteSource,
+│   │                TickerPrice, TickerPriceList, TickerPriceService
 │   ├── candlefeed   CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol, StreamNameList
 │   └── websocket    MarketDataStreamConnection, MarketDataStreamConnectionFactory, MarketDataMessageHandler,
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
@@ -943,6 +945,7 @@ com.tihomir.t212.tradingbot
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    (planned) OpenLotRepository, TradeRepository
 └── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
-                     RejectedOrderListResponse, BotModeController, BotModeSetting, ApiExceptionHandler
+                     RejectedOrderListResponse, MarketDataController, TickerPriceListResponse,
+                     BotModeController, BotModeSetting, ApiExceptionHandler
                      (planned) bot controls and read endpoints
 ```

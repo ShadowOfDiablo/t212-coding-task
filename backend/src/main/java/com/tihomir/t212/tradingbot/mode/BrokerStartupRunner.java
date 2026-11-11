@@ -28,7 +28,7 @@ public class BrokerStartupRunner implements ApplicationRunner {
           "{}: {} mode, streaming {} live",
           broker.name(),
           botModeService.botMode(),
-          broker.tickers());
+          broker.tickers().tickers());
       broker.candleFeeder().start();
       startAccountUpdates(broker);
     }

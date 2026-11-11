@@ -65,7 +65,7 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
   }
 
   private static void logRecentCandleHistory(Broker broker) {
-    String ticker = broker.tickers().getFirst();
+    String ticker = broker.tickers().first();
     Instant to = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     Instant from = to.minus(HISTORY_WINDOW);
     try {

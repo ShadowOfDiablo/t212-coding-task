@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.StreamNameList;
 import com.tihomir.t212.tradingbot.marketdata.update.BidAskUpdate;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
@@ -43,9 +44,10 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
   }
 
   @Override
-  public List<String> streamNames(String ticker, CandleInterval interval) {
+  public StreamNameList streamNames(String ticker, CandleInterval interval) {
     String symbol = ticker.toLowerCase(Locale.ROOT);
-    return List.of(symbol + CANDLE_STREAM + intervalCode(interval), symbol + BOOK_TICKER_STREAM);
+    return new StreamNameList(
+        List.of(symbol + CANDLE_STREAM + intervalCode(interval), symbol + BOOK_TICKER_STREAM));
   }
 
   @Override

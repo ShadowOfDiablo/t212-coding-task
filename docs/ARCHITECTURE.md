@@ -20,7 +20,9 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Virtual account, order validation, fees (Training) | Planned |
 | Signal generators and indicators | Planned |
 | `TradingBotService`: event loop, states, controls | Planned |
-| Persistence: PostgreSQL, raw SQL (candle history, orders and fills) | Planned, next |
+| Database: PostgreSQL + Flyway, raw SQL. Order tables created | **Built** |
+| Database: storing orders, restart reconciliation, positions (FIFO lots), trades with PnL | Planned, next |
+| Database: candle history | Planned |
 | Rest of the REST API and the React dashboard | Planned |
 
 ### System overview
@@ -47,7 +49,7 @@ flowchart LR
         Signal["SignalGenerator"]
         Orders["OrderValidator<br/>FeeService<br/>OrderExecutionService"]
         Account["AccountService"]
-        Db[("Database")]
+        Db[("PostgreSQL<br/>open_order, order_history, order_fill")]
         Api["REST API"]
     end
 
@@ -78,7 +80,7 @@ flowchart LR
     Bot -. reads mode .-> ModeApi
 
     classDef planned stroke-dasharray: 5 5
-    class Bot,Signal,Orders,Account,Db,Api,Ui planned
+    class Bot,Signal,Orders,Account,Api,Ui planned
 ```
 
 ## 2. Components
@@ -104,7 +106,7 @@ flowchart LR
 | `FeeService` | Planned | Provides fee rates (exact Binance rates with an API key, the standard schedule otherwise) and calculates fees |
 | `OrderExecutionService` | Planned | Fills a valid `OrderRequest` and produces an `ExecutedOrder`. No validation or fee logic |
 | `AccountService` | Planned | Applies `ExecutedOrder`s to cash and positions, and calculates P&L and portfolio value |
-| Repositories | Planned | Raw SQL persistence (`JdbcClient`), with no ORM |
+| Repositories | Planned | Raw SQL access to the PostgreSQL tables (`JdbcClient`), with no ORM |
 | REST API | Planned | Controls and read endpoints for the React dashboard |
 
 Components exchange immutable DTOs (Java records): `CandleUpdate`, `BidAskUpdate`, `Signal`, `OrderRequest`, `ExecutedOrder`, `TradeHistoryEntry`, `PortfolioSnapshot`.
@@ -723,24 +725,65 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
   - **Results:** they depend only on the execution-time order, never on thread timing.
 - **Other threads:** the WebSocket callbacks, the REST controls and the REST reads only touch the queue, the bot state, or concurrent and read-only views.
 
-## 11. Persistence (planned)
+## 11. Database (setup and order tables built, the rest planned)
 
-- **Database:** a relational database, accessed with raw SQL through Spring's `JdbcClient`, with no ORM. The schema is created by SQL scripts in `backend/src/main/resources/db/`.
-- **Tables:**
+- **PostgreSQL 17** holds every table. Locally it runs from `backend/compose.yaml` (Docker), which Spring Boot's Docker Compose support starts on `spring-boot:run` and leaves running. Tests use Testcontainers.
+- **Flyway** creates and upgrades the tables at startup from numbered raw-SQL scripts in `backend/src/main/resources/db/migration` (`V1__create_order_tables.sql`, …). There's no ORM: queries will be plain SQL through Spring's `JdbcClient`.
+- **Rule:** a "current" table holds only active rows; a history table only ever gets rows added. Moving a row from one to the other always happens in **one transaction**.
 
 ```mermaid
 erDiagram
-    bot_run ||--o{ trade : has
-    bot_run ||--o{ position : has
-    bot_run ||--o{ portfolio_snapshot : has
-    position ||--|{ trade : "entry and exit"
+    open_order {
+        text client_order_id PK
+        bigint exchange_order_id "unique, null until Binance answers"
+        text broker
+        text ticker
+        text side
+        text order_type "MARKET now; take-profit and stop-loss later"
+        numeric amount
+        text amount_type
+        text status "SENDING or UNKNOWN"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    order_history {
+        text client_order_id PK
+        bigint exchange_order_id "unique"
+        text final_status "FILLED, EXPIRED, REJECTED, ..."
+        numeric executed_quantity
+        numeric quote_amount
+        numeric average_price
+        int error_code
+        text error_message
+        timestamptz created_at
+        timestamptz closed_at
+    }
+    order_fill {
+        text client_order_id PK
+        bigint trade_id PK
+        numeric price
+        numeric quantity
+        numeric commission
+        text commission_asset
+    }
+    order_history ||--o{ order_fill : "filled in"
+    open_order ||..|| order_history : "moves to, in one transaction"
 ```
+
+- `order_history` also keeps the order's broker, ticker, side, type and amount, copied from `open_order`.
+- Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
+
+**Planned next (stacked PRs):**
+- **Order repository:** `OrderRepository` reads and writes these tables with raw SQL.
+- **Storing orders:** `OrderService` writes each order to `open_order` before sending it, then moves it to the history with its fills in one transaction.
+- **Reconciliation:** at startup and after each user data stream subscription, every `SENDING`/`UNKNOWN` order is looked up on Binance by `clientOrderId` and settled. `executionReport` events settle them too.
+- **Positions and trades:** `open_lot` (current, one row per buy that still holds coins) and `trade` (history: FIFO matches of buy and sell lots with entry/exit price, fees and PnL), written in the same settlement transaction. A position is the sum of its open lots.
+
+**Planned later:**
 
 | Table | Contents |
 |---|---|
 | `bot_run` | id, input hash, mode, symbol, interval, date range, generator and its parameters, starting balance, fee rates, status, timestamps |
-| `trade` | deterministic id, run id, sequence, execution time, side, symbol, quantity, price, fee, fee asset, realised P&L |
-| `position` | id, run id, symbol, status, quantity, average entry price, opened and closed time, realised P&L, MAE, MFE |
 | `portfolio_snapshot` | run id, time, cash, holdings value, total value |
 | `candle` | symbol, interval, open time, OHLCV (historical data cache) |
 
@@ -791,6 +834,13 @@ spring:
     clients:
       connect-timeout: 5s                     # every REST call to Binance
       read-timeout: 10s
+  datasource:                                 # PostgreSQL; overridden by Docker Compose / Testcontainers
+    url: ${TRADING_BOT_DB_URL:jdbc:postgresql://localhost:5432/tradingbot}
+    username: ${TRADING_BOT_DB_USER:tradingbot}
+    password: ${TRADING_BOT_DB_PASSWORD:tradingbot}
+  docker:
+    compose:
+      lifecycle-management: start-only        # spring-boot:run starts backend/compose.yaml, leaves it running
 
 bot:
   mode: TRADING                               # mode at startup; switched at runtime via PUT /api/bot/mode
@@ -821,7 +871,7 @@ smoke:
 
 There are no mode profiles: the bot mode is switched at runtime (§9, Bot mode). The only profile is `smoke`, which needs no extra configuration file.
 
-Planned additions: the database connection, starting balance, the active signal generator and its parameters, and the default training range.
+Planned additions: starting balance, the active signal generator and its parameters, and the default training range.
 
 ## 14. Package layout
 
@@ -858,7 +908,7 @@ com.tihomir.t212.tradingbot
 │                    (planned) OrderValidator, OrderExecutionService, RejectionReason
 │   └── fee          (planned) FeeService
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
-├── persistence      (planned) repositories (JdbcClient)
+├── database         (planned) OrderRepository, OpenLotRepository, TradeRepository (JdbcClient, raw SQL)
 └── api              OrderController, AccountBalanceResponse, BotModeController, BotModeSetting,
                      ApiExceptionHandler
                      (planned) bot controls and read endpoints

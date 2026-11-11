@@ -13,7 +13,8 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Virtual account, order validation and fees (Training) | Planned |
 | Signal generators | Planned |
 | Trading bot loop: Training and Trading modes | Planned |
-| Database: PostgreSQL, raw SQL, no ORM | Planned, next |
+| Database: PostgreSQL + Flyway, raw SQL, no ORM. Order tables created | Built |
+| Database: storing orders, restart reconciliation, positions and trades with PnL | Planned, next |
 | Rest of the REST API and the React dashboard | Planned |
 
 ## How market data works
@@ -58,12 +59,13 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 - No Maven installation needed: the backend ships with the Maven wrapper (`mvnw` / `mvnw.cmd`), which downloads the correct Maven version on first use.
 - Internet access to `demo-stream.binance.com`, `data-api.binance.vision` and, for orders, `demo-api.binance.com`. The tests don't need it.
 - For orders: a Binance account with Demo Trading enabled, and `openssl` to create a key pair (it ships with Git for Windows).
+- Docker (Docker Desktop on Windows and macOS), running. The application's database is PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
 
 ## Backend
 
 All commands are run from the `backend/` folder.
 
-Run the tests (no network needed):
+Run the tests (no network needed; the database tests start their own PostgreSQL in Docker):
 
 ```bash
 ./mvnw test          # macOS / Linux / Git Bash
@@ -97,6 +99,17 @@ binance:
     - BTCUSDT
     - ETHUSDT
 ```
+
+### The database
+
+The database is **PostgreSQL 17**, and **Flyway** creates the tables at startup from the SQL scripts in `backend/src/main/resources/db/migration`. `spring-boot:run` starts the database from `backend/compose.yaml` and leaves it running, so Docker must be running first. To manage it yourself:
+
+```bash
+docker compose up -d      # start PostgreSQL (from backend/)
+docker compose down       # stop it; the data stays in the tradingbot-data volume
+```
+
+The connection defaults to `jdbc:postgresql://localhost:5432/tradingbot` (user and password `tradingbot`). Override it with `TRADING_BOT_DB_URL`, `TRADING_BOT_DB_USER` and `TRADING_BOT_DB_PASSWORD`.
 
 ### Start the application
 

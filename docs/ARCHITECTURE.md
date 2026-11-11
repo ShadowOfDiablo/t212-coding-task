@@ -773,9 +773,9 @@ erDiagram
 
 - `order_history` also keeps the order's broker, ticker, side, type and amount, copied from `open_order`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **`OrderRepository`:** inserts open orders, marks their status, and settles them. Settling copies the open order into `order_history` with the result, inserts the fills and deletes the open row, all in **one transaction**.
-- **Idempotent:** settling an order twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
-- A failed settlement rolls back completely: no history row, no fills, and the order stays open.
+- **`OrderRepository`:** method names follow the SQL they run: `insertOpenOrder`, `updateOpenOrderStatus`, `deleteOpenOrder`, `getOpenOrders`, `getOrderHistory`. `moveExecutedOrderToHistory` and `moveRejectedOrderToHistory` copy the open order into `order_history` with the result, insert the fills and delete the open row, all in **one transaction**.
+- **Idempotent:** moving an order to the history twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
+- A failed move rolls back completely: no history row, no fills, and the order stays open.
 - Reads: open orders by broker, and the latest 100 finished orders with their fills.
 
 **Planned next (stacked PRs):**

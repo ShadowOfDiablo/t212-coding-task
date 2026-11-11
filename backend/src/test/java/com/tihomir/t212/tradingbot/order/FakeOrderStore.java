@@ -11,10 +11,10 @@ import org.springframework.dao.DataAccessResourceFailureException;
 final class FakeOrderStore implements OrderStore {
 
   private final Map<String, OpenOrder> openOrders = new LinkedHashMap<>();
-  private final List<String> settledOrders = new ArrayList<>();
-  private final List<String> rejectedOrders = new ArrayList<>();
+  private final List<String> executedOrdersInHistory = new ArrayList<>();
+  private final List<String> rejectedOrdersInHistory = new ArrayList<>();
   private boolean databaseDown;
-  private boolean settlingFails;
+  private boolean movingToHistoryFails;
 
   @Override
   public void insertOpenOrder(OpenOrder order) {
@@ -25,7 +25,8 @@ final class FakeOrderStore implements OrderStore {
   }
 
   @Override
-  public void markOpenOrderStatus(String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
+  public void updateOpenOrderStatus(
+      String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
     OpenOrder order = openOrders.get(clientOrderId);
     openOrders.put(
         clientOrderId,
@@ -48,28 +49,28 @@ final class FakeOrderStore implements OrderStore {
   }
 
   @Override
-  public void settleExecutedOrder(ExecutedOrder order) {
-    if (settlingFails) {
+  public void moveExecutedOrderToHistory(ExecutedOrder order) {
+    if (movingToHistoryFails) {
       throw new DataAccessResourceFailureException("connection lost");
     }
     openOrders.remove(order.clientOrderId());
-    settledOrders.add(order.clientOrderId());
+    executedOrdersInHistory.add(order.clientOrderId());
   }
 
   @Override
-  public void settleRejectedOrder(
+  public void moveRejectedOrderToHistory(
       String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt) {
     openOrders.remove(clientOrderId);
-    rejectedOrders.add(clientOrderId);
+    rejectedOrdersInHistory.add(clientOrderId);
   }
 
   @Override
-  public List<OpenOrder> openOrders(String broker) {
+  public List<OpenOrder> getOpenOrders(String broker) {
     return List.copyOf(openOrders.values());
   }
 
   @Override
-  public List<OrderHistoryEntry> orderHistory(String broker) {
+  public List<OrderHistoryEntry> getOrderHistory(String broker) {
     return List.of();
   }
 
@@ -77,19 +78,19 @@ final class FakeOrderStore implements OrderStore {
     return openOrders.values().stream().findFirst();
   }
 
-  List<String> settledOrders() {
-    return List.copyOf(settledOrders);
+  List<String> executedOrdersInHistory() {
+    return List.copyOf(executedOrdersInHistory);
   }
 
-  List<String> rejectedOrders() {
-    return List.copyOf(rejectedOrders);
+  List<String> rejectedOrdersInHistory() {
+    return List.copyOf(rejectedOrdersInHistory);
   }
 
   void takeDatabaseDown() {
     databaseDown = true;
   }
 
-  void failSettling() {
-    settlingFails = true;
+  void failMovingToHistory() {
+    movingToHistoryFails = true;
   }
 }

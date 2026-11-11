@@ -54,14 +54,14 @@ public class OrderService {
     return broker(brokerName).tradingGateway().accountBalances().balances();
   }
 
-  public List<OpenOrder> openOrders(String brokerName) {
+  public List<OpenOrder> getOpenOrders(String brokerName) {
     broker(brokerName);
-    return orderStore.openOrders(brokerName);
+    return orderStore.getOpenOrders(brokerName);
   }
 
-  public List<OrderHistoryEntry> orderHistory(String brokerName) {
+  public List<OrderHistoryEntry> getOrderHistory(String brokerName) {
     broker(brokerName);
-    return orderStore.orderHistory(brokerName);
+    return orderStore.getOrderHistory(brokerName);
   }
 
   private ExecutedOrder sendMarketOrder(
@@ -82,7 +82,7 @@ public class OrderService {
 
   private void recordExecutedOrder(ExecutedOrder order) {
     try {
-      orderStore.settleExecutedOrder(order);
+      orderStore.moveExecutedOrderToHistory(order);
     } catch (DataAccessException e) {
       log.error(
           "Order {} was executed but could not be moved to the order history; it stays open"
@@ -94,7 +94,7 @@ public class OrderService {
 
   private void recordRejectedOrder(String clientOrderId, ExchangeRejectedRequestException e) {
     try {
-      orderStore.settleRejectedOrder(clientOrderId, e, clock.instant());
+      orderStore.moveRejectedOrderToHistory(clientOrderId, e, clock.instant());
     } catch (DataAccessException storeFailure) {
       log.error(
           "Order {} was rejected but could not be moved to the order history",
@@ -113,7 +113,7 @@ public class OrderService {
 
   private void markStatusUnknown(String clientOrderId) {
     try {
-      orderStore.markOpenOrderStatus(clientOrderId, OpenOrderStatus.UNKNOWN, clock.instant());
+      orderStore.updateOpenOrderStatus(clientOrderId, OpenOrderStatus.UNKNOWN, clock.instant());
     } catch (DataAccessException e) {
       log.error("Order {} has an unknown status that could not be recorded", clientOrderId, e);
     }

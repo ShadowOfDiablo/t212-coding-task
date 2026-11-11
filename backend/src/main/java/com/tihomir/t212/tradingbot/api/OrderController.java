@@ -35,12 +35,12 @@ public class OrderController {
   }
 
   @GetMapping("/orders/open")
-  public OpenOrderListResponse openOrders(@PathVariable String broker) {
-    return new OpenOrderListResponse(orderService.openOrders(broker));
+  public OpenOrderListResponse getOpenOrders(@PathVariable String broker) {
+    return new OpenOrderListResponse(orderService.getOpenOrders(broker));
   }
 
   @GetMapping("/orders/history")
-  public OrderHistoryResponse orderHistory(@PathVariable String broker) {
-    return new OrderHistoryResponse(orderService.orderHistory(broker));
+  public OrderHistoryResponse getOrderHistory(@PathVariable String broker) {
+    return new OrderHistoryResponse(orderService.getOrderHistory(broker));
   }
 }

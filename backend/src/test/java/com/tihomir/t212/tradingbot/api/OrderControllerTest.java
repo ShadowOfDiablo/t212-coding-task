@@ -161,7 +161,7 @@ class OrderControllerTest {
 
   @Test
   void openOrdersAreListed() throws Exception {
-    when(orderService.openOrders("binance"))
+    when(orderService.getOpenOrders("binance"))
         .thenReturn(
             List.of(
                 new OpenOrder(
@@ -185,7 +185,7 @@ class OrderControllerTest {
 
   @Test
   void orderHistoryIsListedWithFills() throws Exception {
-    when(orderService.orderHistory("binance"))
+    when(orderService.getOrderHistory("binance"))
         .thenReturn(
             List.of(
                 new OrderHistoryEntry(

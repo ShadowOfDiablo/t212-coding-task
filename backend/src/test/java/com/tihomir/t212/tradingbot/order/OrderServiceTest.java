@@ -35,7 +35,7 @@ class OrderServiceTest {
     assertThat(order.ticker()).isEqualTo(FakeBroker.TRADED_TICKER);
     assertThat(order.clientOrderId()).startsWith("tb-");
     assertThat(gateway.placedOrders()).containsExactly(request);
-    assertThat(orderStore.settledOrders()).containsExactly(order.clientOrderId());
+    assertThat(orderStore.executedOrdersInHistory()).containsExactly(order.clientOrderId());
     assertThat(orderStore.onlyOpenOrder()).isEmpty();
   }
 
@@ -56,7 +56,7 @@ class OrderServiceTest {
     assertThatThrownBy(
             () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
         .isInstanceOf(ExchangeRejectedRequestException.class);
-    assertThat(orderStore.rejectedOrders()).hasSize(1);
+    assertThat(orderStore.rejectedOrdersInHistory()).hasSize(1);
     assertThat(orderStore.onlyOpenOrder()).isEmpty();
   }
 
@@ -83,7 +83,7 @@ class OrderServiceTest {
 
   @Test
   void executedOrderIsReturnedEvenWhenRecordingItFails() {
-    orderStore.failSettling();
+    orderStore.failMovingToHistory();
 
     ExecutedOrder order =
         orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER));
@@ -97,7 +97,7 @@ class OrderServiceTest {
   void refusesAnUnknownBroker() {
     assertThatThrownBy(() -> orderService.placeMarketOrder("unknown", buy("BTCUSDT")))
         .isInstanceOf(BrokerNotFoundException.class);
-    assertThatThrownBy(() -> orderService.openOrders("unknown"))
+    assertThatThrownBy(() -> orderService.getOpenOrders("unknown"))
         .isInstanceOf(BrokerNotFoundException.class);
   }
 

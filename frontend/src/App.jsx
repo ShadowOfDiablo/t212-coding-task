@@ -27,9 +27,7 @@ function App() {
       )}
       <main className="layout">
         <TickerStrip tickers={tickers.data?.tickers} />
-        <div className="columns">
-          <HoldingsCard balances={balances} tickers={tickers.data?.tickers} />
-        </div>
+        <HoldingsCard balances={balances} tickers={tickers.data?.tickers} />
       </main>
     </div>
   )

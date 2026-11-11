@@ -46,6 +46,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
     └── src/main/java/com/tihomir/t212/tradingbot
         ├── api            REST controllers
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
+        ├── database       PostgreSQL access (raw SQL through JdbcClient)
         ├── mode           the bot mode (trading, training), switched at runtime, and the live data starter
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
         ├── order          market orders, the balance cache and its sync, the trading gateway interface

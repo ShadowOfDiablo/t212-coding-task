@@ -56,7 +56,7 @@ class OrderServiceTest {
     assertThatThrownBy(
             () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
         .isInstanceOf(ExchangeRejectedRequestException.class);
-    assertThat(orderStore.rejectedOrdersInHistory()).hasSize(1);
+    assertThat(orderStore.movedToRejectedOrders()).hasSize(1);
     assertThat(orderStore.onlyOpenOrder()).isEmpty();
   }
 
@@ -96,6 +96,8 @@ class OrderServiceTest {
   @Test
   void refusesAnUnknownBroker() {
     assertThatThrownBy(() -> orderService.placeMarketOrder("unknown", buy("BTCUSDT")))
+        .isInstanceOf(BrokerNotFoundException.class);
+    assertThatThrownBy(() -> orderService.getRejectedOrders("unknown"))
         .isInstanceOf(BrokerNotFoundException.class);
     assertThatThrownBy(() -> orderService.getOpenOrders("unknown"))
         .isInstanceOf(BrokerNotFoundException.class);

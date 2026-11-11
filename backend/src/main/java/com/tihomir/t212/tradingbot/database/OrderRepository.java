@@ -9,6 +9,7 @@ import com.tihomir.t212.tradingbot.order.OrderFill;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStore;
+import com.tihomir.t212.tradingbot.order.RejectedOrder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -16,7 +17,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -25,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class OrderRepository implements OrderStore {
 
-  private static final String REJECTED_STATUS = "REJECTED";
   private static final int MAX_ORDERS_PER_HISTORY_REQUEST = 100;
 
   private final JdbcClient jdbcClient;
@@ -110,24 +109,22 @@ public class OrderRepository implements OrderStore {
 
   @Override
   @Transactional
-  public void moveRejectedOrderToHistory(
-      String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt) {
+  public void moveOrderToRejectedOrders(
+      String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt) {
     jdbcClient
         .sql(
             """
-            INSERT INTO order_history (client_order_id, broker, ticker, side, order_type, amount,
-                                       amount_type, final_status, executed_quantity,
-                                       quote_amount, error_code, error_message, created_at,
-                                       closed_at)
+            INSERT INTO rejected_order (client_order_id, broker, ticker, side, order_type, amount,
+                                        amount_type, error_code, error_message, created_at,
+                                        rejected_at)
             SELECT client_order_id, broker, ticker, side, order_type, amount, amount_type,
-                   :finalStatus, 0, 0, :errorCode, :errorMessage, created_at, :closedAt
+                   :errorCode, :errorMessage, created_at, :rejectedAt
             FROM open_order WHERE client_order_id = :clientOrderId
             ON CONFLICT (client_order_id) DO NOTHING
             """)
-        .param("finalStatus", REJECTED_STATUS)
         .param("errorCode", rejection.exchangeErrorCode())
         .param("errorMessage", rejection.getMessage())
-        .param("closedAt", timestamp(closedAt))
+        .param("rejectedAt", timestamp(rejectedAt))
         .param("clientOrderId", clientOrderId)
         .update();
     deleteOpenOrder(clientOrderId);
@@ -175,6 +172,20 @@ public class OrderRepository implements OrderStore {
         .list();
   }
 
+  @Override
+  public List<RejectedOrder> getRejectedOrders(String broker) {
+    return jdbcClient
+        .sql(
+            """
+            SELECT * FROM rejected_order WHERE broker = :broker
+            ORDER BY rejected_at DESC LIMIT :maxOrders
+            """)
+        .param("broker", broker)
+        .param("maxOrders", MAX_ORDERS_PER_HISTORY_REQUEST)
+        .query(OrderRepository::rejectedOrder)
+        .list();
+  }
+
   private void insertFill(String clientOrderId, OrderFill fill) {
     jdbcClient
         .sql(
@@ -212,7 +223,7 @@ public class OrderRepository implements OrderStore {
     String clientOrderId = row.getString("client_order_id");
     return new OrderHistoryEntry(
         clientOrderId,
-        Optional.ofNullable(row.getObject("exchange_order_id", Long.class)),
+        row.getLong("exchange_order_id"),
         row.getString("broker"),
         row.getString("ticker"),
         OrderSide.valueOf(row.getString("side")),
@@ -222,12 +233,25 @@ public class OrderRepository implements OrderStore {
         row.getString("final_status"),
         row.getBigDecimal("executed_quantity"),
         row.getBigDecimal("quote_amount"),
-        Optional.ofNullable(row.getBigDecimal("average_price")),
-        Optional.ofNullable(row.getObject("error_code", Integer.class)),
-        Optional.ofNullable(row.getString("error_message")),
+        row.getBigDecimal("average_price"),
         instant(row, "created_at"),
         instant(row, "closed_at"),
         fillsByOrder.getOrDefault(clientOrderId, List.of()));
+  }
+
+  private static RejectedOrder rejectedOrder(ResultSet row, int rowNumber) throws SQLException {
+    return new RejectedOrder(
+        row.getString("client_order_id"),
+        row.getString("broker"),
+        row.getString("ticker"),
+        OrderSide.valueOf(row.getString("side")),
+        row.getString("order_type"),
+        row.getBigDecimal("amount"),
+        OrderAmountType.valueOf(row.getString("amount_type")),
+        row.getInt("error_code"),
+        row.getString("error_message"),
+        instant(row, "created_at"),
+        instant(row, "rejected_at"));
   }
 
   private static OrderFillRow orderFillRow(ResultSet row, int rowNumber) throws SQLException {

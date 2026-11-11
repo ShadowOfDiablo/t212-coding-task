@@ -3,6 +3,8 @@ package com.tihomir.t212.tradingbot.broker.binance;
 import com.tihomir.t212.tradingbot.broker.AbstractBroker;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnectionFactory;
+import com.tihomir.t212.tradingbot.order.BalanceCachingTradingGateway;
+import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
@@ -12,12 +14,16 @@ public class BinanceBroker extends AbstractBroker {
 
   private final BinanceConnectionProperties properties;
   private final JsonMapper jsonMapper;
+  private final BalanceCachingTradingGateway tradingGateway;
+  private final BinanceUserDataStream userDataStream;
 
   public BinanceBroker(
       BinanceConnectionProperties properties,
       JsonMapper jsonMapper,
       MarketDataStreamConnectionFactory connectionFactory,
-      RestClient.Builder restClientBuilder) {
+      RestClient.Builder restClientBuilder,
+      BalanceCachingTradingGateway tradingGateway,
+      BinanceUserDataStream userDataStream) {
     super(
         properties.name(),
         properties.tickers(),
@@ -26,10 +32,22 @@ public class BinanceBroker extends AbstractBroker {
         restClientBuilder.build());
     this.properties = properties;
     this.jsonMapper = jsonMapper;
+    this.tradingGateway = tradingGateway;
+    this.userDataStream = userDataStream;
   }
 
   @Override
   protected ExchangeMarketDataProtocol createMarketDataProtocol() {
     return new BinanceMarketDataProtocol(properties.streamUrl(), properties.restUrl(), jsonMapper);
+  }
+
+  @Override
+  public ExchangeTradingGateway tradingGateway() {
+    return tradingGateway;
+  }
+
+  @Override
+  public void startAccountUpdates() {
+    userDataStream.start();
   }
 }

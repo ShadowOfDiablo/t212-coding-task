@@ -1,15 +1,31 @@
 spring:
   application:
     name: t212-spring-boot-project
-
+  jackson:
+    write:
+      write-bigdecimal-as-plain: true
+  http:
+    clients:
+      connect-timeout: 5s
+      read-timeout: 10s
+bot:
+  mode: TRADING
 binance:
   name: binance
-  stream-url: wss://data-stream.binance.vision
+  stream-url: wss://demo-stream.binance.com
   rest-url: https://data-api.binance.vision
   interval: ONE_MINUTE
-  tickers:
-    - BTCUSDT
-    - ETHUSDT
-
+  tickers: [BTCUSDT, ETHUSDT]
+  trading:
+    rest-url: https://demo-api.binance.com
+    demo-host: demo-api.binance.com
+    api-key: ${BINANCE_DEMO_API_KEY:}
+    private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}
+    recv-window: 5s
+  user-data-stream:
+    websocket-api-url: wss://demo-ws-api.binance.com/ws-api/v3
+    demo-host: demo-ws-api.binance.com
+    balance-sync-interval: 15m
+    balance-sync-retry-delay: 10s
 smoke:
   duration: 30s

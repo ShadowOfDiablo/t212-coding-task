@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -28,11 +30,15 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
 
   private final BrokerRegistryService brokers;
   private final Duration duration;
+  private final ConfigurableApplicationContext context;
 
   public MarketDataSmokeRunner(
-      BrokerRegistryService brokers, @Value("${smoke.duration:30s}") Duration duration) {
+      BrokerRegistryService brokers,
+      @Value("${smoke.duration:30s}") Duration duration,
+      ConfigurableApplicationContext context) {
     this.brokers = brokers;
     this.duration = duration;
+    this.context = context;
   }
 
   @Override
@@ -55,6 +61,7 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
 
     brokers.all().forEach(broker -> broker.candleFeeder().stop());
     log.info("Smoke run finished after {}", duration);
+    SpringApplication.exit(context);
   }
 
   private static void logRecentCandleHistory(Broker broker) {

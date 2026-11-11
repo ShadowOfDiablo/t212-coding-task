@@ -64,6 +64,11 @@ public class OrderService {
     return orderStore.getOrderHistory(brokerName);
   }
 
+  public List<RejectedOrder> getRejectedOrders(String brokerName) {
+    broker(brokerName);
+    return orderStore.getRejectedOrders(brokerName);
+  }
+
   private ExecutedOrder sendMarketOrder(
       Broker broker, String clientOrderId, MarketOrderRequest request) {
     try {
@@ -94,10 +99,10 @@ public class OrderService {
 
   private void recordRejectedOrder(String clientOrderId, ExchangeRejectedRequestException e) {
     try {
-      orderStore.moveRejectedOrderToHistory(clientOrderId, e, clock.instant());
+      orderStore.moveOrderToRejectedOrders(clientOrderId, e, clock.instant());
     } catch (DataAccessException storeFailure) {
       log.error(
-          "Order {} was rejected but could not be moved to the order history",
+          "Order {} was rejected but could not be moved to the rejected orders",
           clientOrderId,
           storeFailure);
     }

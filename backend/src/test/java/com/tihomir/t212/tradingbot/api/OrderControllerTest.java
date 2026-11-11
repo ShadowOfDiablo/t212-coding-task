@@ -23,12 +23,12 @@ import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
+import com.tihomir.t212.tradingbot.order.RejectedOrder;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
 import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -190,7 +190,7 @@ class OrderControllerTest {
             List.of(
                 new OrderHistoryEntry(
                     "tb-1",
-                    Optional.of(28L),
+                    28L,
                     "binance",
                     "BTCUSDT",
                     OrderSide.BUY,
@@ -200,9 +200,7 @@ class OrderControllerTest {
                     "FILLED",
                     new BigDecimal("0.0001"),
                     BigDecimal.TEN,
-                    Optional.of(new BigDecimal("100000")),
-                    Optional.empty(),
-                    Optional.empty(),
+                    new BigDecimal("100000"),
                     Instant.EPOCH,
                     Instant.EPOCH,
                     List.of(
@@ -219,6 +217,32 @@ class OrderControllerTest {
         .andExpect(jsonPath("$.orders[0].exchangeOrderId").value(28))
         .andExpect(jsonPath("$.orders[0].finalStatus").value("FILLED"))
         .andExpect(jsonPath("$.orders[0].fills[0].tradeId").value(7));
+  }
+
+  @Test
+  void rejectedOrdersAreListedWithTheExchangeError() throws Exception {
+    when(orderService.getRejectedOrders("binance"))
+        .thenReturn(
+            List.of(
+                new RejectedOrder(
+                    "tb-2",
+                    "binance",
+                    "BTCUSDT",
+                    OrderSide.SELL,
+                    OpenOrder.MARKET_ORDER_TYPE,
+                    new BigDecimal("0.00013"),
+                    OrderAmountType.BASE_QUANTITY,
+                    -2010,
+                    "insufficient balance",
+                    Instant.EPOCH,
+                    Instant.EPOCH)));
+
+    mockMvc
+        .perform(get(ORDERS + "/rejected"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rejectedOrders[0].clientOrderId").value("tb-2"))
+        .andExpect(jsonPath("$.rejectedOrders[0].errorCode").value(-2010))
+        .andExpect(jsonPath("$.rejectedOrders[0].errorMessage").value("insufficient balance"));
   }
 
   private OngoingStubbing<ExecutedOrder> whenBuying() {

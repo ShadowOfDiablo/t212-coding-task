@@ -186,11 +186,12 @@ flowchart LR
 | `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId`. It stays in the open orders as `UNKNOWN` |
 | `503` | The database is unavailable. Nothing was sent to Binance |
 
-Every order is stored before it is sent. While it runs it's an open order; once finished it moves to the history with its fills:
+Every order is stored before it is sent. While it runs it's an open order; once executed it moves to the history with its fills, and if Binance refuses it, to the rejected orders:
 
 ```bash
 curl localhost:8080/api/brokers/binance/orders/open
 curl localhost:8080/api/brokers/binance/orders/history
+curl localhost:8080/api/brokers/binance/orders/rejected
 ```
 
 The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.

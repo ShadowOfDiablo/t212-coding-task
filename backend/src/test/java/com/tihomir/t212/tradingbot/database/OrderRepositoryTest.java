@@ -12,6 +12,7 @@ import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderFill;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderSide;
+import com.tihomir.t212.tradingbot.order.RejectedOrder;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -61,6 +62,7 @@ class OrderRepositoryTest {
   @BeforeEach
   void emptyTables() {
     jdbcClient.sql("DELETE FROM order_fill").update();
+    jdbcClient.sql("DELETE FROM rejected_order").update();
     jdbcClient.sql("DELETE FROM order_history").update();
     jdbcClient.sql("DELETE FROM open_order").update();
   }
@@ -93,7 +95,7 @@ class OrderRepositoryTest {
     assertThat(orderRepository.getOpenOrders(BROKER)).isEmpty();
     OrderHistoryEntry entry = orderRepository.getOrderHistory(BROKER).getFirst();
     assertThat(entry.clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
-    assertThat(entry.exchangeOrderId()).contains(28L);
+    assertThat(entry.exchangeOrderId()).isEqualTo(28L);
     assertThat(entry.finalStatus()).isEqualTo("FILLED");
     assertThat(entry.executedQuantity()).isEqualByComparingTo("0.0001");
     assertThat(entry.createdAt()).isEqualTo(CREATED_AT);
@@ -114,21 +116,34 @@ class OrderRepositoryTest {
   }
 
   @Test
-  void rejectedOrderMovesToTheHistoryWithTheExchangeError() {
+  void rejectedOrderMovesToTheRejectedOrdersWithTheExchangeError() {
     orderRepository.insertOpenOrder(sendingBuy());
 
-    orderRepository.moveRejectedOrderToHistory(
+    orderRepository.moveOrderToRejectedOrders(
         CLIENT_ORDER_ID,
         new ExchangeRejectedRequestException(-2010, "insufficient balance"),
         EXECUTED_AT);
 
     assertThat(orderRepository.getOpenOrders(BROKER)).isEmpty();
-    OrderHistoryEntry entry = orderRepository.getOrderHistory(BROKER).getFirst();
-    assertThat(entry.finalStatus()).isEqualTo("REJECTED");
-    assertThat(entry.errorCode()).contains(-2010);
-    assertThat(entry.errorMessage()).contains("insufficient balance");
-    assertThat(entry.exchangeOrderId()).isEmpty();
-    assertThat(entry.fills()).isEmpty();
+    assertThat(orderRepository.getOrderHistory(BROKER)).isEmpty();
+    RejectedOrder rejected = orderRepository.getRejectedOrders(BROKER).getFirst();
+    assertThat(rejected.clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
+    assertThat(rejected.errorCode()).isEqualTo(-2010);
+    assertThat(rejected.errorMessage()).isEqualTo("insufficient balance");
+    assertThat(rejected.createdAt()).isEqualTo(CREATED_AT);
+    assertThat(rejected.rejectedAt()).isEqualTo(EXECUTED_AT);
+  }
+
+  @Test
+  void movingToTheRejectedOrdersTwiceChangesNothing() {
+    orderRepository.insertOpenOrder(sendingBuy());
+    ExchangeRejectedRequestException rejection =
+        new ExchangeRejectedRequestException(-2010, "insufficient balance");
+
+    orderRepository.moveOrderToRejectedOrders(CLIENT_ORDER_ID, rejection, EXECUTED_AT);
+    orderRepository.moveOrderToRejectedOrders(CLIENT_ORDER_ID, rejection, EXECUTED_AT);
+
+    assertThat(orderRepository.getRejectedOrders(BROKER)).hasSize(1);
   }
 
   @Test

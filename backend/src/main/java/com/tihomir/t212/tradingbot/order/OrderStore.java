@@ -16,11 +16,13 @@ public interface OrderStore {
   /** Moves an executed order and its fills into the history in one transaction. */
   void moveExecutedOrderToHistory(ExecutedOrder order);
 
-  /** Moves an order the exchange refused into the history in one transaction. */
-  void moveRejectedOrderToHistory(
-      String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt);
+  /** Moves an order the exchange refused into the rejected orders in one transaction. */
+  void moveOrderToRejectedOrders(
+      String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt);
 
   List<OpenOrder> getOpenOrders(String broker);
 
   List<OrderHistoryEntry> getOrderHistory(String broker);
+
+  List<RejectedOrder> getRejectedOrders(String broker);
 }

@@ -466,14 +466,15 @@ stateDiagram-v2
     SENDING --> UNKNOWN: 5xx, timeout, unreadable 2xx
     SENDING --> [*]: no API key: row deleted, 409
     EXECUTED --> [*]: moved to order_history with fills, 201
-    REJECTED --> [*]: moved to order_history with code and message, 422
+    REJECTED --> [*]: moved to rejected_order with code and message, 422
     UNKNOWN --> UNKNOWN: stays in open_order, 502 + clientOrderId
 ```
 
 | Where the order is | Status |
 |---|---|
 | `open_order` (only active orders) | `SENDING` before and while it is sent; `UNKNOWN` when Binance gave no clear answer |
-| `order_history` (append-only) | Binance's final status (`FILLED`, `EXPIRED`, …) or `REJECTED` |
+| `order_history` (append-only) | Executed: Binance's final status (`FILLED`, `EXPIRED`, …), with fills |
+| `rejected_order` (append-only) | Refused by Binance: its error code and message |
 
 | Failure | Example | HTTP |
 |---|---|---|
@@ -760,15 +761,20 @@ erDiagram
     }
     order_history {
         text client_order_id PK
-        bigint exchange_order_id "unique"
-        text final_status "FILLED, EXPIRED, REJECTED, ..."
+        bigint exchange_order_id "unique, not null"
+        text final_status "FILLED, EXPIRED, ..."
         numeric executed_quantity
         numeric quote_amount
-        numeric average_price
-        int error_code
-        text error_message
+        numeric average_price "not null"
         timestamptz created_at
         timestamptz closed_at
+    }
+    rejected_order {
+        text client_order_id PK
+        int error_code "Binance's code, e.g. -2010"
+        text error_message
+        timestamptz created_at
+        timestamptz rejected_at
     }
     order_fill {
         text client_order_id PK
@@ -779,18 +785,21 @@ erDiagram
         text commission_asset
     }
     order_history ||--o{ order_fill : "filled in"
-    open_order ||..|| order_history : "moves to, in one transaction"
+    open_order ||..|| order_history : "executed: moves to, in one transaction"
+    open_order ||..|| rejected_order : "rejected: moves to, in one transaction"
 ```
 
-- `order_history` also keeps the order's broker, ticker, side, type and amount, copied from `open_order`.
+- `order_history` holds executed orders only and `rejected_order` holds refused orders only, so every column is always set: no nullable execution or error columns, and one fixed shape per list for the dashboard. `V2__split_rejected_orders.sql` moved the rejected rows out of `order_history`.
+- Both keep the order's broker, ticker, side, type and amount, copied from `open_order`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **`OrderRepository`:** method names follow the SQL they run: `insertOpenOrder`, `updateOpenOrderStatus`, `deleteOpenOrder`, `getOpenOrders`, `getOrderHistory`. `moveExecutedOrderToHistory` and `moveRejectedOrderToHistory` copy the open order into `order_history` with the result, insert the fills and delete the open row, all in **one transaction**.
-- **Idempotent:** moving an order to the history twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
+- **`OrderRepository`:** method names follow the SQL they run: `insertOpenOrder`, `updateOpenOrderStatus`, `deleteOpenOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. `moveExecutedOrderToHistory` copies the open order into `order_history` with the result and inserts the fills; `moveOrderToRejectedOrders` copies it into `rejected_order` with Binance's error. Both delete the open row, all in **one transaction**.
+- **Idempotent:** moving an order twice changes nothing: the move copies the row from `open_order` (`INSERT … SELECT … WHERE client_order_id = ?`), and once it has been moved and deleted there is nothing left to copy, so no history row or fill is written twice.
+- **Plain SQL only:** queries use standard `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `WHERE`, `ORDER BY` and `LIMIT`, with `?` placeholders. No named parameters and no PostgreSQL-only clauses such as `ON CONFLICT`.
 - **Failures:**
   - Database down before sending: 503 and nothing is sent.
   - Database fails after Binance executed the order: the answer is still 201. The row stays in `open_order` as `SENDING` until it is reconciled with Binance.
   - A failed move rolls back completely: no history row, no fills, and the order stays open.
-- **Endpoints:** `GET /api/brokers/{broker}/orders/open` and `GET /api/brokers/{broker}/orders/history` (the latest 100, with fills).
+- **Endpoints:** `GET /api/brokers/{broker}/orders/open`, `GET /api/brokers/{broker}/orders/history` (the latest 100 executed orders, with fills) and `GET /api/brokers/{broker}/orders/rejected` (the latest 100 rejected orders).
 
 **Planned next (stacked PRs):**
 - **Reconciliation:** at startup and after each user data stream subscription, every `SENDING`/`UNKNOWN` order is looked up on Binance by `clientOrderId` and settled. `executionReport` events settle them too.
@@ -826,7 +835,8 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | POST | `/brokers/{broker}/orders` | **Built.** Market order on the demo account (§7.1) |
 | GET | `/brokers/{broker}/balance` | **Built.** `{"balances": […]}`, the non-zero balances of the demo account |
 | GET | `/brokers/{broker}/orders/open` | **Built.** `{"openOrders": […]}`, orders still in `open_order` (`SENDING`, `UNKNOWN`) |
-| GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 finished orders with their fills |
+| GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 executed orders with their fills |
+| GET | `/brokers/{broker}/orders/rejected` | **Built.** `{"rejectedOrders": […]}`, the latest 100 orders Binance refused, with its error |
 | GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
 | GET | `/bot/status` | State, mode, current run, latest price |
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
@@ -921,7 +931,7 @@ com.tihomir.t212.tradingbot
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
 │                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
 │                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
-│                    OrderStore, OpenOrder, OpenOrderStatus, OrderHistoryEntry,
+│                    OrderStore, OpenOrder, OpenOrderStatus, OrderHistoryEntry, RejectedOrder,
 │                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
 │                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
 │                    TradingNotConfiguredException
@@ -931,6 +941,6 @@ com.tihomir.t212.tradingbot
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    (planned) OpenLotRepository, TradeRepository
 └── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
-                     BotModeController, BotModeSetting, ApiExceptionHandler
+                     RejectedOrderListResponse, BotModeController, BotModeSetting, ApiExceptionHandler
                      (planned) bot controls and read endpoints
 ```

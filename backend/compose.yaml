@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${TRADING_BOT_DB_NAME:-tradingbot}
+      POSTGRES_USER: ${TRADING_BOT_DB_USER:-tradingbot}
+      POSTGRES_PASSWORD: ${TRADING_BOT_DB_PASSWORD:-tradingbot}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tradingbot-data:/var/lib/postgresql/data
+
+volumes:
+  tradingbot-data:

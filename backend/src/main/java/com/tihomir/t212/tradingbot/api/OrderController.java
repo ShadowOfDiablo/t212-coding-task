@@ -1,12 +1,8 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.order.AccountBalanceList;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
-import com.tihomir.t212.tradingbot.order.OpenOrderList;
-import com.tihomir.t212.tradingbot.order.OrderHistory;
 import com.tihomir.t212.tradingbot.order.OrderService;
-import com.tihomir.t212.tradingbot.order.RejectedOrderList;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,22 +30,22 @@ public class OrderController {
   }
 
   @GetMapping("/balance")
-  public AccountBalanceList getAccountBalances(@PathVariable String broker) {
-    return orderService.getAccountBalances(broker);
+  public AccountBalanceResponse getAccountBalances(@PathVariable String broker) {
+    return new AccountBalanceResponse(orderService.getAccountBalances(broker).balances());
   }
 
   @GetMapping("/orders/open")
-  public OpenOrderList getOpenOrders(@PathVariable String broker) {
-    return orderService.getOpenOrders(broker);
+  public OpenOrderListResponse getOpenOrders(@PathVariable String broker) {
+    return new OpenOrderListResponse(orderService.getOpenOrders(broker).openOrders());
   }
 
   @GetMapping("/orders/history")
-  public OrderHistory getOrderHistory(@PathVariable String broker) {
-    return orderService.getOrderHistory(broker);
+  public OrderHistoryResponse getOrderHistory(@PathVariable String broker) {
+    return new OrderHistoryResponse(orderService.getOrderHistory(broker).orders());
   }
 
   @GetMapping("/orders/rejected")
-  public RejectedOrderList getRejectedOrders(@PathVariable String broker) {
-    return orderService.getRejectedOrders(broker);
+  public RejectedOrderListResponse getRejectedOrders(@PathVariable String broker) {
+    return new RejectedOrderListResponse(orderService.getRejectedOrders(broker).rejectedOrders());
   }
 }

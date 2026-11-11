@@ -130,11 +130,12 @@ class OrderRepositoryTest {
             INSERT INTO open_order (exchange_order_id, client_order_id, broker, ticker, side,
                                     order_type, amount, amount_type, status, created_at,
                                     updated_at)
-            VALUES (30, 'tb-3', :broker, 'BTCUSDT', 'SELL', 'TAKE_PROFIT_LIMIT', 0.0001,
-                    'BASE_QUANTITY', 'NEW', :createdAt, :createdAt)
+            VALUES (30, 'tb-3', ?, 'BTCUSDT', 'SELL', 'TAKE_PROFIT_LIMIT', 0.0001,
+                    'BASE_QUANTITY', 'NEW', ?, ?)
             """)
-        .param("broker", BROKER)
-        .param("createdAt", CREATED_AT.atOffset(ZoneOffset.UTC))
+        .param(BROKER)
+        .param(CREATED_AT.atOffset(ZoneOffset.UTC))
+        .param(CREATED_AT.atOffset(ZoneOffset.UTC))
         .update();
 
     OpenOrder order = orderRepository.getOpenOrders(BROKER).openOrders().getFirst();

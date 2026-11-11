@@ -6,18 +6,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("binance.trading")
 public record BinanceTradingProperties(
-    URI restUrl, String apiKey, String privateKeyPath, Duration recvWindow) {
+    URI restUrl, String demoHost, String apiKey, String privateKeyPath, Duration recvWindow) {
 
-  static final String DEMO_TRADING_HOST = "demo-api.binance.com";
   private static final String NOT_SET = "";
 
   public BinanceTradingProperties {
-    if (restUrl == null || !DEMO_TRADING_HOST.equals(restUrl.getHost())) {
+    if (demoHost == null || demoHost.isBlank()) {
+      throw new IllegalArgumentException("binance.trading.demo-host must be set");
+    }
+    if (restUrl == null || !demoHost.equals(restUrl.getHost())) {
       throw new IllegalArgumentException(
-          "binance.trading.rest-url must point to the demo account at "
-              + DEMO_TRADING_HOST
-              + ", was "
-              + restUrl);
+          "binance.trading.rest-url must point to the demo host " + demoHost + ", was " + restUrl);
     }
     if (recvWindow == null || recvWindow.isNegative() || recvWindow.isZero()) {
       throw new IllegalArgumentException("binance.trading.recv-window must be positive");

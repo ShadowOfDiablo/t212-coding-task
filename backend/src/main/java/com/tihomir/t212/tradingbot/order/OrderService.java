@@ -39,7 +39,7 @@ public class OrderService {
   }
 
   public List<AssetBalance> accountBalances(String brokerName) {
-    return broker(brokerName).tradingGateway().accountBalances();
+    return broker(brokerName).tradingGateway().accountBalances().balances();
   }
 
   private Broker broker(String brokerName) {

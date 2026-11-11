@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.broker.binance.util;
 
+import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
@@ -69,9 +70,18 @@ public final class OrderUtil {
         Instant.ofEpochMilli(required(order, "transactTime").asLong()));
   }
 
-  public static List<AssetBalance> assetBalances(JsonNode account) {
-    return StreamSupport.stream(required(account, "balances").spliterator(), false)
-        .map(OrderUtil::assetBalance)
+  public static AccountBalanceSnapshot accountBalanceSnapshot(JsonNode account) {
+    List<AssetBalance> balances =
+        StreamSupport.stream(required(account, "balances").spliterator(), false)
+            .map(OrderUtil::assetBalance)
+            .toList();
+    return new AccountBalanceSnapshot(
+        Instant.ofEpochMilli(required(account, "updateTime").asLong()), balances);
+  }
+
+  public static List<AssetBalance> accountPositionBalances(JsonNode accountPositionEvent) {
+    return StreamSupport.stream(required(accountPositionEvent, "B").spliterator(), false)
+        .map(OrderUtil::accountPositionBalance)
         .toList();
   }
 
@@ -115,6 +125,11 @@ public final class OrderUtil {
         required(balance, "asset").asString(),
         decimal(balance, "free"),
         decimal(balance, "locked"));
+  }
+
+  private static AssetBalance accountPositionBalance(JsonNode balance) {
+    return new AssetBalance(
+        required(balance, "a").asString(), decimal(balance, "f"), decimal(balance, "l"));
   }
 
   private static BigDecimal decimal(JsonNode node, String field) {

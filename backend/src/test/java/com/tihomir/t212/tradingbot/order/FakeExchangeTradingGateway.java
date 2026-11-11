@@ -8,17 +8,19 @@ import java.util.Optional;
 
 public final class FakeExchangeTradingGateway implements ExchangeTradingGateway {
 
-  static final List<AssetBalance> BALANCES =
+  public static final Instant SNAPSHOT_TIME = Instant.ofEpochMilli(1_000);
+  public static final List<AssetBalance> BALANCES =
       List.of(new AssetBalance("USDT", new BigDecimal("100"), BigDecimal.ZERO));
 
   private final List<MarketOrderRequest> placedOrders = new ArrayList<>();
-  private List<AssetBalance> balances = BALANCES;
+  private AccountBalanceSnapshot snapshot = new AccountBalanceSnapshot(SNAPSHOT_TIME, BALANCES);
   private Optional<RuntimeException> orderFailure = Optional.empty();
   private Optional<RuntimeException> balancesFailure = Optional.empty();
+  private int remainingBalanceFailures;
   private int balanceRequests;
 
   @Override
-  public ExecutedOrder placeMarketOrder(MarketOrderRequest request) {
+  public synchronized ExecutedOrder placeMarketOrder(MarketOrderRequest request) {
     if (orderFailure.isPresent()) {
       throw orderFailure.get();
     }
@@ -37,35 +39,33 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
   }
 
   @Override
-  public List<AssetBalance> accountBalances() {
+  public synchronized AccountBalanceSnapshot accountBalances() {
     balanceRequests++;
-    if (balancesFailure.isPresent()) {
+    if (remainingBalanceFailures > 0 && balancesFailure.isPresent()) {
+      remainingBalanceFailures--;
       throw balancesFailure.get();
     }
-    return balances;
+    return snapshot;
   }
 
-  List<MarketOrderRequest> placedOrders() {
-    return List.copyOf(placedOrders);
-  }
-
-  int balanceRequests() {
+  public synchronized int balanceRequests() {
     return balanceRequests;
   }
 
-  void changeBalances(List<AssetBalance> newBalances) {
-    balances = newBalances;
+  public synchronized void changeBalances(Instant updateTime, List<AssetBalance> newBalances) {
+    snapshot = new AccountBalanceSnapshot(updateTime, newBalances);
   }
 
-  void failOrders(RuntimeException failure) {
-    orderFailure = Optional.of(failure);
-  }
-
-  void failBalances(RuntimeException failure) {
+  public synchronized void failBalanceRequests(RuntimeException failure, int times) {
     balancesFailure = Optional.of(failure);
+    remainingBalanceFailures = times;
   }
 
-  void stopFailingBalances() {
-    balancesFailure = Optional.empty();
+  synchronized List<MarketOrderRequest> placedOrders() {
+    return List.copyOf(placedOrders);
+  }
+
+  synchronized void failOrders(RuntimeException failure) {
+    orderFailure = Optional.of(failure);
   }
 }

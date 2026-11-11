@@ -47,7 +47,8 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
         ├── mode           the bot mode (trading, training), switched at runtime, and the live data starter
         ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
-        ├── order          market orders, balances, the trading gateway interface
+        ├── order          market orders, the balance cache and its sync, the trading gateway interface
+        ├── userdata       the user data stream connection (account events), separate from market data
         └── smoke          a short live check of the market data feed
 ```
 
@@ -163,14 +164,14 @@ flowchart LR
 
 | Answer | Meaning |
 |---|---|
-| `200` | Balances: `{"balances": [{"asset": "USDT", "free": …, "locked": …}, …]}`. They're loaded at startup and refreshed from Binance after every executed order, so reading them sends no request to Binance |
+| `200` | Balances: `{"balances": [{"asset": "USDT", "free": …, "locked": …}, …]}`. They're kept in sync by Binance's user data stream (plus a full sync every 15 minutes), so reading them sends no request to Binance |
 | `201` | Executed. The body has the executed quantity, the USDT amount, the average price and each fill with its fee |
 | `400` | Bad request body, or a ticker that isn't configured |
 | `409` | The environment variables aren't set |
 | `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
 | `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` |
 
-The configuration only accepts `demo-api.binance.com` as the trading host, so a live account can't be traded by mistake.
+The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
 
 ### Code quality
 

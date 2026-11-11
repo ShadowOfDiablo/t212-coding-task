@@ -2,6 +2,8 @@ package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
 import com.tihomir.t212.tradingbot.broker.RequestSigner;
+import com.tihomir.t212.tradingbot.order.AccountBalanceSynchronizer;
+import com.tihomir.t212.tradingbot.order.BalanceCachingTradingGateway;
 import java.nio.file.Path;
 import java.time.Clock;
 import org.slf4j.Logger;
@@ -22,6 +24,22 @@ class BinanceTradingConfiguration {
     }
     log.info("Binance: trading on the demo account at {}", tradingProperties.restUrl());
     return BinanceRequestSigner.fromPemFile(Path.of(tradingProperties.privateKeyPath()));
+  }
+
+  @Bean
+  BalanceCachingTradingGateway binanceBalanceCachingTradingGateway(
+      BinanceTradingGateway tradingGateway) {
+    return new BalanceCachingTradingGateway(tradingGateway);
+  }
+
+  @Bean
+  AccountBalanceSynchronizer binanceAccountBalanceSynchronizer(
+      BalanceCachingTradingGateway tradingGateway,
+      BinanceUserDataStreamProperties streamProperties) {
+    return new AccountBalanceSynchronizer(
+        tradingGateway,
+        streamProperties.balanceSyncInterval(),
+        streamProperties.balanceSyncRetryDelay());
   }
 
   @Bean

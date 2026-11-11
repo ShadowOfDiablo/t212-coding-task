@@ -15,13 +15,15 @@ public class BinanceBroker extends AbstractBroker {
   private final BinanceConnectionProperties properties;
   private final JsonMapper jsonMapper;
   private final BalanceCachingTradingGateway tradingGateway;
+  private final BinanceUserDataStream userDataStream;
 
   public BinanceBroker(
       BinanceConnectionProperties properties,
       JsonMapper jsonMapper,
       MarketDataStreamConnectionFactory connectionFactory,
       RestClient.Builder restClientBuilder,
-      BinanceTradingGateway tradingGateway) {
+      BalanceCachingTradingGateway tradingGateway,
+      BinanceUserDataStream userDataStream) {
     super(
         properties.name(),
         properties.tickers(),
@@ -30,7 +32,8 @@ public class BinanceBroker extends AbstractBroker {
         restClientBuilder.build());
     this.properties = properties;
     this.jsonMapper = jsonMapper;
-    this.tradingGateway = new BalanceCachingTradingGateway(tradingGateway);
+    this.tradingGateway = tradingGateway;
+    this.userDataStream = userDataStream;
   }
 
   @Override
@@ -41,5 +44,10 @@ public class BinanceBroker extends AbstractBroker {
   @Override
   public ExchangeTradingGateway tradingGateway() {
     return tradingGateway;
+  }
+
+  @Override
+  public void startAccountUpdates() {
+    userDataStream.start();
   }
 }

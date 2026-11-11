@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes orders. Orders go either to a virtual account (Training) or to a **Binance Demo Mode** account with fake funds. Nothing is ever sent to a live trading account; the configuration refuses any trading host other than `demo-api.binance.com`.
+The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes orders. Orders go either to a virtual account (Training) or to a **Binance Demo Mode** account with fake funds. Nothing is ever sent to a live trading account; the configuration refuses any trading URL that does not point to the configured demo host (`demo-api.binance.com`).
 
 | Mode | Data source | Purpose |
 |---|---|---|
@@ -93,7 +93,8 @@ flowchart LR
 | `TickerPriceMap` | Built | Latest quote per ticker, per broker. Written by the candle feeder (`TickerPriceWriter`), read by everyone else (`TickerPriceReader`) |
 | `ExchangeTradingGateway` | Built | The exchange-specific part of trading: place a market order, read balances. `BinanceTradingGateway` is a singleton Spring bean, injected into `BinanceBroker`. Its Binance JSON mapping lives in `broker.binance.util.OrderUtil` |
 | `RequestSigner` | Built | Signs a request's query string. `BinanceRequestSigner` uses Ed25519. Without an API key, `MissingKeyRequestSigner` is used instead and refuses every signed request, so trading is off |
-| `BalanceCachingTradingGateway` | Built | Wraps a broker's trading gateway and caches its account balances: loaded at startup, replaced with Binance's answer after every executed order, so balance reads send no request (§7.1) |
+| `BalanceCachingTradingGateway` | Built | Wraps a broker's trading gateway and answers balance reads from its `AccountBalanceCache`, so they send no request (§7.2) |
+| `BinanceUserDataStream` | Built | Binance's user data stream, on its own WebSocket connection (`userdata` package). Applies `outboundAccountPosition` balance events to the cache, and has `AccountBalanceSynchronizer` take a snapshot after each subscription and every 15 minutes (§7.2) |
 | `OrderService` | Built | Finds the broker, checks the ticker is one it trades, and sends the order to its trading gateway |
 | `OrderController` | Built | `POST /api/brokers/{broker}/orders` and `GET /api/brokers/{broker}/balance`. `ApiExceptionHandler` turns failures into HTTP problem responses |
 | `BotModeService` | Built | The current `BotMode` (`TRADING` or `TRAINING`). Switched at runtime, without a restart, through `PUT /api/bot/mode` |
@@ -468,36 +469,67 @@ stateDiagram-v2
 | Unreadable request body, or an amount of zero or less | | 400 |
 
 **Safety:**
-- `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `demo-api.binance.com`.
+- `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `binance.trading.demo-host` (`demo-api.binance.com`). `BinanceUserDataStreamProperties` does the same for the user data stream (`demo-ws-api.binance.com`).
 - The API key and the path to the Ed25519 private key come only from the environment variables `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`. Without them, `BinanceTradingConfiguration` provides a `MissingKeyRequestSigner`: nothing is sent to Binance and the order and balance endpoints answer 409.
 - `GET /api/brokers/{broker}/balance` answers `{"balances": [{"asset", "free", "locked"}, …]}`, non-zero balances only.
 - A key file that can't be read stops the application at startup.
 - Timestamps use the local clock. Binance accepts requests that arrive within `recv-window` (5 seconds) of it.
 
-**Balance cache:** to send as few requests to Binance as possible, balances are not read from Binance on every request. `BinanceBroker` wraps its gateway in a `BalanceCachingTradingGateway` that keeps the last balances Binance returned.
-
-```mermaid
-flowchart TD
-    Start["BrokerStartupRunner<br/>at startup / restart"] -- "load" --> Cache["BalanceCachingTradingGateway<br/>cached balances"]
-    Read["GET /balance"] --> Cache
-    Cache -- "cache empty" --> Account["GET /api/v3/account"]
-    Cache -- "cache filled" --> Answer["answer from cache<br/>(no request)"]
-    Order["POST /orders"] --> Cache
-    Cache -- "order executed" --> Refresh["GET /api/v3/account<br/>replace the cache"]
-    Cache -- "order status unknown" --> Clear["clear the cache<br/>reload on the next read"]
-    Cache -- "order rejected" --> Keep["keep the cache<br/>nothing changed"]
-```
-
-- **Binance is the source of truth.** After every executed order the cache is replaced with Binance's account answer, never computed from what we expected. An order can fill for a slightly different quantity or price, and the fee is taken from the received asset, so only Binance's numbers are trusted.
-- Rejected orders change nothing, so they cost no extra request.
-- If the refresh after an executed order fails, the order is still returned as executed. The cache is cleared and reloaded on the next read.
-- If loading at startup fails, the application still starts. The first read tries again.
-- Cost: one account request at startup, plus one per executed order. Balance reads in between are free.
-- Balances changed outside the application (for example a demo balance reset on the Binance website) only show after the next executed order or a restart. Binance's user data stream (a WebSocket that pushes balance changes) could remove both the polling and this gap later.
-
 **Not covered yet:** rounding quantities to the symbol's step size and checking the minimum order value (via `exchangeInfo`). Binance rejects such orders with a filter failure, which comes back as a 422. Orders aren't stored yet; that comes with the database (§11).
 
-### 7.2 Order lifecycle in the bot (planned, first version: market orders only)
+### 7.2 Account balances: cache and user data stream (built)
+
+To send as few requests to Binance as possible, balances are never read from Binance per request. `BalanceCachingTradingGateway` keeps them in an `AccountBalanceCache`, and Binance's **user data stream** keeps that cache in sync. Binance is the source of truth: the cache only ever holds numbers Binance sent, never values computed from what an order was expected to do.
+
+The user data stream has its own connection, separate from the market data streams, because Binance separates them too: a different host (`demo-ws-api.binance.com`, the WebSocket API), a signed subscription and private account data. The `userdata` package has its own `UserDataStreamConnection`, with a fixed 5-second reconnect.
+
+```mermaid
+sequenceDiagram
+    participant R as BrokerStartupRunner
+    participant S as BinanceUserDataStream
+    participant W as demo-ws-api.binance.com
+    participant Y as AccountBalanceSynchronizer
+    participant C as AccountBalanceCache
+    participant A as demo-api.binance.com
+
+    R->>S: start() (only with an API key)
+    S->>Y: start(): full sync every 15 min
+    S->>W: connect (separate WebSocket)
+    S->>W: userDataStream.subscribe.signature {apiKey, recvWindow, timestamp, signature}
+    W-->>S: status 200, subscriptionId
+    S->>Y: synchronizeSoon()
+    Y->>A: GET /api/v3/account
+    A-->>Y: balances + updateTime
+    Y->>C: replaceAll(snapshot)
+    loop every balance change (trades, fees, deposits)
+        W-->>S: outboundAccountPosition {u, B: [{a, f, l}]}
+        S->>C: applyUpdate(u, changed assets)
+    end
+    Note over S,W: drop or 24-hour limit: reconnect after 5 s,<br/>subscribe again, take a new snapshot
+```
+
+| Source | When | Requests |
+|---|---|---|
+| Snapshot | after every successful subscription (startup and each reconnect) | 1 |
+| `outboundAccountPosition` event | every balance change. It carries absolute `free`/`locked` values for the changed assets only | 0 |
+| Safety sync | every `balance-sync-interval` (15 min), fixed rate | 1 |
+| `GET /balance` | answered from the cache. Only an empty cache loads a snapshot | 0 |
+| Executed order | the stream reports the new balances | 0 |
+| Order with unknown status | the cache is cleared and reloaded on the next read | 0 now, 1 later |
+
+**Ordering:** every cached asset remembers the update time it came with (`u` for events, `updateTime` for snapshots). An event or snapshot older than what is cached for that asset is ignored. A snapshot drops assets it no longer lists unless the cache has a newer event for them. Events that arrive before the first snapshot are kept and merged.
+
+**Failures:**
+- **Failed sync:** logged, then retried **once** after `balance-sync-retry-delay` (10 seconds). If the retry fails too, it's logged and the next regular sync runs on its usual 15-minute schedule. The retry never moves that schedule.
+- **Stream drops:** events sent while disconnected are lost, because Binance doesn't replay them. The reconnect therefore subscribes again and takes a new snapshot.
+- **Subscription refused** (e.g. `-2015`): logged. The safety sync still keeps the cache correct.
+- **`eventStreamTerminated`:** subscribe again on the same connection.
+- **Unreadable messages:** logged and skipped. The stream keeps reading.
+- **No API key:** the stream and the sync don't start, and the endpoints answer 409.
+
+`executionReport` events (one per order update, keyed by `clientOrderId`) are logged for now. A later step can use them to settle orders whose REST answer timed out (status unknown).
+
+### 7.3 Order lifecycle in the bot (planned, first version: market orders only)
 
 ```mermaid
 stateDiagram-v2
@@ -534,21 +566,21 @@ stateDiagram-v2
 
 Quantities are rounded down to the symbol's step size before validation.
 
-### 7.3 Fill price
+### 7.4 Fill price
 
 | Mode | Buy | Sell |
 |---|---|---|
 | `TRADING` | Best **ask** at the moment of the signal (`bookTicker`) | Best **bid** |
 | `TRAINING` | Open of the next `1s` candle after the signal | Same |
 
-### 7.4 Fees
+### 7.5 Fees
 
 `FeeService` uses the exact rates from Binance's signed `GET /api/v3/account/commission` when a **read-only** API key is configured. The key comes from environment variables and is never committed. Without a key, it uses the standard schedule: 0.1% maker and 0.1% taker.
 - Market orders pay the taker rate.
 - The fee is charged in the received asset: the base coin on a buy, the quote coin on a sell.
 - Rates are cached and refreshed periodically. Calculating a fee is a direct call.
 
-### 7.5 Later order types
+### 7.6 Later order types
 
 These plug into the same lifecycle:
 - `LIMIT`, `STOP_LOSS` and `TAKE_PROFIT` orders, plus their `*_LIMIT` variants.
@@ -598,7 +630,7 @@ The bot mode is application state, not a Spring profile, so it can be switched w
 ```mermaid
 flowchart TD
     Start["java -jar / spring-boot:run"] --> Init["BotModeService<br/>starts in bot.mode (TRADING)"]
-    Start --> Live["BrokerStartupRunner<br/>starts every broker's CandleFeeder<br/>and loads its account balances"]
+    Start --> Live["BrokerStartupRunner<br/>starts every broker's CandleFeeder<br/>and its account updates (user data stream)"]
     Ui["Dashboard button / curl"] -- "PUT /api/bot/mode {mode}" --> Init
     Ui -- "GET /api/bot/mode" --> Init
     Init --> Mode{"mode"}
@@ -772,10 +804,16 @@ binance:
     - BTCUSDT
     - ETHUSDT
   trading:
-    rest-url: https://demo-api.binance.com    # any other host is refused at startup
+    rest-url: https://demo-api.binance.com    # must point to demo-host, or startup fails
+    demo-host: demo-api.binance.com
     api-key: ${BINANCE_DEMO_API_KEY:}
     private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}   # Ed25519 private key, PKCS#8 PEM
     recv-window: 5s
+  user-data-stream:
+    websocket-api-url: wss://demo-ws-api.binance.com/ws-api/v3   # must point to demo-host
+    demo-host: demo-ws-api.binance.com
+    balance-sync-interval: 15m                # full balance sync, fixed rate
+    balance-sync-retry-delay: 10s             # one retry after a failed sync
 
 smoke:
   duration: 30s                               # how long the smoke run streams
@@ -795,8 +833,11 @@ com.tihomir.t212.tradingbot
 │   │                RequestSigner, MissingKeyRequestSigner
 │   └── binance      BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol,
 │       │            BinanceTradingProperties, BinanceTradingConfiguration, BinanceTradingGateway,
-│       │            BinanceRequestSigner, BinanceResponse
-│       └── util     OrderUtil (order parameters, query string, Binance order and balance JSON)
+│       │            BinanceRequestSigner, BinanceResponse, BinanceUserDataStream,
+│       │            BinanceUserDataStreamProperties, BinanceUserDataSubscription
+│       └── util     OrderUtil (order parameters, query string, Binance order, balance and event JSON)
+├── userdata         UserDataStreamConnection, UserDataStreamConnectionFactory, UserDataStreamHandler,
+│                    JdkUserDataStreamConnection, JdkUserDataStreamConnectionFactory
 ├── marketdata
 │   ├── update       MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
 │   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
@@ -809,7 +850,8 @@ com.tihomir.t212.tradingbot
 ├── signal           (planned) SignalGenerator, Signal, SignalContext
 │   └── indicator    (planned) SMA, EMA, RSI, ...
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
-│                    MarketOrderRequest, OrderSide, OrderAmountType,
+│                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
+│                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
 │                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
 │                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
 │                    TradingNotConfiguredException

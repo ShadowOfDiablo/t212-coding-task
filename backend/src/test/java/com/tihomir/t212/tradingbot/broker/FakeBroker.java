@@ -45,4 +45,7 @@ public final class FakeBroker extends AbstractBroker {
   public ExchangeTradingGateway tradingGateway() {
     return tradingGateway;
   }
+
+  @Override
+  public void startAccountUpdates() {}
 }

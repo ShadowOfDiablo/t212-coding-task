@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BalanceCachingTradingGatewayTest {
 
+  private static final Instant LATER = Instant.ofEpochMilli(2_000);
   private static final List<AssetBalance> AFTER_BUY =
       List.of(
           new AssetBalance("BTC", new BigDecimal("0.00012987"), BigDecimal.ZERO),
@@ -25,66 +27,59 @@ class BalanceCachingTradingGatewayTest {
     gateway.accountBalances();
     gateway.accountBalances();
 
-    assertThat(gateway.accountBalances()).isEqualTo(FakeExchangeTradingGateway.BALANCES);
+    assertThat(gateway.accountBalances().balances()).isEqualTo(FakeExchangeTradingGateway.BALANCES);
     assertThat(exchange.balanceRequests()).isEqualTo(1);
   }
 
   @Test
-  void replacesTheCacheWithTheExchangesBalancesAfterAnExecutedOrder() {
+  void executedOrderSendsNoBalanceRequest() {
     gateway.accountBalances();
-    exchange.changeBalances(AFTER_BUY);
 
     gateway.placeMarketOrder(BUY);
+    gateway.accountBalances();
 
-    assertThat(gateway.accountBalances()).isEqualTo(AFTER_BUY);
-    assertThat(exchange.balanceRequests()).isEqualTo(2);
+    assertThat(exchange.balanceRequests()).isEqualTo(1);
   }
 
   @Test
-  void keepsTheCacheWhenTheExchangeRejectsTheOrder() {
+  void streamedBalanceUpdateChangesTheCache() {
     gateway.accountBalances();
-    exchange.failOrders(new ExchangeRejectedRequestException(-2010, "insufficient balance"));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(BUY))
-        .isInstanceOf(ExchangeRejectedRequestException.class);
+    gateway.applyBalanceUpdate(LATER, AFTER_BUY);
 
-    gateway.accountBalances();
+    assertThat(gateway.accountBalances().balances()).isEqualTo(AFTER_BUY);
     assertThat(exchange.balanceRequests()).isEqualTo(1);
+  }
+
+  @Test
+  void synchronizingReplacesTheCacheWithTheExchangesBalances() {
+    gateway.accountBalances();
+    exchange.changeBalances(LATER, AFTER_BUY);
+
+    gateway.synchronizeBalances();
+
+    assertThat(gateway.accountBalances().balances()).isEqualTo(AFTER_BUY);
   }
 
   @Test
   void reloadsBalancesAfterAnOrderWithAnUnknownStatus() {
     gateway.accountBalances();
     exchange.failOrders(new OrderStatusUnknownException("tb-1", "read timed out"));
-    exchange.changeBalances(AFTER_BUY);
+    exchange.changeBalances(LATER, AFTER_BUY);
 
     assertThatThrownBy(() -> gateway.placeMarketOrder(BUY))
         .isInstanceOf(OrderStatusUnknownException.class);
 
-    assertThat(gateway.accountBalances()).isEqualTo(AFTER_BUY);
+    assertThat(gateway.accountBalances().balances()).isEqualTo(AFTER_BUY);
     assertThat(exchange.balanceRequests()).isEqualTo(2);
   }
 
   @Test
-  void executedOrderIsReturnedEvenWhenTheRefreshFails() {
-    gateway.accountBalances();
-    exchange.failBalances(new ExchangeUnavailableException("connect timed out"));
-
-    ExecutedOrder order = gateway.placeMarketOrder(BUY);
-
-    assertThat(order.ticker()).isEqualTo("BTCUSDT");
-    exchange.stopFailingBalances();
-    exchange.changeBalances(AFTER_BUY);
-    assertThat(gateway.accountBalances()).isEqualTo(AFTER_BUY);
-  }
-
-  @Test
   void failedFirstReadIsRetriedOnTheNextRead() {
-    exchange.failBalances(new ExchangeUnavailableException("connect timed out"));
+    exchange.failBalanceRequests(new ExchangeUnavailableException("connect timed out"), 1);
 
     assertThatThrownBy(gateway::accountBalances).isInstanceOf(ExchangeUnavailableException.class);
 
-    exchange.stopFailingBalances();
-    assertThat(gateway.accountBalances()).isEqualTo(FakeExchangeTradingGateway.BALANCES);
+    assertThat(gateway.accountBalances().balances()).isEqualTo(FakeExchangeTradingGateway.BALANCES);
   }
 }

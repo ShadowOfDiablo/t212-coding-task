@@ -2,7 +2,7 @@ package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.RequestSigner;
 import com.tihomir.t212.tradingbot.broker.binance.util.OrderUtil;
-import com.tihomir.t212.tradingbot.order.AssetBalance;
+import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
@@ -15,7 +15,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpRequest;
@@ -75,14 +74,14 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
   }
 
   @Override
-  public List<AssetBalance> accountBalances() {
+  public AccountBalanceSnapshot accountBalances() {
     try {
       BinanceResponse response =
           sendSignedRequest(HttpMethod.GET, ACCOUNT_PATH, Map.of("omitZeroBalances", "true"));
       if (!response.successful()) {
         throw accountFailure(response);
       }
-      return OrderUtil.assetBalances(jsonMapper.readTree(response.body()));
+      return OrderUtil.accountBalanceSnapshot(jsonMapper.readTree(response.body()));
     } catch (RestClientException e) {
       throw new ExchangeUnavailableException("Could not reach Binance: " + e.getMessage(), e);
     } catch (JacksonException | IllegalArgumentException e) {

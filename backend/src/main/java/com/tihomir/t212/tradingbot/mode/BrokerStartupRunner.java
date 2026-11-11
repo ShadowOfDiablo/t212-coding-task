@@ -2,7 +2,6 @@ package com.tihomir.t212.tradingbot.mode;
 
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
-import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -31,20 +30,16 @@ public class BrokerStartupRunner implements ApplicationRunner {
           botModeService.botMode(),
           broker.tickers());
       broker.candleFeeder().start();
-      loadAccountBalances(broker);
+      startAccountUpdates(broker);
     }
   }
 
-  private static void loadAccountBalances(Broker broker) {
+  private static void startAccountUpdates(Broker broker) {
     try {
-      log.info(
-          "{}: loaded {} account balances",
-          broker.name(),
-          broker.tradingGateway().accountBalances().size());
-    } catch (TradingNotConfiguredException e) {
-      log.info("{}: no account balances to load, trading is off", broker.name());
+      broker.startAccountUpdates();
     } catch (RuntimeException e) {
-      log.warn("{}: could not load account balances, retrying on the first read", broker.name(), e);
+      log.error(
+          "{}: starting account updates failed, balances load on the first read", broker.name(), e);
     }
   }
 }

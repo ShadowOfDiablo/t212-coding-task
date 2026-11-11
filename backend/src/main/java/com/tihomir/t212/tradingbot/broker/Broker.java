@@ -16,4 +16,6 @@ public interface Broker {
   TickerPriceReader tickerPrices();
 
   ExchangeTradingGateway tradingGateway();
+
+  void startAccountUpdates();
 }

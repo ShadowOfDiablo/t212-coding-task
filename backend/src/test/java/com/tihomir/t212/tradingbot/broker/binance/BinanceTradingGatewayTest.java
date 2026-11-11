@@ -12,6 +12,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
+import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
@@ -191,7 +192,10 @@ class BinanceTradingGatewayTest {
         .andExpect(this::signedWithTheTestKey)
         .andRespond(withSuccess(fixture("account.json"), MediaType.APPLICATION_JSON));
 
-    assertThat(gateway.accountBalances())
+    AccountBalanceSnapshot snapshot = gateway.accountBalances();
+
+    assertThat(snapshot.updateTime()).isEqualTo(Instant.ofEpochMilli(1762779780000L));
+    assertThat(snapshot.balances())
         .containsExactly(
             new AssetBalance("BTC", new BigDecimal("1.00000000"), new BigDecimal("0.00000000")),
             new AssetBalance(

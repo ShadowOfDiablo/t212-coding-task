@@ -21,5 +21,9 @@ binance:
     api-key: ${BINANCE_DEMO_API_KEY:}
     private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}
     recv-window: 5s
+  user-data-stream:
+    websocket-api-url: wss://demo-ws-api.binance.com/ws-api/v3
+    balance-sync-interval: 15m
+    balance-sync-retry-delay: 10s
 smoke:
   duration: 30s

@@ -1,7 +1,5 @@
 package com.tihomir.t212.tradingbot.order;
 
-import java.util.List;
-
 public interface ExchangeTradingGateway {
 
   /**
@@ -13,10 +11,10 @@ public interface ExchangeTradingGateway {
   ExecutedOrder placeMarketOrder(MarketOrderRequest request);
 
   /**
-   * Reads the non-zero balances of the account.
+   * Reads the non-zero balances of the account, with the time of the last account update.
    *
    * @throws ExchangeRejectedRequestException the exchange refused the request
    * @throws ExchangeUnavailableException the exchange could not be reached or failed
    */
-  List<AssetBalance> accountBalances();
+  AccountBalanceSnapshot accountBalances();
 }

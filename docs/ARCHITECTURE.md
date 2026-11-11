@@ -793,7 +793,8 @@ erDiagram
 - Both keep the order's broker, ticker, side, type and amount, copied from `open_order`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
 - **`OrderRepository`:** method names follow the SQL they run: `insertOpenOrder`, `updateOpenOrderStatus`, `deleteOpenOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. `moveExecutedOrderToHistory` copies the open order into `order_history` with the result and inserts the fills; `moveOrderToRejectedOrders` copies it into `rejected_order` with Binance's error. Both delete the open row, all in **one transaction**.
-- **Idempotent:** moving an order twice changes nothing (`ON CONFLICT DO NOTHING` on each table's primary key and on `(client_order_id, trade_id)` for fills).
+- **Idempotent:** moving an order twice changes nothing: the move copies the row from `open_order` (`INSERT … SELECT … WHERE client_order_id = ?`), and once it has been moved and deleted there is nothing left to copy, so no history row or fill is written twice.
+- **Plain SQL only:** queries use standard `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `WHERE`, `ORDER BY` and `LIMIT`, with `?` placeholders. No named parameters and no PostgreSQL-only clauses such as `ON CONFLICT`.
 - **Failures:**
   - Database down before sending: 503 and nothing is sent.
   - Database fails after Binance executed the order: the answer is still 201. The row stays in `open_order` as `SENDING` until it is reconciled with Binance.

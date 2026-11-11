@@ -35,7 +35,7 @@ class BalanceCachingTradingGatewayTest {
   void executedOrderSendsNoBalanceRequest() {
     gateway.accountBalances();
 
-    gateway.placeMarketOrder(BUY);
+    gateway.placeMarketOrder("tb-1", BUY);
     gateway.accountBalances();
 
     assertThat(exchange.balanceRequests()).isEqualTo(1);
@@ -67,7 +67,7 @@ class BalanceCachingTradingGatewayTest {
     exchange.failOrders(new OrderStatusUnknownException("tb-1", "read timed out"));
     exchange.changeBalances(LATER, AFTER_BUY);
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(BUY))
+    assertThatThrownBy(() -> gateway.placeMarketOrder("tb-1", BUY))
         .isInstanceOf(OrderStatusUnknownException.class);
 
     assertThat(gateway.accountBalances().balances()).isEqualTo(AFTER_BUY);

@@ -70,6 +70,7 @@ class BinanceTradingGatewayTest {
           restClientBuilder,
           new BinanceTradingProperties(
               URI.create("https://demo-api.binance.com"),
+              "demo-api.binance.com",
               API_KEY,
               "key.pem",
               Duration.ofSeconds(5)),
@@ -231,7 +232,11 @@ class BinanceTradingGatewayTest {
         new BinanceTradingGateway(
             restClientBuilder,
             new BinanceTradingProperties(
-                URI.create("https://demo-api.binance.com"), "", "", Duration.ofSeconds(5)),
+                URI.create("https://demo-api.binance.com"),
+                "demo-api.binance.com",
+                "",
+                "",
+                Duration.ofSeconds(5)),
             new MissingKeyRequestSigner(),
             JsonMapper.builder().build(),
             Clock.fixed(NOW, ZoneOffset.UTC));

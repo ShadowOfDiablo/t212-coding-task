@@ -171,7 +171,7 @@ flowchart LR
 | `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
 | `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` |
 
-The configuration only accepts `demo-api.binance.com` as the trading host, so a live account can't be traded by mistake.
+The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
 
 ### Code quality
 

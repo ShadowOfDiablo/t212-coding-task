@@ -31,6 +31,7 @@ class BinanceUserDataSubscriptionTest {
         new BinanceUserDataSubscription(
             new BinanceTradingProperties(
                 URI.create("https://demo-api.binance.com"),
+                "demo-api.binance.com",
                 API_KEY,
                 "key.pem",
                 Duration.ofSeconds(5)),

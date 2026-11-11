@@ -134,7 +134,11 @@ class BinanceUserDataStreamTest {
   private BinanceUserDataStream stream(String apiKey) {
     BinanceTradingProperties tradingProperties =
         new BinanceTradingProperties(
-            URI.create("https://demo-api.binance.com"), apiKey, "key.pem", Duration.ofSeconds(5));
+            URI.create("https://demo-api.binance.com"),
+            "demo-api.binance.com",
+            apiKey,
+            "key.pem",
+            Duration.ofSeconds(5));
     BinanceUserDataSubscription subscription =
         new BinanceUserDataSubscription(
             tradingProperties,
@@ -142,7 +146,8 @@ class BinanceUserDataStreamTest {
             jsonMapper,
             Clock.fixed(Instant.ofEpochMilli(1), ZoneOffset.UTC));
     return new BinanceUserDataStream(
-        new BinanceUserDataStreamProperties(WEBSOCKET_API, SYNC_INTERVAL, RETRY_DELAY),
+        new BinanceUserDataStreamProperties(
+            WEBSOCKET_API, "demo-ws-api.binance.com", SYNC_INTERVAL, RETRY_DELAY),
         subscription,
         connectionFactory,
         jsonMapper,

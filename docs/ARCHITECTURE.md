@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes orders. Orders go either to a virtual account (Training) or to a **Binance Demo Mode** account with fake funds. Nothing is ever sent to a live trading account; the configuration refuses any trading host other than `demo-api.binance.com`.
+The application simulates an autonomous crypto trading bot. It reads market data from Binance, generates trading signals and executes orders. Orders go either to a virtual account (Training) or to a **Binance Demo Mode** account with fake funds. Nothing is ever sent to a live trading account; the configuration refuses any trading URL that does not point to the configured demo host (`demo-api.binance.com`).
 
 | Mode | Data source | Purpose |
 |---|---|---|
@@ -469,7 +469,7 @@ stateDiagram-v2
 | Unreadable request body, or an amount of zero or less | | 400 |
 
 **Safety:**
-- `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `demo-api.binance.com`.
+- `BinanceTradingProperties` refuses to start unless `binance.trading.rest-url` points to `binance.trading.demo-host` (`demo-api.binance.com`). `BinanceUserDataStreamProperties` does the same for the user data stream (`demo-ws-api.binance.com`).
 - The API key and the path to the Ed25519 private key come only from the environment variables `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`. Without them, `BinanceTradingConfiguration` provides a `MissingKeyRequestSigner`: nothing is sent to Binance and the order and balance endpoints answer 409.
 - `GET /api/brokers/{broker}/balance` answers `{"balances": [{"asset", "free", "locked"}, …]}`, non-zero balances only.
 - A key file that can't be read stops the application at startup.
@@ -804,12 +804,14 @@ binance:
     - BTCUSDT
     - ETHUSDT
   trading:
-    rest-url: https://demo-api.binance.com    # any other host is refused at startup
+    rest-url: https://demo-api.binance.com    # must point to demo-host, or startup fails
+    demo-host: demo-api.binance.com
     api-key: ${BINANCE_DEMO_API_KEY:}
     private-key-path: ${BINANCE_DEMO_PRIVATE_KEY_PATH:}   # Ed25519 private key, PKCS#8 PEM
     recv-window: 5s
   user-data-stream:
-    websocket-api-url: wss://demo-ws-api.binance.com/ws-api/v3   # any other host is refused at startup
+    websocket-api-url: wss://demo-ws-api.binance.com/ws-api/v3   # must point to demo-host
+    demo-host: demo-ws-api.binance.com
     balance-sync-interval: 15m                # full balance sync, fixed rate
     balance-sync-retry-delay: 10s             # one retry after a failed sync
 

@@ -6,10 +6,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class AccountBalanceCache {
 
-  private final Map<String, CachedAssetBalance> balancesByAsset = new HashMap<>();
+  private final Map<String, CachedAssetBalance> balancesByAsset = new ConcurrentHashMap<>();
   private Instant lastUpdateTime = Instant.EPOCH;
   private boolean loaded;
 

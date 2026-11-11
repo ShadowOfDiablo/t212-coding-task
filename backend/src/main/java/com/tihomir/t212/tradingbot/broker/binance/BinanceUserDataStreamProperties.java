@@ -6,15 +6,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("binance.user-data-stream")
 public record BinanceUserDataStreamProperties(
-    URI websocketApiUrl, Duration balanceSyncInterval, Duration balanceSyncRetryDelay) {
-
-  static final String DEMO_WEBSOCKET_API_HOST = "demo-ws-api.binance.com";
+    URI websocketApiUrl,
+    String demoHost,
+    Duration balanceSyncInterval,
+    Duration balanceSyncRetryDelay) {
 
   public BinanceUserDataStreamProperties {
-    if (websocketApiUrl == null || !DEMO_WEBSOCKET_API_HOST.equals(websocketApiUrl.getHost())) {
+    if (demoHost == null || demoHost.isBlank()) {
+      throw new IllegalArgumentException("binance.user-data-stream.demo-host must be set");
+    }
+    if (websocketApiUrl == null || !demoHost.equals(websocketApiUrl.getHost())) {
       throw new IllegalArgumentException(
-          "binance.user-data-stream.websocket-api-url must point to the demo account at "
-              + DEMO_WEBSOCKET_API_HOST
+          "binance.user-data-stream.websocket-api-url must point to the demo host "
+              + demoHost
               + ", was "
               + websocketApiUrl);
     }

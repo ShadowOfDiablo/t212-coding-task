@@ -3,11 +3,10 @@ package com.tihomir.t212.tradingbot.order;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 public record OrderHistoryEntry(
     String clientOrderId,
-    Optional<Long> exchangeOrderId,
+    long exchangeOrderId,
     String broker,
     String ticker,
     OrderSide side,
@@ -17,9 +16,7 @@ public record OrderHistoryEntry(
     String finalStatus,
     BigDecimal executedQuantity,
     BigDecimal quoteAmount,
-    Optional<BigDecimal> averagePrice,
-    Optional<Integer> errorCode,
-    Optional<String> errorMessage,
+    BigDecimal averagePrice,
     Instant createdAt,
     Instant closedAt,
     List<OrderFill> fills) {

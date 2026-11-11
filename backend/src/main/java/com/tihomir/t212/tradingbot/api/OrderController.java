@@ -43,4 +43,9 @@ public class OrderController {
   public OrderHistoryResponse getOrderHistory(@PathVariable String broker) {
     return new OrderHistoryResponse(orderService.getOrderHistory(broker));
   }
+
+  @GetMapping("/orders/rejected")
+  public RejectedOrderListResponse getRejectedOrders(@PathVariable String broker) {
+    return new RejectedOrderListResponse(orderService.getRejectedOrders(broker));
+  }
 }

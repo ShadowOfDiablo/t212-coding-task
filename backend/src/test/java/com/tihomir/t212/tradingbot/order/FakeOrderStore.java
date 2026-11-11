@@ -12,7 +12,7 @@ final class FakeOrderStore implements OrderStore {
 
   private final Map<String, OpenOrder> openOrders = new LinkedHashMap<>();
   private final List<String> executedOrdersInHistory = new ArrayList<>();
-  private final List<String> rejectedOrdersInHistory = new ArrayList<>();
+  private final List<String> movedToRejectedOrders = new ArrayList<>();
   private boolean databaseDown;
   private boolean movingToHistoryFails;
 
@@ -58,10 +58,10 @@ final class FakeOrderStore implements OrderStore {
   }
 
   @Override
-  public void moveRejectedOrderToHistory(
-      String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt) {
+  public void moveOrderToRejectedOrders(
+      String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt) {
     openOrders.remove(clientOrderId);
-    rejectedOrdersInHistory.add(clientOrderId);
+    movedToRejectedOrders.add(clientOrderId);
   }
 
   @Override
@@ -74,6 +74,11 @@ final class FakeOrderStore implements OrderStore {
     return List.of();
   }
 
+  @Override
+  public List<RejectedOrder> getRejectedOrders(String broker) {
+    return List.of();
+  }
+
   Optional<OpenOrder> onlyOpenOrder() {
     return openOrders.values().stream().findFirst();
   }
@@ -82,8 +87,8 @@ final class FakeOrderStore implements OrderStore {
     return List.copyOf(executedOrdersInHistory);
   }
 
-  List<String> rejectedOrdersInHistory() {
-    return List.copyOf(rejectedOrdersInHistory);
+  List<String> movedToRejectedOrders() {
+    return List.copyOf(movedToRejectedOrders);
   }
 
   void takeDatabaseDown() {

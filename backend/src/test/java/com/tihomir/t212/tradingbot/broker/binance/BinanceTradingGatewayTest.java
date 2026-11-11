@@ -52,6 +52,7 @@ import tools.jackson.databind.json.JsonMapper;
 class BinanceTradingGatewayTest {
 
   private static final String API_KEY = "test-api-key";
+  private static final String CLIENT_ORDER_ID = "tb-0123456789abcdef";
   private static final Instant NOW = Instant.ofEpochMilli(1762779782000L);
   private static final String SIGNATURE_PARAMETER = "&signature=";
   private static final String INSUFFICIENT_BALANCE =
@@ -89,13 +90,13 @@ class BinanceTradingGatewayTest {
         .andExpect(queryParam("type", "MARKET"))
         .andExpect(queryParam("quoteOrderQty", "10"))
         .andExpect(queryParam("newOrderRespType", "FULL"))
-        .andExpect(queryParam("newClientOrderId", Matchers.startsWith("tb-")))
+        .andExpect(queryParam("newClientOrderId", CLIENT_ORDER_ID))
         .andExpect(queryParam("recvWindow", "5000"))
         .andExpect(queryParam("timestamp", String.valueOf(NOW.toEpochMilli())))
         .andExpect(this::signedWithTheTestKey)
         .andRespond(withSuccess(fixture("order-full-response.json"), MediaType.APPLICATION_JSON));
 
-    ExecutedOrder order = gateway.placeMarketOrder(buyForQuoteAmount());
+    ExecutedOrder order = gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount());
 
     assertThat(order.exchangeOrderId()).isEqualTo(28);
     assertThat(order.exchangeStatus()).isEqualTo("FILLED");
@@ -118,6 +119,7 @@ class BinanceTradingGatewayTest {
         .andRespond(withSuccess(fixture("order-full-response.json"), MediaType.APPLICATION_JSON));
 
     gateway.placeMarketOrder(
+        CLIENT_ORDER_ID,
         new MarketOrderRequest(
             "BTCUSDT", OrderSide.SELL, new BigDecimal("0.0002"), OrderAmountType.BASE_QUANTITY));
 
@@ -128,7 +130,7 @@ class BinanceTradingGatewayTest {
   void insufficientBalanceIsARejection() {
     server.expect(method(HttpMethod.POST)).andRespond(badRequest(INSUFFICIENT_BALANCE));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOfSatisfying(
             ExchangeRejectedRequestException.class,
             e -> assertThat(e.exchangeErrorCode()).isEqualTo(-2010))
@@ -139,7 +141,7 @@ class BinanceTradingGatewayTest {
   void filterFailureIsARejection() {
     server.expect(method(HttpMethod.POST)).andRespond(badRequest(LOT_SIZE_FAILURE));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOf(ExchangeRejectedRequestException.class)
         .hasMessageContaining("LOT_SIZE");
   }
@@ -148,7 +150,7 @@ class BinanceTradingGatewayTest {
   void unreadableRejectionKeepsTheRawAnswer() {
     server.expect(method(HttpMethod.POST)).andRespond(badRequest("<html>blocked</html>"));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOf(ExchangeRejectedRequestException.class)
         .hasMessageContaining("blocked");
   }
@@ -157,7 +159,7 @@ class BinanceTradingGatewayTest {
   void serverErrorLeavesTheOrderStatusUnknown() {
     server.expect(method(HttpMethod.POST)).andRespond(withServerError());
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOfSatisfying(
             OrderStatusUnknownException.class,
             e -> assertThat(e.clientOrderId()).startsWith("tb-"));
@@ -169,7 +171,7 @@ class BinanceTradingGatewayTest {
         .expect(method(HttpMethod.POST))
         .andRespond(withException(new SocketTimeoutException("read timed out")));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOf(OrderStatusUnknownException.class)
         .hasMessageContaining("read timed out");
   }
@@ -180,7 +182,7 @@ class BinanceTradingGatewayTest {
         .expect(method(HttpMethod.POST))
         .andRespond(withSuccess("{\"orderId\":28}", MediaType.APPLICATION_JSON));
 
-    assertThatThrownBy(() -> gateway.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(() -> gateway.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOf(OrderStatusUnknownException.class);
   }
 
@@ -241,7 +243,8 @@ class BinanceTradingGatewayTest {
             JsonMapper.builder().build(),
             Clock.fixed(NOW, ZoneOffset.UTC));
 
-    assertThatThrownBy(() -> gatewayWithoutKey.placeMarketOrder(buyForQuoteAmount()))
+    assertThatThrownBy(
+            () -> gatewayWithoutKey.placeMarketOrder(CLIENT_ORDER_ID, buyForQuoteAmount()))
         .isInstanceOf(TradingNotConfiguredException.class);
     assertThatThrownBy(gatewayWithoutKey::accountBalances)
         .isInstanceOf(TradingNotConfiguredException.class);

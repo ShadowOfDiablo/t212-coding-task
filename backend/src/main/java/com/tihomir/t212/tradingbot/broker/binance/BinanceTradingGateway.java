@@ -54,8 +54,7 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
   }
 
   @Override
-  public ExecutedOrder placeMarketOrder(MarketOrderRequest request) {
-    String clientOrderId = OrderUtil.newClientOrderId();
+  public ExecutedOrder placeMarketOrder(String clientOrderId, MarketOrderRequest request) {
     try {
       BinanceResponse response =
           sendSignedRequest(

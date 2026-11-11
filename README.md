@@ -13,8 +13,8 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Virtual account, order validation and fees (Training) | Planned |
 | Signal generators | Planned |
 | Trading bot loop: Training and Trading modes | Planned |
-| Database: PostgreSQL + Flyway, raw SQL, no ORM. Order tables created | Built |
-| Database: storing orders, restart reconciliation, positions and trades with PnL | Planned, next |
+| Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
+| Database: restart reconciliation, positions and trades with PnL | Planned, next |
 | Rest of the REST API and the React dashboard | Planned |
 
 ## How market data works
@@ -60,7 +60,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 - No Maven installation needed: the backend ships with the Maven wrapper (`mvnw` / `mvnw.cmd`), which downloads the correct Maven version on first use.
 - Internet access to `demo-stream.binance.com`, `data-api.binance.vision` and, for orders, `demo-api.binance.com`. The tests don't need it.
 - For orders: a Binance account with Demo Trading enabled, and `openssl` to create a key pair (it ships with Git for Windows).
-- Docker (Docker Desktop on Windows and macOS), running. The application's database is PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
+- Docker (Docker Desktop on Windows and macOS), running. The application stores orders in PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
 
 ## Backend
 
@@ -103,7 +103,7 @@ binance:
 
 ### The database
 
-The database is **PostgreSQL 17**, and **Flyway** creates the tables at startup from the SQL scripts in `backend/src/main/resources/db/migration`. `spring-boot:run` starts the database from `backend/compose.yaml` and leaves it running, so Docker must be running first. To manage it yourself:
+Orders are stored in **PostgreSQL 17**, and **Flyway** creates the tables at startup from the SQL scripts in `backend/src/main/resources/db/migration`. `spring-boot:run` starts the database from `backend/compose.yaml` and leaves it running, so Docker must be running first. To manage it yourself:
 
 ```bash
 docker compose up -d      # start PostgreSQL (from backend/)
@@ -183,7 +183,15 @@ flowchart LR
 | `400` | Bad request body, or a ticker that isn't configured |
 | `409` | The environment variables aren't set |
 | `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
-| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` |
+| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId`. It stays in the open orders as `UNKNOWN` |
+| `503` | The database is unavailable. Nothing was sent to Binance |
+
+Every order is stored before it is sent. While it runs it's an open order; once finished it moves to the history with its fills:
+
+```bash
+curl localhost:8080/api/brokers/binance/orders/open
+curl localhost:8080/api/brokers/binance/orders/history
+```
 
 The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
 

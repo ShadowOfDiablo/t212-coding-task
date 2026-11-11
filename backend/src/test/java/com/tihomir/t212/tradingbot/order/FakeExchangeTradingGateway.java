@@ -20,14 +20,15 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
   private int balanceRequests;
 
   @Override
-  public synchronized ExecutedOrder placeMarketOrder(MarketOrderRequest request) {
+  public synchronized ExecutedOrder placeMarketOrder(
+      String clientOrderId, MarketOrderRequest request) {
     if (orderFailure.isPresent()) {
       throw orderFailure.get();
     }
     placedOrders.add(request);
     return new ExecutedOrder(
         1,
-        "tb-fake",
+        clientOrderId,
         request.ticker(),
         request.side(),
         "FILLED",

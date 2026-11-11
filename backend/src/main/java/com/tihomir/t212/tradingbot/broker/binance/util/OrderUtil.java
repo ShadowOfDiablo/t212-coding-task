@@ -14,23 +14,17 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import tools.jackson.databind.JsonNode;
 
 public final class OrderUtil {
 
-  private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
   private static final String MARKET_ORDER_TYPE = "MARKET";
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
 
   private OrderUtil() {}
-
-  public static String newClientOrderId() {
-    return CLIENT_ORDER_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
-  }
 
   public static Map<String, String> orderParameters(
       MarketOrderRequest request, String clientOrderId) {

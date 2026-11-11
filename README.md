@@ -183,10 +183,10 @@ flowchart LR
 | `400` | Bad request body, or a ticker that isn't configured |
 | `409` | The environment variables aren't set |
 | `422` | Binance refused the order, e.g. insufficient balance or below the minimum order size. `exchangeErrorCode` holds Binance's code |
-| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId`. It stays in the open orders as `UNKNOWN` |
-| `503` | The database is unavailable. Nothing was sent to Binance |
+| `502` | No clear answer from Binance. The order may still have been executed: look it up on the demo account by `clientOrderId` (the bot's `tb-…` id) |
+| `503` | The database is unavailable (when reading orders) |
 
-Every order is stored before it is sent. While it runs it's an open order; once executed it moves to the history with its fills, and if Binance refuses it, to the rejected orders:
+Once Binance answers, an executed order is stored in the history with its fills, under Binance's order id. A refused order goes to the rejected orders. Open orders will list orders still resting on Binance once take-profit and stop-loss orders exist:
 
 ```bash
 curl localhost:8080/api/brokers/binance/orders/open

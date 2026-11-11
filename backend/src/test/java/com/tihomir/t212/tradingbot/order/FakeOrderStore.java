@@ -1,101 +1,52 @@
 package com.tihomir.t212.tradingbot.order;
 
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 final class FakeOrderStore implements OrderStore {
 
-  private final Map<String, OpenOrder> openOrders = new LinkedHashMap<>();
-  private final List<String> executedOrdersInHistory = new ArrayList<>();
-  private final List<String> movedToRejectedOrders = new ArrayList<>();
+  private final List<OrderHistoryEntry> executedOrders = new ArrayList<>();
+  private final List<RejectedOrder> rejectedOrders = new ArrayList<>();
   private boolean databaseDown;
-  private boolean movingToHistoryFails;
 
   @Override
-  public void insertOpenOrder(OpenOrder order) {
-    if (databaseDown) {
-      throw new DataAccessResourceFailureException("connection refused");
-    }
-    openOrders.put(order.clientOrderId(), order);
+  public void insertExecutedOrder(OrderHistoryEntry order) {
+    failIfDatabaseDown();
+    executedOrders.add(order);
   }
 
   @Override
-  public void updateOpenOrderStatus(
-      String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
-    OpenOrder order = openOrders.get(clientOrderId);
-    openOrders.put(
-        clientOrderId,
-        new OpenOrder(
-            order.clientOrderId(),
-            order.broker(),
-            order.ticker(),
-            order.side(),
-            order.orderType(),
-            order.amount(),
-            order.amountType(),
-            status,
-            order.createdAt(),
-            updatedAt));
+  public void insertRejectedOrder(RejectedOrder order) {
+    failIfDatabaseDown();
+    rejectedOrders.add(order);
   }
 
   @Override
-  public void deleteOpenOrder(String clientOrderId) {
-    openOrders.remove(clientOrderId);
+  public OpenOrderList getOpenOrders(String broker) {
+    failIfDatabaseDown();
+    return new OpenOrderList(List.of());
   }
 
   @Override
-  public void moveExecutedOrderToHistory(ExecutedOrder order) {
-    if (movingToHistoryFails) {
-      throw new DataAccessResourceFailureException("connection lost");
-    }
-    openOrders.remove(order.clientOrderId());
-    executedOrdersInHistory.add(order.clientOrderId());
+  public OrderHistory getOrderHistory(String broker) {
+    failIfDatabaseDown();
+    return new OrderHistory(executedOrders);
   }
 
   @Override
-  public void moveOrderToRejectedOrders(
-      String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt) {
-    openOrders.remove(clientOrderId);
-    movedToRejectedOrders.add(clientOrderId);
-  }
-
-  @Override
-  public List<OpenOrder> getOpenOrders(String broker) {
-    return List.copyOf(openOrders.values());
-  }
-
-  @Override
-  public List<OrderHistoryEntry> getOrderHistory(String broker) {
-    return List.of();
-  }
-
-  @Override
-  public List<RejectedOrder> getRejectedOrders(String broker) {
-    return List.of();
-  }
-
-  Optional<OpenOrder> onlyOpenOrder() {
-    return openOrders.values().stream().findFirst();
-  }
-
-  List<String> executedOrdersInHistory() {
-    return List.copyOf(executedOrdersInHistory);
-  }
-
-  List<String> movedToRejectedOrders() {
-    return List.copyOf(movedToRejectedOrders);
+  public RejectedOrderList getRejectedOrders(String broker) {
+    failIfDatabaseDown();
+    return new RejectedOrderList(rejectedOrders);
   }
 
   void takeDatabaseDown() {
     databaseDown = true;
   }
 
-  void failMovingToHistory() {
-    movingToHistoryFails = true;
+  private void failIfDatabaseDown() {
+    if (databaseDown) {
+      throw new DataAccessResourceFailureException("connection refused");
+    }
   }
 }

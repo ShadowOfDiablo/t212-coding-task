@@ -14,24 +14,30 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import tools.jackson.databind.JsonNode;
 
 public final class OrderUtil {
 
-  private static final String MARKET_ORDER_TYPE = "MARKET";
+  private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
 
   private OrderUtil() {}
+
+  /** Marks the order as the bot's, so orders placed by hand can be told apart. */
+  public static String newClientOrderId() {
+    return CLIENT_ORDER_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
+  }
 
   public static Map<String, String> orderParameters(
       MarketOrderRequest request, String clientOrderId) {
     Map<String, String> parameters = new LinkedHashMap<>();
     parameters.put("symbol", request.ticker());
     parameters.put("side", request.side().name());
-    parameters.put("type", MARKET_ORDER_TYPE);
+    parameters.put("type", MarketOrderRequest.ORDER_TYPE);
     parameters.put(amountParameter(request.amountType()), request.amount().toPlainString());
     parameters.put("newClientOrderId", clientOrderId);
     parameters.put("newOrderRespType", FULL_ORDER_RESPONSE);

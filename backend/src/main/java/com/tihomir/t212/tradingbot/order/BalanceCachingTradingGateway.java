@@ -14,9 +14,9 @@ public final class BalanceCachingTradingGateway implements ExchangeTradingGatewa
   }
 
   @Override
-  public ExecutedOrder placeMarketOrder(String clientOrderId, MarketOrderRequest request) {
+  public ExecutedOrder placeMarketOrder(MarketOrderRequest request) {
     try {
-      return exchangeGateway.placeMarketOrder(clientOrderId, request);
+      return exchangeGateway.placeMarketOrder(request);
     } catch (OrderStatusUnknownException e) {
       cache.clear();
       throw e;

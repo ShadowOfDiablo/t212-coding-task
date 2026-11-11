@@ -62,7 +62,7 @@ public class ApiExceptionHandler {
   ProblemDetail databaseUnavailable(DataAccessException e) {
     log.error("Database request failed: {}", e.getMessage(), e);
     return ProblemDetail.forStatusAndDetail(
-        HttpStatus.SERVICE_UNAVAILABLE, "The database is unavailable; nothing was sent");
+        HttpStatus.SERVICE_UNAVAILABLE, "The database is unavailable");
   }
 
   private static ProblemDetail problem(HttpStatus status, RuntimeException e) {

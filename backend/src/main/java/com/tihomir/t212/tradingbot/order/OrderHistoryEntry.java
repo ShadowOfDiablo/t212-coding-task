@@ -5,8 +5,8 @@ import java.time.Instant;
 import java.util.List;
 
 public record OrderHistoryEntry(
-    String clientOrderId,
     long exchangeOrderId,
+    String clientOrderId,
     String broker,
     String ticker,
     OrderSide side,
@@ -23,5 +23,25 @@ public record OrderHistoryEntry(
 
   public OrderHistoryEntry {
     fills = List.copyOf(fills);
+  }
+
+  static OrderHistoryEntry of(
+      String broker, MarketOrderRequest request, ExecutedOrder order, Instant createdAt) {
+    return new OrderHistoryEntry(
+        order.exchangeOrderId(),
+        order.clientOrderId(),
+        broker,
+        order.ticker(),
+        order.side(),
+        MarketOrderRequest.ORDER_TYPE,
+        request.amount(),
+        request.amountType(),
+        order.exchangeStatus(),
+        order.executedQuantity(),
+        order.quoteAmount(),
+        order.averagePrice(),
+        createdAt,
+        order.transactTime(),
+        order.fills());
   }
 }

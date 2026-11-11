@@ -1,28 +1,15 @@
 package com.tihomir.t212.tradingbot.order;
 
-import java.time.Instant;
-import java.util.List;
-
 public interface OrderStore {
 
-  /** Records an order before it is sent, so a crash never loses track of it. */
-  void insertOpenOrder(OpenOrder order);
+  /** Inserts an executed order and its fills in one transaction. */
+  void insertExecutedOrder(OrderHistoryEntry order);
 
-  void updateOpenOrderStatus(String clientOrderId, OpenOrderStatus status, Instant updatedAt);
+  void insertRejectedOrder(RejectedOrder order);
 
-  /** Removes an open order that was never sent to the exchange. */
-  void deleteOpenOrder(String clientOrderId);
+  OpenOrderList getOpenOrders(String broker);
 
-  /** Moves an executed order and its fills into the history in one transaction. */
-  void moveExecutedOrderToHistory(ExecutedOrder order);
+  OrderHistory getOrderHistory(String broker);
 
-  /** Moves an order the exchange refused into the rejected orders in one transaction. */
-  void moveOrderToRejectedOrders(
-      String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt);
-
-  List<OpenOrder> getOpenOrders(String broker);
-
-  List<OrderHistoryEntry> getOrderHistory(String broker);
-
-  List<RejectedOrder> getRejectedOrders(String broker);
+  RejectedOrderList getRejectedOrders(String broker);
 }

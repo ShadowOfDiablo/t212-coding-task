@@ -4,8 +4,7 @@ import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import java.time.Clock;
-import java.util.List;
-import java.util.UUID;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -15,7 +14,6 @@ import org.springframework.stereotype.Service;
 public class OrderService {
 
   private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-  private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
 
   private final BrokerRegistryService brokers;
   private final OrderStore orderStore;
@@ -32,13 +30,17 @@ public class OrderService {
     if (!broker.tickers().contains(request.ticker())) {
       throw new TickerNotTradedException(brokerName, request.ticker());
     }
-    String clientOrderId = newClientOrderId();
-    orderStore.insertOpenOrder(
-        OpenOrder.sending(clientOrderId, brokerName, request, clock.instant()));
-    ExecutedOrder order = sendMarketOrder(broker, clientOrderId, request);
-    recordExecutedOrder(order);
+    Instant createdAt = clock.instant();
+    ExecutedOrder order;
+    try {
+      order = broker.tradingGateway().placeMarketOrder(request);
+    } catch (ExchangeRejectedRequestException e) {
+      recordRejectedOrder(RejectedOrder.of(brokerName, request, e, clock.instant()));
+      throw e;
+    }
+    recordExecutedOrder(OrderHistoryEntry.of(brokerName, request, order, createdAt));
     log.info(
-        "{}: {} {} {} executed {} for {} ({}), client order id {}",
+        "{}: {} {} {} executed {} for {} ({}), exchange order id {}",
         brokerName,
         order.side(),
         order.ticker(),
@@ -46,89 +48,54 @@ public class OrderService {
         order.executedQuantity(),
         order.quoteAmount(),
         order.averagePrice(),
-        order.clientOrderId());
+        order.exchangeOrderId());
     return order;
   }
 
-  public List<AssetBalance> accountBalances(String brokerName) {
-    return broker(brokerName).tradingGateway().accountBalances().balances();
+  public AccountBalanceList getAccountBalances(String brokerName) {
+    return new AccountBalanceList(broker(brokerName).tradingGateway().accountBalances().balances());
   }
 
-  public List<OpenOrder> getOpenOrders(String brokerName) {
+  public OpenOrderList getOpenOrders(String brokerName) {
     broker(brokerName);
     return orderStore.getOpenOrders(brokerName);
   }
 
-  public List<OrderHistoryEntry> getOrderHistory(String brokerName) {
+  public OrderHistory getOrderHistory(String brokerName) {
     broker(brokerName);
     return orderStore.getOrderHistory(brokerName);
   }
 
-  public List<RejectedOrder> getRejectedOrders(String brokerName) {
+  public RejectedOrderList getRejectedOrders(String brokerName) {
     broker(brokerName);
     return orderStore.getRejectedOrders(brokerName);
   }
 
-  private ExecutedOrder sendMarketOrder(
-      Broker broker, String clientOrderId, MarketOrderRequest request) {
+  private void recordExecutedOrder(OrderHistoryEntry order) {
     try {
-      return broker.tradingGateway().placeMarketOrder(clientOrderId, request);
-    } catch (ExchangeRejectedRequestException e) {
-      recordRejectedOrder(clientOrderId, e);
-      throw e;
-    } catch (TradingNotConfiguredException e) {
-      forgetUnsentOrder(clientOrderId);
-      throw e;
-    } catch (RuntimeException e) {
-      markStatusUnknown(clientOrderId);
-      throw e;
-    }
-  }
-
-  private void recordExecutedOrder(ExecutedOrder order) {
-    try {
-      orderStore.moveExecutedOrderToHistory(order);
+      orderStore.insertExecutedOrder(order);
     } catch (DataAccessException e) {
       log.error(
-          "Order {} was executed but could not be moved to the order history; it stays open"
-              + " until it is reconciled with the exchange",
-          order.clientOrderId(),
+          "Order {} was executed but could not be stored in the order history",
+          order.exchangeOrderId(),
           e);
     }
   }
 
-  private void recordRejectedOrder(String clientOrderId, ExchangeRejectedRequestException e) {
+  private void recordRejectedOrder(RejectedOrder order) {
     try {
-      orderStore.moveOrderToRejectedOrders(clientOrderId, e, clock.instant());
-    } catch (DataAccessException storeFailure) {
+      orderStore.insertRejectedOrder(order);
+    } catch (DataAccessException e) {
       log.error(
-          "Order {} was rejected but could not be moved to the rejected orders",
-          clientOrderId,
-          storeFailure);
-    }
-  }
-
-  private void forgetUnsentOrder(String clientOrderId) {
-    try {
-      orderStore.deleteOpenOrder(clientOrderId);
-    } catch (DataAccessException e) {
-      log.error("Order {} was never sent but could not be removed", clientOrderId, e);
-    }
-  }
-
-  private void markStatusUnknown(String clientOrderId) {
-    try {
-      orderStore.updateOpenOrderStatus(clientOrderId, OpenOrderStatus.UNKNOWN, clock.instant());
-    } catch (DataAccessException e) {
-      log.error("Order {} has an unknown status that could not be recorded", clientOrderId, e);
+          "A {} {} order rejected with {} could not be stored",
+          order.side(),
+          order.ticker(),
+          order.errorCode(),
+          e);
     }
   }
 
   private Broker broker(String brokerName) {
     return brokers.get(brokerName).orElseThrow(() -> new BrokerNotFoundException(brokerName));
-  }
-
-  private static String newClientOrderId() {
-    return CLIENT_ORDER_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
   }
 }

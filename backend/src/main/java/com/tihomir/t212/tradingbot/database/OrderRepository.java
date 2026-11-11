@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderRepository implements OrderStore {
 
   private static final int MAX_ORDERS_PER_HISTORY_REQUEST = 100;
+  private static final int ONE_ROW = 1;
 
   private final JdbcClient jdbcClient;
 
@@ -40,19 +41,18 @@ public class OrderRepository implements OrderStore {
             """
             INSERT INTO open_order (client_order_id, broker, ticker, side, order_type, amount,
                                     amount_type, status, created_at, updated_at)
-            VALUES (:clientOrderId, :broker, :ticker, :side, :orderType, :amount,
-                    :amountType, :status, :createdAt, :updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
-        .param("clientOrderId", order.clientOrderId())
-        .param("broker", order.broker())
-        .param("ticker", order.ticker())
-        .param("side", order.side().name())
-        .param("orderType", order.orderType())
-        .param("amount", order.amount())
-        .param("amountType", order.amountType().name())
-        .param("status", order.status().name())
-        .param("createdAt", timestamp(order.createdAt()))
-        .param("updatedAt", timestamp(order.updatedAt()))
+        .param(order.clientOrderId())
+        .param(order.broker())
+        .param(order.ticker())
+        .param(order.side().name())
+        .param(order.orderType())
+        .param(order.amount())
+        .param(order.amountType().name())
+        .param(order.status().name())
+        .param(timestamp(order.createdAt()))
+        .param(timestamp(order.updatedAt()))
         .update();
   }
 
@@ -60,130 +60,133 @@ public class OrderRepository implements OrderStore {
   public void updateOpenOrderStatus(
       String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
     jdbcClient
-        .sql(
-            """
-            UPDATE open_order SET status = :status, updated_at = :updatedAt
-            WHERE client_order_id = :clientOrderId
-            """)
-        .param("status", status.name())
-        .param("updatedAt", timestamp(updatedAt))
-        .param("clientOrderId", clientOrderId)
+        .sql("UPDATE open_order SET status = ?, updated_at = ? WHERE client_order_id = ?")
+        .param(status.name())
+        .param(timestamp(updatedAt))
+        .param(clientOrderId)
         .update();
   }
 
   @Override
   public void deleteOpenOrder(String clientOrderId) {
     jdbcClient
-        .sql("DELETE FROM open_order WHERE client_order_id = :clientOrderId")
-        .param("clientOrderId", clientOrderId)
+        .sql("DELETE FROM open_order WHERE client_order_id = ?")
+        .param(clientOrderId)
         .update();
   }
 
   @Override
   @Transactional
   public void moveExecutedOrderToHistory(ExecutedOrder order) {
-    jdbcClient
-        .sql(
-            """
-            INSERT INTO order_history (client_order_id, exchange_order_id, broker, ticker, side,
-                                       order_type, amount, amount_type, final_status,
-                                       executed_quantity, quote_amount, average_price,
-                                       created_at, closed_at)
-            SELECT client_order_id, :exchangeOrderId, broker, ticker, side, order_type, amount,
-                   amount_type, :finalStatus, :executedQuantity, :quoteAmount, :averagePrice,
-                   created_at, :closedAt
-            FROM open_order WHERE client_order_id = :clientOrderId
-            ON CONFLICT (client_order_id) DO NOTHING
-            """)
-        .param("exchangeOrderId", order.exchangeOrderId())
-        .param("finalStatus", order.exchangeStatus())
-        .param("executedQuantity", order.executedQuantity())
-        .param("quoteAmount", order.quoteAmount())
-        .param("averagePrice", order.averagePrice())
-        .param("closedAt", timestamp(order.transactTime()))
-        .param("clientOrderId", order.clientOrderId())
-        .update();
-    order.fills().forEach(fill -> insertFill(order.clientOrderId(), fill));
-    deleteOpenOrder(order.clientOrderId());
+    int moved =
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO order_history (client_order_id, exchange_order_id, broker, ticker,
+                                           side, order_type, amount, amount_type, final_status,
+                                           executed_quantity, quote_amount, average_price,
+                                           created_at, closed_at)
+                SELECT client_order_id, ?, broker, ticker, side, order_type, amount, amount_type,
+                       ?, ?, ?, ?, created_at, ?
+                FROM open_order
+                WHERE client_order_id = ?
+                """)
+            .param(order.exchangeOrderId())
+            .param(order.exchangeStatus())
+            .param(order.executedQuantity())
+            .param(order.quoteAmount())
+            .param(order.averagePrice())
+            .param(timestamp(order.transactTime()))
+            .param(order.clientOrderId())
+            .update();
+    if (moved == ONE_ROW) {
+      order.fills().forEach(fill -> insertFill(order.clientOrderId(), fill));
+      deleteOpenOrder(order.clientOrderId());
+    }
   }
 
   @Override
   @Transactional
   public void moveOrderToRejectedOrders(
       String clientOrderId, ExchangeRejectedRequestException rejection, Instant rejectedAt) {
-    jdbcClient
-        .sql(
-            """
-            INSERT INTO rejected_order (client_order_id, broker, ticker, side, order_type, amount,
-                                        amount_type, error_code, error_message, created_at,
-                                        rejected_at)
-            SELECT client_order_id, broker, ticker, side, order_type, amount, amount_type,
-                   :errorCode, :errorMessage, created_at, :rejectedAt
-            FROM open_order WHERE client_order_id = :clientOrderId
-            ON CONFLICT (client_order_id) DO NOTHING
-            """)
-        .param("errorCode", rejection.exchangeErrorCode())
-        .param("errorMessage", rejection.getMessage())
-        .param("rejectedAt", timestamp(rejectedAt))
-        .param("clientOrderId", clientOrderId)
-        .update();
-    deleteOpenOrder(clientOrderId);
+    int moved =
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO rejected_order (client_order_id, broker, ticker, side, order_type,
+                                            amount, amount_type, error_code, error_message,
+                                            created_at, rejected_at)
+                SELECT client_order_id, broker, ticker, side, order_type, amount, amount_type,
+                       ?, ?, created_at, ?
+                FROM open_order
+                WHERE client_order_id = ?
+                """)
+            .param(rejection.exchangeErrorCode())
+            .param(rejection.getMessage())
+            .param(timestamp(rejectedAt))
+            .param(clientOrderId)
+            .update();
+    if (moved == ONE_ROW) {
+      deleteOpenOrder(clientOrderId);
+    }
   }
 
   @Override
   public List<OpenOrder> getOpenOrders(String broker) {
     return jdbcClient
-        .sql("SELECT * FROM open_order WHERE broker = :broker ORDER BY created_at")
-        .param("broker", broker)
+        .sql("SELECT * FROM open_order WHERE broker = ? ORDER BY created_at")
+        .param(broker)
         .query(OrderRepository::openOrder)
         .list();
   }
 
   @Override
   public List<OrderHistoryEntry> getOrderHistory(String broker) {
-    Map<String, List<OrderFill>> fillsByOrder =
+    List<OrderHistoryEntry> orders =
         jdbcClient
-            .sql(
-                """
-                SELECT f.* FROM order_fill f
-                JOIN (SELECT client_order_id FROM order_history WHERE broker = :broker
-                      ORDER BY closed_at DESC LIMIT :maxOrders) h
-                  ON h.client_order_id = f.client_order_id
-                ORDER BY f.trade_id
-                """)
-            .param("broker", broker)
-            .param("maxOrders", MAX_ORDERS_PER_HISTORY_REQUEST)
-            .query(OrderRepository::orderFillRow)
-            .list()
-            .stream()
-            .collect(
-                Collectors.groupingBy(
-                    OrderFillRow::clientOrderId,
-                    Collectors.mapping(OrderFillRow::fill, Collectors.toList())));
-    return jdbcClient
-        .sql(
-            """
-            SELECT * FROM order_history WHERE broker = :broker
-            ORDER BY closed_at DESC LIMIT :maxOrders
-            """)
-        .param("broker", broker)
-        .param("maxOrders", MAX_ORDERS_PER_HISTORY_REQUEST)
-        .query((row, rowNumber) -> orderHistoryEntry(row, fillsByOrder))
-        .list();
+            .sql("SELECT * FROM order_history WHERE broker = ? ORDER BY closed_at DESC LIMIT ?")
+            .param(broker)
+            .param(MAX_ORDERS_PER_HISTORY_REQUEST)
+            .query(OrderRepository::orderHistoryEntryWithoutFills)
+            .list();
+    if (orders.isEmpty()) {
+      return orders;
+    }
+    Map<String, List<OrderFill>> fillsByOrder = fillsClosedSince(broker, orders.getLast());
+    return orders.stream()
+        .map(order -> withFills(order, fillsByOrder.getOrDefault(order.clientOrderId(), List.of())))
+        .toList();
   }
 
   @Override
   public List<RejectedOrder> getRejectedOrders(String broker) {
     return jdbcClient
-        .sql(
-            """
-            SELECT * FROM rejected_order WHERE broker = :broker
-            ORDER BY rejected_at DESC LIMIT :maxOrders
-            """)
-        .param("broker", broker)
-        .param("maxOrders", MAX_ORDERS_PER_HISTORY_REQUEST)
+        .sql("SELECT * FROM rejected_order WHERE broker = ? ORDER BY rejected_at DESC LIMIT ?")
+        .param(broker)
+        .param(MAX_ORDERS_PER_HISTORY_REQUEST)
         .query(OrderRepository::rejectedOrder)
         .list();
+  }
+
+  private Map<String, List<OrderFill>> fillsClosedSince(String broker, OrderHistoryEntry oldest) {
+    return jdbcClient
+        .sql(
+            """
+            SELECT f.*
+            FROM order_fill f
+            JOIN order_history h ON h.client_order_id = f.client_order_id
+            WHERE h.broker = ? AND h.closed_at >= ?
+            ORDER BY f.trade_id
+            """)
+        .param(broker)
+        .param(timestamp(oldest.closedAt()))
+        .query(OrderRepository::orderFillRow)
+        .list()
+        .stream()
+        .collect(
+            Collectors.groupingBy(
+                OrderFillRow::clientOrderId,
+                Collectors.mapping(OrderFillRow::fill, Collectors.toList())));
   }
 
   private void insertFill(String clientOrderId, OrderFill fill) {
@@ -192,15 +195,14 @@ public class OrderRepository implements OrderStore {
             """
             INSERT INTO order_fill (client_order_id, trade_id, price, quantity, commission,
                                     commission_asset)
-            VALUES (:clientOrderId, :tradeId, :price, :quantity, :commission, :commissionAsset)
-            ON CONFLICT (client_order_id, trade_id) DO NOTHING
+            VALUES (?, ?, ?, ?, ?, ?)
             """)
-        .param("clientOrderId", clientOrderId)
-        .param("tradeId", fill.tradeId())
-        .param("price", fill.price())
-        .param("quantity", fill.quantity())
-        .param("commission", fill.commission())
-        .param("commissionAsset", fill.commissionAsset())
+        .param(clientOrderId)
+        .param(fill.tradeId())
+        .param(fill.price())
+        .param(fill.quantity())
+        .param(fill.commission())
+        .param(fill.commissionAsset())
         .update();
   }
 
@@ -218,11 +220,10 @@ public class OrderRepository implements OrderStore {
         instant(row, "updated_at"));
   }
 
-  private static OrderHistoryEntry orderHistoryEntry(
-      ResultSet row, Map<String, List<OrderFill>> fillsByOrder) throws SQLException {
-    String clientOrderId = row.getString("client_order_id");
+  private static OrderHistoryEntry orderHistoryEntryWithoutFills(ResultSet row, int rowNumber)
+      throws SQLException {
     return new OrderHistoryEntry(
-        clientOrderId,
+        row.getString("client_order_id"),
         row.getLong("exchange_order_id"),
         row.getString("broker"),
         row.getString("ticker"),
@@ -236,7 +237,26 @@ public class OrderRepository implements OrderStore {
         row.getBigDecimal("average_price"),
         instant(row, "created_at"),
         instant(row, "closed_at"),
-        fillsByOrder.getOrDefault(clientOrderId, List.of()));
+        List.of());
+  }
+
+  private static OrderHistoryEntry withFills(OrderHistoryEntry order, List<OrderFill> fills) {
+    return new OrderHistoryEntry(
+        order.clientOrderId(),
+        order.exchangeOrderId(),
+        order.broker(),
+        order.ticker(),
+        order.side(),
+        order.orderType(),
+        order.amount(),
+        order.amountType(),
+        order.finalStatus(),
+        order.executedQuantity(),
+        order.quoteAmount(),
+        order.averagePrice(),
+        order.createdAt(),
+        order.closedAt(),
+        fills);
   }
 
   private static RejectedOrder rejectedOrder(ResultSet row, int rowNumber) throws SQLException {

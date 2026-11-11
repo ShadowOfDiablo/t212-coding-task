@@ -15,7 +15,8 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Trading bot loop: Training and Trading modes | Planned |
 | Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
 | Database: restart reconciliation, positions and trades with PnL | Planned, next |
-| Rest of the REST API and the React dashboard | Planned |
+| React dashboard: tickers, holdings, orders, mode switch, light and dark theme | Built |
+| Rest of the REST API (bot controls, runs, charts) | Planned |
 
 ## How market data works
 

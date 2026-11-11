@@ -30,7 +30,7 @@ class BinanceMarketDataProtocolTest {
 
   @Test
   void buildsCandleAndBookTickerStreamNames() {
-    assertThat(protocol.streamNames("BTCUSDT", CandleInterval.ONE_MINUTE))
+    assertThat(protocol.streamNames("BTCUSDT", CandleInterval.ONE_MINUTE).streamNames())
         .containsExactly("btcusdt@kline_1m", "btcusdt@bookTicker");
   }
 

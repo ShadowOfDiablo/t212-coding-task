@@ -904,23 +904,23 @@ Planned additions: starting balance, the active signal generator and its paramet
 
 ## 14. Package layout
 
-Built packages are listed with their classes; the rest are planned.
+Built packages are listed with their classes; the rest are planned. Public methods never return a bare `List`/`Set`/`Map`: they return a record holding it (`TickerList`, `BrokerList`, `OrderHistory`, …). The candle-history methods are still to be changed, together with the candle history work.
 
 ```
 com.tihomir.t212.tradingbot
-├── broker           Broker, AbstractBroker, BrokerRegistryService, BrokerNotFoundException,
+├── broker           Broker, AbstractBroker, BrokerRegistryService, BrokerList, BrokerNotFoundException,
 │   │                RequestSigner, MissingKeyRequestSigner
 │   └── binance      BinanceBroker, BinanceConnectionProperties, BinanceMarketDataProtocol,
 │       │            BinanceTradingProperties, BinanceTradingConfiguration, BinanceTradingGateway,
 │       │            BinanceRequestSigner, BinanceResponse, BinanceUserDataStream,
 │       │            BinanceUserDataStreamProperties, BinanceUserDataSubscription
-│       └── util     OrderUtil (order parameters, query string, Binance order, balance and event JSON)
+│       └── util     OrderUtil (order parameters, Binance order, balance and event JSON), QueryParameters
 ├── userdata         UserDataStreamConnection, UserDataStreamConnectionFactory, UserDataStreamHandler,
 │                    JdkUserDataStreamConnection, JdkUserDataStreamConnectionFactory
 ├── marketdata
 │   ├── update       MarketDataEvent, CandleUpdate, BidAskUpdate, CandleInterval
-│   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerPriceWriter, TickerQuote, TickerQuoteSource
-│   ├── candlefeed   CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol
+│   ├── tickerprice  TickerPriceMap, TickerPriceReader, TickerList, TickerPriceWriter, TickerQuote, TickerQuoteSource
+│   ├── candlefeed   CandleFeeder, CandleUpdateListener, ExchangeMarketDataProtocol, StreamNameList
 │   └── websocket    MarketDataStreamConnection, MarketDataStreamConnectionFactory, MarketDataMessageHandler,
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
 ├── mode             BotMode, BotModeService, BrokerStartupRunner

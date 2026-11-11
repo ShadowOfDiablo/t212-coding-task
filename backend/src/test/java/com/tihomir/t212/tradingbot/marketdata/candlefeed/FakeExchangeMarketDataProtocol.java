@@ -25,9 +25,9 @@ public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataP
   static final int MAX_CANDLES_PER_REST_HISTORY_REQUEST = 2;
 
   @Override
-  public List<String> streamNames(String ticker, CandleInterval interval) {
+  public StreamNameList streamNames(String ticker, CandleInterval interval) {
     String name = ticker.toLowerCase(Locale.ROOT);
-    return List.of(name + "@candle", name + "@book");
+    return new StreamNameList(List.of(name + "@candle", name + "@book"));
   }
 
   @Override

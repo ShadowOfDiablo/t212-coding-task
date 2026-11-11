@@ -10,7 +10,7 @@ import java.util.Optional;
 
 public interface ExchangeMarketDataProtocol {
 
-  List<String> streamNames(String ticker, CandleInterval interval);
+  StreamNameList streamNames(String ticker, CandleInterval interval);
 
   int maxStreamsPerConnection();
 

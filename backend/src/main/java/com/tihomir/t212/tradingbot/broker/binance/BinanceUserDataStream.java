@@ -116,7 +116,8 @@ final class BinanceUserDataStream implements UserDataStreamHandler, AutoCloseabl
 
   private void applyAccountPosition(JsonNode event) {
     Instant updateTime = Instant.ofEpochMilli(OrderUtil.required(event, "u").asLong());
-    synchronizer.applyBalanceUpdate(updateTime, OrderUtil.accountPositionBalances(event));
+    synchronizer.applyBalanceUpdate(
+        updateTime, OrderUtil.accountPositionBalances(event).balances());
     log.debug("Binance: account balances updated at {}", updateTime);
   }
 

@@ -1,6 +1,5 @@
 package com.tihomir.t212.tradingbot.broker;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +26,7 @@ public final class BrokerRegistryService {
     return Optional.ofNullable(brokers.get(name));
   }
 
-  public Collection<Broker> all() {
-    return brokers.values();
+  public BrokerList all() {
+    return new BrokerList(List.copyOf(brokers.values()));
   }
 }

@@ -784,11 +784,12 @@ erDiagram
 
 - `order_history` also keeps the order's broker, ticker, side, type and amount, copied from `open_order`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **Idempotent:** settling an order twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
+- **`OrderRepository`:** method names follow the SQL they run: `insertOpenOrder`, `updateOpenOrderStatus`, `deleteOpenOrder`, `getOpenOrders`, `getOrderHistory`. `moveExecutedOrderToHistory` and `moveRejectedOrderToHistory` copy the open order into `order_history` with the result, insert the fills and delete the open row, all in **one transaction**.
+- **Idempotent:** moving an order to the history twice changes nothing (`ON CONFLICT DO NOTHING` on the history primary key and on `(client_order_id, trade_id)` for fills).
 - **Failures:**
   - Database down before sending: 503 and nothing is sent.
   - Database fails after Binance executed the order: the answer is still 201. The row stays in `open_order` as `SENDING` until it is reconciled with Binance.
-  - A failed settlement rolls back completely: no history row, no fills, and the order stays open.
+  - A failed move rolls back completely: no history row, no fills, and the order stays open.
 - **Endpoints:** `GET /api/brokers/{broker}/orders/open` and `GET /api/brokers/{broker}/orders/history` (the latest 100, with fills).
 
 **Planned next (stacked PRs):**

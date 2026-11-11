@@ -58,7 +58,8 @@ public class OrderRepository implements OrderStore {
   }
 
   @Override
-  public void markOpenOrderStatus(String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
+  public void updateOpenOrderStatus(
+      String clientOrderId, OpenOrderStatus status, Instant updatedAt) {
     jdbcClient
         .sql(
             """
@@ -81,7 +82,7 @@ public class OrderRepository implements OrderStore {
 
   @Override
   @Transactional
-  public void settleExecutedOrder(ExecutedOrder order) {
+  public void moveExecutedOrderToHistory(ExecutedOrder order) {
     jdbcClient
         .sql(
             """
@@ -109,7 +110,7 @@ public class OrderRepository implements OrderStore {
 
   @Override
   @Transactional
-  public void settleRejectedOrder(
+  public void moveRejectedOrderToHistory(
       String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt) {
     jdbcClient
         .sql(
@@ -133,7 +134,7 @@ public class OrderRepository implements OrderStore {
   }
 
   @Override
-  public List<OpenOrder> openOrders(String broker) {
+  public List<OpenOrder> getOpenOrders(String broker) {
     return jdbcClient
         .sql("SELECT * FROM open_order WHERE broker = :broker ORDER BY created_at")
         .param("broker", broker)
@@ -142,7 +143,7 @@ public class OrderRepository implements OrderStore {
   }
 
   @Override
-  public List<OrderHistoryEntry> orderHistory(String broker) {
+  public List<OrderHistoryEntry> getOrderHistory(String broker) {
     Map<String, List<OrderFill>> fillsByOrder =
         jdbcClient
             .sql(

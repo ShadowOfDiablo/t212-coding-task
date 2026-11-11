@@ -8,19 +8,19 @@ public interface OrderStore {
   /** Records an order before it is sent, so a crash never loses track of it. */
   void insertOpenOrder(OpenOrder order);
 
-  void markOpenOrderStatus(String clientOrderId, OpenOrderStatus status, Instant updatedAt);
+  void updateOpenOrderStatus(String clientOrderId, OpenOrderStatus status, Instant updatedAt);
 
   /** Removes an open order that was never sent to the exchange. */
   void deleteOpenOrder(String clientOrderId);
 
   /** Moves an executed order and its fills into the history in one transaction. */
-  void settleExecutedOrder(ExecutedOrder order);
+  void moveExecutedOrderToHistory(ExecutedOrder order);
 
   /** Moves an order the exchange refused into the history in one transaction. */
-  void settleRejectedOrder(
+  void moveRejectedOrderToHistory(
       String clientOrderId, ExchangeRejectedRequestException rejection, Instant closedAt);
 
-  List<OpenOrder> openOrders(String broker);
+  List<OpenOrder> getOpenOrders(String broker);
 
-  List<OrderHistoryEntry> orderHistory(String broker);
+  List<OrderHistoryEntry> getOrderHistory(String broker);
 }

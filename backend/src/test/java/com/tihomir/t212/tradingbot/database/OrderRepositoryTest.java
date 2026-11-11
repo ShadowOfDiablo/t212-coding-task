@@ -66,20 +66,20 @@ class OrderRepositoryTest {
   }
 
   @Test
-  void openOrderIsListedUntilItIsSettled() {
+  void openOrderIsListedUntilItMovesToTheHistory() {
     orderRepository.insertOpenOrder(sendingBuy());
 
-    assertThat(orderRepository.openOrders(BROKER)).containsExactly(sendingBuy());
-    assertThat(orderRepository.openOrders("other")).isEmpty();
+    assertThat(orderRepository.getOpenOrders(BROKER)).containsExactly(sendingBuy());
+    assertThat(orderRepository.getOpenOrders("other")).isEmpty();
   }
 
   @Test
   void unknownStatusIsRecorded() {
     orderRepository.insertOpenOrder(sendingBuy());
 
-    orderRepository.markOpenOrderStatus(CLIENT_ORDER_ID, OpenOrderStatus.UNKNOWN, EXECUTED_AT);
+    orderRepository.updateOpenOrderStatus(CLIENT_ORDER_ID, OpenOrderStatus.UNKNOWN, EXECUTED_AT);
 
-    OpenOrder order = orderRepository.openOrders(BROKER).getFirst();
+    OpenOrder order = orderRepository.getOpenOrders(BROKER).getFirst();
     assertThat(order.status()).isEqualTo(OpenOrderStatus.UNKNOWN);
     assertThat(order.updatedAt()).isEqualTo(EXECUTED_AT);
   }
@@ -88,10 +88,10 @@ class OrderRepositoryTest {
   void executedOrderMovesToTheHistoryWithItsFills() {
     orderRepository.insertOpenOrder(sendingBuy());
 
-    orderRepository.settleExecutedOrder(executedBuy(List.of(FIRST_FILL, SECOND_FILL)));
+    orderRepository.moveExecutedOrderToHistory(executedBuy(List.of(FIRST_FILL, SECOND_FILL)));
 
-    assertThat(orderRepository.openOrders(BROKER)).isEmpty();
-    OrderHistoryEntry entry = orderRepository.orderHistory(BROKER).getFirst();
+    assertThat(orderRepository.getOpenOrders(BROKER)).isEmpty();
+    OrderHistoryEntry entry = orderRepository.getOrderHistory(BROKER).getFirst();
     assertThat(entry.clientOrderId()).isEqualTo(CLIENT_ORDER_ID);
     assertThat(entry.exchangeOrderId()).contains(28L);
     assertThat(entry.finalStatus()).isEqualTo("FILLED");
@@ -102,28 +102,28 @@ class OrderRepositoryTest {
   }
 
   @Test
-  void settlingTwiceChangesNothing() {
+  void movingToTheHistoryTwiceChangesNothing() {
     orderRepository.insertOpenOrder(sendingBuy());
     ExecutedOrder order = executedBuy(List.of(FIRST_FILL));
 
-    orderRepository.settleExecutedOrder(order);
-    orderRepository.settleExecutedOrder(order);
+    orderRepository.moveExecutedOrderToHistory(order);
+    orderRepository.moveExecutedOrderToHistory(order);
 
-    assertThat(orderRepository.orderHistory(BROKER)).hasSize(1);
-    assertThat(orderRepository.orderHistory(BROKER).getFirst().fills()).hasSize(1);
+    assertThat(orderRepository.getOrderHistory(BROKER)).hasSize(1);
+    assertThat(orderRepository.getOrderHistory(BROKER).getFirst().fills()).hasSize(1);
   }
 
   @Test
   void rejectedOrderMovesToTheHistoryWithTheExchangeError() {
     orderRepository.insertOpenOrder(sendingBuy());
 
-    orderRepository.settleRejectedOrder(
+    orderRepository.moveRejectedOrderToHistory(
         CLIENT_ORDER_ID,
         new ExchangeRejectedRequestException(-2010, "insufficient balance"),
         EXECUTED_AT);
 
-    assertThat(orderRepository.openOrders(BROKER)).isEmpty();
-    OrderHistoryEntry entry = orderRepository.orderHistory(BROKER).getFirst();
+    assertThat(orderRepository.getOpenOrders(BROKER)).isEmpty();
+    OrderHistoryEntry entry = orderRepository.getOrderHistory(BROKER).getFirst();
     assertThat(entry.finalStatus()).isEqualTo("REJECTED");
     assertThat(entry.errorCode()).contains(-2010);
     assertThat(entry.errorMessage()).contains("insufficient balance");
@@ -132,18 +132,18 @@ class OrderRepositoryTest {
   }
 
   @Test
-  void failedSettlementLeavesTheOrderOpenAndTheHistoryUntouched() {
+  void failedMoveLeavesTheOrderOpenAndTheHistoryUntouched() {
     orderRepository.insertOpenOrder(sendingBuy());
     OrderFill fillWithoutFeeAsset =
         new OrderFill(9, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, null);
 
     assertThatThrownBy(() ->
-            orderRepository.settleExecutedOrder(
+            orderRepository.moveExecutedOrderToHistory(
                 executedBuy(List.of(FIRST_FILL, fillWithoutFeeAsset))))
         .isInstanceOf(DataAccessException.class);
 
-    assertThat(orderRepository.openOrders(BROKER)).hasSize(1);
-    assertThat(orderRepository.orderHistory(BROKER)).isEmpty();
+    assertThat(orderRepository.getOpenOrders(BROKER)).hasSize(1);
+    assertThat(orderRepository.getOrderHistory(BROKER)).isEmpty();
     assertThat(jdbcClient.sql("SELECT count(*) FROM order_fill").query(Long.class).single())
         .isZero();
   }

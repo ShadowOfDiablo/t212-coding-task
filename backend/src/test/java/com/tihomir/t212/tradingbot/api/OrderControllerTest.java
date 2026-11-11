@@ -10,20 +10,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
+import com.tihomir.t212.tradingbot.order.AccountBalanceList;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OpenOrder;
+import com.tihomir.t212.tradingbot.order.OpenOrderList;
 import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.OrderHistory;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
 import com.tihomir.t212.tradingbot.order.RejectedOrder;
+import com.tihomir.t212.tradingbot.order.RejectedOrderList;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
 import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.math.BigDecimal;
@@ -68,8 +72,10 @@ class OrderControllerTest {
 
   @Test
   void balancesAreListed() throws Exception {
-    when(orderService.accountBalances("binance"))
-        .thenReturn(List.of(new AssetBalance("USDT", new BigDecimal("5000"), BigDecimal.ZERO)));
+    when(orderService.getAccountBalances("binance"))
+        .thenReturn(
+            new AccountBalanceList(
+                List.of(new AssetBalance("USDT", new BigDecimal("5000"), BigDecimal.ZERO))));
 
     mockMvc
         .perform(get("/api/brokers/binance/balance"))
@@ -79,9 +85,11 @@ class OrderControllerTest {
 
   @Test
   void amountsArePlainDecimals() throws Exception {
-    when(orderService.accountBalances("binance"))
+    when(orderService.getAccountBalances("binance"))
         .thenReturn(
-            List.of(new AssetBalance("BTC", new BigDecimal("1.3E-7"), new BigDecimal("0E-8"))));
+            new AccountBalanceList(
+                List.of(
+                    new AssetBalance("BTC", new BigDecimal("1.3E-7"), new BigDecimal("0E-8")))));
 
     mockMvc
         .perform(get("/api/brokers/binance/balance"))
@@ -146,7 +154,7 @@ class OrderControllerTest {
 
   @Test
   void unreachableExchangeIsABadGateway() throws Exception {
-    when(orderService.accountBalances("binance"))
+    when(orderService.getAccountBalances("binance"))
         .thenThrow(new ExchangeUnavailableException("connect timed out"));
 
     mockMvc.perform(get("/api/brokers/binance/balance")).andExpect(status().isBadGateway());
@@ -154,62 +162,66 @@ class OrderControllerTest {
 
   @Test
   void databaseDownIsServiceUnavailable() throws Exception {
-    whenBuying().thenThrow(new DataAccessResourceFailureException("connection refused"));
+    when(orderService.getOrderHistory("binance"))
+        .thenThrow(new DataAccessResourceFailureException("connection refused"));
 
-    postBuy().andExpect(status().isServiceUnavailable());
+    mockMvc.perform(get(ORDERS + "/history")).andExpect(status().isServiceUnavailable());
   }
 
   @Test
-  void openOrdersAreListed() throws Exception {
+  void openOrdersAreListedByExchangeOrderId() throws Exception {
     when(orderService.getOpenOrders("binance"))
         .thenReturn(
-            List.of(
-                new OpenOrder(
-                    "tb-1",
-                    "binance",
-                    "BTCUSDT",
-                    OrderSide.BUY,
-                    OpenOrder.MARKET_ORDER_TYPE,
-                    BigDecimal.TEN,
-                    OrderAmountType.QUOTE_AMOUNT,
-                    OpenOrderStatus.UNKNOWN,
-                    Instant.EPOCH,
-                    Instant.EPOCH)));
+            new OpenOrderList(
+                List.of(
+                    new OpenOrder(
+                        30,
+                        "tb-3",
+                        "binance",
+                        "BTCUSDT",
+                        OrderSide.SELL,
+                        "TAKE_PROFIT_LIMIT",
+                        new BigDecimal("0.0001"),
+                        OrderAmountType.BASE_QUANTITY,
+                        OpenOrderStatus.NEW,
+                        Instant.EPOCH,
+                        Instant.EPOCH))));
 
     mockMvc
         .perform(get(ORDERS + "/open"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.openOrders[0].clientOrderId").value("tb-1"))
-        .andExpect(jsonPath("$.openOrders[0].status").value("UNKNOWN"));
+        .andExpect(jsonPath("$.openOrders[0].exchangeOrderId").value(30))
+        .andExpect(jsonPath("$.openOrders[0].status").value("NEW"));
   }
 
   @Test
   void orderHistoryIsListedWithFills() throws Exception {
     when(orderService.getOrderHistory("binance"))
         .thenReturn(
-            List.of(
-                new OrderHistoryEntry(
-                    "tb-1",
-                    28L,
-                    "binance",
-                    "BTCUSDT",
-                    OrderSide.BUY,
-                    OpenOrder.MARKET_ORDER_TYPE,
-                    BigDecimal.TEN,
-                    OrderAmountType.QUOTE_AMOUNT,
-                    "FILLED",
-                    new BigDecimal("0.0001"),
-                    BigDecimal.TEN,
-                    new BigDecimal("100000"),
-                    Instant.EPOCH,
-                    Instant.EPOCH,
-                    List.of(
-                        new OrderFill(
-                            7,
-                            new BigDecimal("100000"),
-                            new BigDecimal("0.0001"),
-                            new BigDecimal("0.0000001"),
-                            "BTC")))));
+            new OrderHistory(
+                List.of(
+                    new OrderHistoryEntry(
+                        28L,
+                        "tb-1",
+                        "binance",
+                        "BTCUSDT",
+                        OrderSide.BUY,
+                        MarketOrderRequest.ORDER_TYPE,
+                        BigDecimal.TEN,
+                        OrderAmountType.QUOTE_AMOUNT,
+                        "FILLED",
+                        new BigDecimal("0.0001"),
+                        BigDecimal.TEN,
+                        new BigDecimal("100000"),
+                        Instant.EPOCH,
+                        Instant.EPOCH,
+                        List.of(
+                            new OrderFill(
+                                7,
+                                new BigDecimal("100000"),
+                                new BigDecimal("0.0001"),
+                                new BigDecimal("0.0000001"),
+                                "BTC"))))));
 
     mockMvc
         .perform(get(ORDERS + "/history"))
@@ -223,24 +235,23 @@ class OrderControllerTest {
   void rejectedOrdersAreListedWithTheExchangeError() throws Exception {
     when(orderService.getRejectedOrders("binance"))
         .thenReturn(
-            List.of(
-                new RejectedOrder(
-                    "tb-2",
-                    "binance",
-                    "BTCUSDT",
-                    OrderSide.SELL,
-                    OpenOrder.MARKET_ORDER_TYPE,
-                    new BigDecimal("0.00013"),
-                    OrderAmountType.BASE_QUANTITY,
-                    -2010,
-                    "insufficient balance",
-                    Instant.EPOCH,
-                    Instant.EPOCH)));
+            new RejectedOrderList(
+                List.of(
+                    new RejectedOrder(
+                        "binance",
+                        "BTCUSDT",
+                        OrderSide.SELL,
+                        MarketOrderRequest.ORDER_TYPE,
+                        new BigDecimal("0.00013"),
+                        OrderAmountType.BASE_QUANTITY,
+                        -2010,
+                        "insufficient balance",
+                        Instant.EPOCH))));
 
     mockMvc
         .perform(get(ORDERS + "/rejected"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.rejectedOrders[0].clientOrderId").value("tb-2"))
+        .andExpect(jsonPath("$.rejectedOrders[0].ticker").value("BTCUSDT"))
         .andExpect(jsonPath("$.rejectedOrders[0].errorCode").value(-2010))
         .andExpect(jsonPath("$.rejectedOrders[0].errorMessage").value("insufficient balance"));
   }

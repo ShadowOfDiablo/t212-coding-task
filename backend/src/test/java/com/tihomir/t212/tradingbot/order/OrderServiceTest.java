@@ -17,6 +17,7 @@ import org.springframework.dao.DataAccessException;
 class OrderServiceTest {
 
   private static final String TRADING_BROKER = "demo";
+  private static final Instant NOW = Instant.ofEpochMilli(1_000);
 
   private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
   private final FakeOrderStore orderStore = new FakeOrderStore();
@@ -24,82 +25,75 @@ class OrderServiceTest {
       new OrderService(
           new BrokerRegistryService(List.of(new FakeBroker(TRADING_BROKER, gateway))),
           orderStore,
-          Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC));
+          Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
-  void sendsTheOrderToTheBrokersGatewayAndMovesItToTheHistory() {
+  void executedOrderIsStoredUnderTheExchangeOrderId() {
     MarketOrderRequest request = buy(FakeBroker.TRADED_TICKER);
 
     ExecutedOrder order = orderService.placeMarketOrder(TRADING_BROKER, request);
 
-    assertThat(order.ticker()).isEqualTo(FakeBroker.TRADED_TICKER);
-    assertThat(order.clientOrderId()).startsWith("tb-");
     assertThat(gateway.placedOrders()).containsExactly(request);
-    assertThat(orderStore.executedOrdersInHistory()).containsExactly(order.clientOrderId());
-    assertThat(orderStore.onlyOpenOrder()).isEmpty();
+    OrderHistoryEntry stored = orderService.getOrderHistory(TRADING_BROKER).orders().getFirst();
+    assertThat(stored.exchangeOrderId()).isEqualTo(FakeExchangeTradingGateway.EXCHANGE_ORDER_ID);
+    assertThat(stored.broker()).isEqualTo(TRADING_BROKER);
+    assertThat(stored.amountType()).isEqualTo(OrderAmountType.QUOTE_AMOUNT);
+    assertThat(stored.createdAt()).isEqualTo(NOW);
+    assertThat(stored.finalStatus()).isEqualTo(order.exchangeStatus());
   }
 
   @Test
-  void sendsNothingWhenTheDatabaseIsDown() {
+  void executedOrderIsReturnedEvenWhenStoringItFails() {
     orderStore.takeDatabaseDown();
-
-    assertThatThrownBy(
-            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
-        .isInstanceOf(DataAccessException.class);
-    assertThat(gateway.placedOrders()).isEmpty();
-  }
-
-  @Test
-  void rejectedOrderMovesToTheHistory() {
-    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "insufficient balance"));
-
-    assertThatThrownBy(
-            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
-        .isInstanceOf(ExchangeRejectedRequestException.class);
-    assertThat(orderStore.movedToRejectedOrders()).hasSize(1);
-    assertThat(orderStore.onlyOpenOrder()).isEmpty();
-  }
-
-  @Test
-  void orderWithAnUnknownStatusStaysOpen() {
-    gateway.failOrders(new OrderStatusUnknownException("tb-1", "read timed out"));
-
-    assertThatThrownBy(
-            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
-        .isInstanceOf(OrderStatusUnknownException.class);
-    assertThat(orderStore.onlyOpenOrder().orElseThrow().status())
-        .isEqualTo(OpenOrderStatus.UNKNOWN);
-  }
-
-  @Test
-  void orderThatWasNeverSentIsRemoved() {
-    gateway.failOrders(new TradingNotConfiguredException());
-
-    assertThatThrownBy(
-            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
-        .isInstanceOf(TradingNotConfiguredException.class);
-    assertThat(orderStore.onlyOpenOrder()).isEmpty();
-  }
-
-  @Test
-  void executedOrderIsReturnedEvenWhenRecordingItFails() {
-    orderStore.failMovingToHistory();
 
     ExecutedOrder order =
         orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER));
 
     assertThat(order.exchangeStatus()).isEqualTo("FILLED");
-    assertThat(orderStore.onlyOpenOrder().orElseThrow().status())
-        .isEqualTo(OpenOrderStatus.SENDING);
+  }
+
+  @Test
+  void rejectedOrderIsStoredWithTheExchangeError() {
+    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "insufficient balance"));
+
+    assertThatThrownBy(
+            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
+        .isInstanceOf(ExchangeRejectedRequestException.class);
+
+    RejectedOrder rejected =
+        orderService.getRejectedOrders(TRADING_BROKER).rejectedOrders().getFirst();
+    assertThat(rejected.errorCode()).isEqualTo(-2010);
+    assertThat(rejected.errorMessage()).isEqualTo("insufficient balance");
+    assertThat(rejected.rejectedAt()).isEqualTo(NOW);
+    assertThat(orderService.getOrderHistory(TRADING_BROKER).orders()).isEmpty();
+  }
+
+  @Test
+  void orderWithAnUnknownStatusIsNotStored() {
+    gateway.failOrders(new OrderStatusUnknownException("tb-1", "read timed out"));
+
+    assertThatThrownBy(
+            () -> orderService.placeMarketOrder(TRADING_BROKER, buy(FakeBroker.TRADED_TICKER)))
+        .isInstanceOf(OrderStatusUnknownException.class);
+    assertThat(orderService.getOrderHistory(TRADING_BROKER).orders()).isEmpty();
+    assertThat(orderService.getRejectedOrders(TRADING_BROKER).rejectedOrders()).isEmpty();
+  }
+
+  @Test
+  void readsFailWhenTheDatabaseIsDown() {
+    orderStore.takeDatabaseDown();
+
+    assertThatThrownBy(() -> orderService.getOrderHistory(TRADING_BROKER))
+        .isInstanceOf(DataAccessException.class);
   }
 
   @Test
   void refusesAnUnknownBroker() {
     assertThatThrownBy(() -> orderService.placeMarketOrder("unknown", buy("BTCUSDT")))
         .isInstanceOf(BrokerNotFoundException.class);
-    assertThatThrownBy(() -> orderService.getRejectedOrders("unknown"))
-        .isInstanceOf(BrokerNotFoundException.class);
     assertThatThrownBy(() -> orderService.getOpenOrders("unknown"))
+        .isInstanceOf(BrokerNotFoundException.class);
+    assertThatThrownBy(() -> orderService.getRejectedOrders("unknown"))
         .isInstanceOf(BrokerNotFoundException.class);
   }
 
@@ -108,12 +102,11 @@ class OrderServiceTest {
     assertThatThrownBy(() -> orderService.placeMarketOrder(TRADING_BROKER, buy("DOGEUSDT")))
         .isInstanceOf(TickerNotTradedException.class);
     assertThat(gateway.placedOrders()).isEmpty();
-    assertThat(orderStore.onlyOpenOrder()).isEmpty();
   }
 
   @Test
   void readsBalancesFromTheBrokersGateway() {
-    assertThat(orderService.accountBalances(TRADING_BROKER))
+    assertThat(orderService.getAccountBalances(TRADING_BROKER).balances())
         .isEqualTo(FakeExchangeTradingGateway.BALANCES);
   }
 

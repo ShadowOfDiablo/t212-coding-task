@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 public record MarketOrderRequest(
     String ticker, OrderSide side, BigDecimal amount, OrderAmountType amountType) {
 
+  public static final String ORDER_TYPE = "MARKET";
+
   public MarketOrderRequest {
     if (ticker == null || ticker.isBlank()) {
       throw new IllegalArgumentException("ticker is required");

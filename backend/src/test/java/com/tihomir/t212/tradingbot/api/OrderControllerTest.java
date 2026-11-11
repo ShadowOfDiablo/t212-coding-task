@@ -15,7 +15,11 @@ import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.order.OpenOrder;
+import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
@@ -24,10 +28,12 @@ import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -144,6 +150,75 @@ class OrderControllerTest {
         .thenThrow(new ExchangeUnavailableException("connect timed out"));
 
     mockMvc.perform(get("/api/brokers/binance/balance")).andExpect(status().isBadGateway());
+  }
+
+  @Test
+  void databaseDownIsServiceUnavailable() throws Exception {
+    whenBuying().thenThrow(new DataAccessResourceFailureException("connection refused"));
+
+    postBuy().andExpect(status().isServiceUnavailable());
+  }
+
+  @Test
+  void openOrdersAreListed() throws Exception {
+    when(orderService.openOrders("binance"))
+        .thenReturn(
+            List.of(
+                new OpenOrder(
+                    "tb-1",
+                    "binance",
+                    "BTCUSDT",
+                    OrderSide.BUY,
+                    OpenOrder.MARKET_ORDER_TYPE,
+                    BigDecimal.TEN,
+                    OrderAmountType.QUOTE_AMOUNT,
+                    OpenOrderStatus.UNKNOWN,
+                    Instant.EPOCH,
+                    Instant.EPOCH)));
+
+    mockMvc
+        .perform(get(ORDERS + "/open"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.openOrders[0].clientOrderId").value("tb-1"))
+        .andExpect(jsonPath("$.openOrders[0].status").value("UNKNOWN"));
+  }
+
+  @Test
+  void orderHistoryIsListedWithFills() throws Exception {
+    when(orderService.orderHistory("binance"))
+        .thenReturn(
+            List.of(
+                new OrderHistoryEntry(
+                    "tb-1",
+                    Optional.of(28L),
+                    "binance",
+                    "BTCUSDT",
+                    OrderSide.BUY,
+                    OpenOrder.MARKET_ORDER_TYPE,
+                    BigDecimal.TEN,
+                    OrderAmountType.QUOTE_AMOUNT,
+                    "FILLED",
+                    new BigDecimal("0.0001"),
+                    BigDecimal.TEN,
+                    Optional.of(new BigDecimal("100000")),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Instant.EPOCH,
+                    Instant.EPOCH,
+                    List.of(
+                        new OrderFill(
+                            7,
+                            new BigDecimal("100000"),
+                            new BigDecimal("0.0001"),
+                            new BigDecimal("0.0000001"),
+                            "BTC")))));
+
+    mockMvc
+        .perform(get(ORDERS + "/history"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.orders[0].exchangeOrderId").value(28))
+        .andExpect(jsonPath("$.orders[0].finalStatus").value("FILLED"))
+        .andExpect(jsonPath("$.orders[0].fills[0].tradeId").value(7));
   }
 
   private OngoingStubbing<ExecutedOrder> whenBuying() {

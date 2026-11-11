@@ -8,6 +8,13 @@ spring:
     clients:
       connect-timeout: 5s
       read-timeout: 10s
+  datasource:
+    url: ${TRADING_BOT_DB_URL:jdbc:postgresql://localhost:5432/tradingbot}
+    username: ${TRADING_BOT_DB_USER:tradingbot}
+    password: ${TRADING_BOT_DB_PASSWORD:tradingbot}
+  docker:
+    compose:
+      lifecycle-management: start-only
 bot:
   mode: TRADING
 binance:

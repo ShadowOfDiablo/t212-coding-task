@@ -8,6 +8,7 @@ import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
 import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -55,6 +56,13 @@ public class ApiExceptionHandler {
   ProblemDetail exchangeUnavailable(ExchangeUnavailableException e) {
     log.error("Exchange request failed: {}", e.getMessage(), e);
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, e.getMessage());
+  }
+
+  @ExceptionHandler(DataAccessException.class)
+  ProblemDetail databaseUnavailable(DataAccessException e) {
+    log.error("Database request failed: {}", e.getMessage(), e);
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.SERVICE_UNAVAILABLE, "The database is unavailable; nothing was sent");
   }
 
   private static ProblemDetail problem(HttpStatus status, RuntimeException e) {

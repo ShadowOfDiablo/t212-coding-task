@@ -33,4 +33,14 @@ public class OrderController {
   public AccountBalanceResponse accountBalance(@PathVariable String broker) {
     return new AccountBalanceResponse(orderService.accountBalances(broker));
   }
+
+  @GetMapping("/orders/open")
+  public OpenOrderListResponse openOrders(@PathVariable String broker) {
+    return new OpenOrderListResponse(orderService.openOrders(broker));
+  }
+
+  @GetMapping("/orders/history")
+  public OrderHistoryResponse orderHistory(@PathVariable String broker) {
+    return new OrderHistoryResponse(orderService.orderHistory(broker));
+  }
 }

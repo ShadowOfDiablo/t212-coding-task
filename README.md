@@ -41,7 +41,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 ├── README.md
 ├── pom.xml            aggregator: open the repository root in an IDE and the backend is picked up
 ├── docs/              architecture and design (docs/ARCHITECTURE.md)
-├── frontend/          React UI (not set up yet)
+├── frontend/          React UI (JavaScript, built with Vite)
 └── backend/           Java Spring Boot project (Maven)
     └── src/main/java/com/tihomir/t212/tradingbot
         ├── api            REST controllers
@@ -59,6 +59,7 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 - No Maven installation needed: the backend ships with the Maven wrapper (`mvnw` / `mvnw.cmd`), which downloads the correct Maven version on first use.
 - Internet access to `demo-stream.binance.com`, `data-api.binance.vision` and, for orders, `demo-api.binance.com`. The tests don't need it.
 - For orders: a Binance account with Demo Trading enabled, and `openssl` to create a key pair (it ships with Git for Windows).
+- Node.js 20.19 or newer (with npm) for the frontend.
 - Docker (Docker Desktop on Windows and macOS), running. The application's database is PostgreSQL, which runs in Docker, and the database tests use Testcontainers. Without Docker the database tests are skipped.
 
 ## Backend
@@ -197,4 +198,13 @@ Code follows the [Google Java Style](https://google.github.io/styleguide/javagui
 
 ## Frontend
 
-Not set up yet. Setup and run instructions will be added together with the React project.
+A React app written in plain JavaScript (`.jsx`), with HTML and CSS. [Vite](https://vite.dev) runs the dev server and builds it. All commands are run from the `frontend/` folder:
+
+```bash
+npm install          # first time only
+npm run dev          # dev server on http://localhost:5173
+npm run build        # production build into frontend/dist
+npm run lint         # lint with oxlint
+```
+
+During `npm run dev`, requests to `/api` are forwarded to the backend on `http://localhost:8080`, so start the backend first.

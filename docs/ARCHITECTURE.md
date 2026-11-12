@@ -797,6 +797,7 @@ erDiagram
 - **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (history row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records.
 - **Idempotent:** inserting the same executed order twice changes nothing: `insertExecutedOrder` first runs `SELECT COUNT(*) FROM order_history WHERE exchange_order_id = ?` and skips an order that is already stored, in the same transaction as the inserts.
 - **Plain SQL only:** queries use standard `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `WHERE`, `ORDER BY` and `LIMIT`, with `?` placeholders. No named parameters and no PostgreSQL-only clauses such as `ON CONFLICT`.
+- **Migrations are safe to re-run:** tables and indexes are created with `IF NOT EXISTS`.
 - **Failures:**
   - Database fails after Binance executed the order: the answer is still 201 and the error is logged. Reconciliation will fill the gap.
   - A failed insert rolls back completely: no history row and no fills.

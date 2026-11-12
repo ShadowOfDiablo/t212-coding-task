@@ -21,8 +21,8 @@ ALTER TABLE order_fill ADD PRIMARY KEY (exchange_order_id, trade_id);
 
 -- Active orders now only hold orders Binance acknowledged that still rest on the book.
 -- Rows written before sending (SENDING / UNKNOWN) have no Binance order id and can't be kept.
-DROP TABLE open_order;
-CREATE TABLE open_order (
+DROP TABLE IF EXISTS open_order;
+CREATE TABLE IF NOT EXISTS open_order (
     exchange_order_id BIGINT      PRIMARY KEY,
     client_order_id   TEXT,
     broker            TEXT        NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE open_order (
     updated_at        TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX open_order_broker_idx ON open_order (broker);
+CREATE INDEX IF NOT EXISTS open_order_broker_idx ON open_order (broker);
 
 -- Binance gives a refused order no id, so rejected orders get their own.
 ALTER TABLE rejected_order DROP CONSTRAINT rejected_order_pkey;

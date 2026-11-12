@@ -17,12 +17,13 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 |---|---|
 | Market data: brokers, candle feeder, WebSocket streams, REST history, ticker price map | **Built** |
 | Demo account orders: signed market orders and balances on Binance Demo Mode, REST endpoints | **Built** |
-| Virtual account, order validation, fees (Training) | Planned |
-| Signal generators and indicators | Planned |
-| `TradingBotService`: event loop, states, controls | Planned |
+| Candle store: ticker and candle tables, paged download (§16.1) | In progress |
+| Trading algorithm with required and optional settings, SMA example (§16.2) | In progress |
+| Order checks, virtual account for training (§16.3) | In progress |
+| Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | In progress |
+| Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
 | Database: restart reconciliation, positions (FIFO lots), trades with PnL | Planned, next |
-| Database: candle history | Planned |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
 | Rest of the REST API (bot controls, runs, charts) | Planned |
 
@@ -399,6 +400,8 @@ Each broker has a `TickerPriceMap`: its configured tickers mapped to the latest 
 
 ## 6. Signals (planned)
 
+> Superseded by §16.2: a `TradingAlgorithm` produces the signals and `OrderCheckerService` decides on the order (§16.3). The table below is the original idea.
+
 `SignalGenerator.onUpdate(CandleUpdate, SignalContext)` runs on **every candle update** in both modes. `SignalContext` gives read-only access to recent candles, indicators, the open position and the cash balance.
 
 | Signal | Parameters | Meaning |
@@ -662,6 +665,8 @@ flowchart TD
 - The only remaining profile is `smoke`: `MarketDataSmokeRunner` streams for `smoke.duration`, logs what it receives, then shuts the application down.
 - The application context test replaces `BrokerStartupRunner` with a mock, so tests never open a network connection.
 
+> The live bot and recorded runs are described in §16.5 and §16.4; pause, resume and reset below are not part of that first version.
+
 ### Bot states
 
 ```mermaid
@@ -842,6 +847,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/brokers/{broker}/orders/rejected` | **Built.** `{"rejectedOrders": […]}`, the latest 100 orders Binance refused, with its error |
 | GET | `/brokers/{broker}/tickers` | **Built.** `{"tickers": [{"ticker", "quote": {"bid", "ask", "lastPrice", "updatedAt", "source"}}, …]}`, every traded ticker with its latest quote from the ticker price map (`quote` is `null` until market data arrives) |
 | GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
+| | §16.6 | **Algorithms, training runs, recorded runs and the live bot:** see the table in §16.6 |
 | GET | `/bot/status` | State, mode, current run, latest price |
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
 | POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
@@ -930,9 +936,11 @@ com.tihomir.t212.tradingbot
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
 ├── mode             BotMode, BotModeService, BrokerStartupRunner
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
-├── bot              (planned) BotState, TradingBotService, BotRun, RunStatus
-├── signal           (planned) SignalGenerator, Signal, SignalContext
-│   └── indicator    (planned) SMA, EMA, RSI, ...
+├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmOptionStore,
+│   │                AlgorithmRegistryService, SignalGenerator, TradingSignal, SimpleMovingAverageAlgorithm
+│   └── indicator    SimpleMovingAverage
+├── bot              TradingBotService, TrainingService, AlgorithmRunStore, RunStatus, RunEvent
+├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
 │                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
 │                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
@@ -941,7 +949,8 @@ com.tihomir.t212.tradingbot
 │                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
 │                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
 │                    TradingNotConfiguredException
-│                    (planned) OrderValidator, OrderExecutionService, RejectionReason
+│                    OrderCheckerService, OrderCheck, RejectionReason, AccountView, VirtualTradingGateway
+│                    (planned) OrderExecutionService
 │   └── fee          (planned) FeeService
 ├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
@@ -984,3 +993,314 @@ flowchart LR
 | `src/hooks/usePolling.js`, `useTheme.js` | Polling with last-good data; light and dark theme |
 | `src/components/` | `Header`, `ModeSwitch`, `ThemeToggle`, `TickerStrip`, `TickerCard`, `OrdersCard`, `HoldingsCard`, `Logo` |
 | `src/styles.css` | Design tokens for both themes, layout and animations |
+
+## 16. Trading algorithm, training and the live bot
+
+A trading algorithm turns prices into signals. The same algorithm runs in both modes:
+- **Training:** over stored candles, on a virtual account, as fast as possible.
+- **Trading:** live, on the Binance demo account.
+
+Every order goes through one checker first. The settings a run uses are kept in memory while it runs and recorded in the database when it starts, when they change and when it ends.
+
+```mermaid
+flowchart LR
+    Ui["Dashboard<br/>training view, live bot panel"] -- "POST /training/runs" --> Train["TrainingService"]
+    Ui -- "POST /bot/start, /bot/stop<br/>PUT /bot/current-parameters" --> Bot["TradingBotService"]
+    Train -- "getCandles(...)" --> Hist["CandleHistoryService"]
+    Hist --> CandleDb[("ticker, candle")]
+    Hist -- "missing pages" --> Feeder["CandleFeeder"]
+    Bot -- "closed candles, live prices" --> Feeder
+    Train --> Algo["TradingAlgorithm<br/>signals only"]
+    Bot --> Algo
+    Train --> Checker["OrderCheckerService<br/>every order"]
+    Bot --> Checker
+    Checker -- "training" --> Virtual["VirtualTradingGateway"]
+    Checker -- "trading" --> Orders["OrderService<br/>Binance demo account"]
+    Train --> RunDb[("algorithm_settings, sma_settings,<br/>algorithm_run, algorithm_run_settings,<br/>training_portfolio_point")]
+    Bot --> RunDb
+```
+
+### 16.1 Candle store
+
+Candles are downloaded once and then read from the database.
+
+```mermaid
+erDiagram
+    ticker {
+        bigserial id PK
+        text broker "unique with symbol"
+        text symbol "e.g. BTCUSDT"
+    }
+    candle {
+        bigint ticker_id PK
+        text candle_interval PK "e.g. FIVE_MINUTES"
+        timestamptz open_time PK
+        timestamptz close_time
+        numeric open
+        numeric high
+        numeric low
+        numeric close
+        numeric volume
+    }
+    ticker ||--o{ candle : "has"
+```
+
+- **Index:** the primary key `(ticker_id, candle_interval, open_time)` is the index a period is read through.
+- **Stored range:** the first and last stored candle of a ticker and interval, read through that same index (`MIN`/`MAX(open_time)`). No separate table is kept for it.
+- **The stored candles are one block.** Downloads only ever extend it at its ends, so it has no holes.
+
+```mermaid
+flowchart TD
+    Start["getCandles(broker, ticker, interval, from, to)"] --> Traded{"ticker traded<br/>by the broker?"}
+    Traded -- no --> E400["400"]
+    Traded -- yes --> Size{"range / interval<br/>at most 1,000,000 candles?"}
+    Size -- no --> E400b["400"]
+    Size -- yes --> Ticker["SELECT ticker row,<br/>INSERT it if missing"]
+    Ticker --> Range["stored range:<br/>MIN / MAX(open_time)"]
+    Range --> Before{"from before<br/>first stored candle?"}
+    Before -- yes --> Back["page backward from the<br/>first stored candle to from"]
+    Before -- no --> After
+    Back --> After{"to after<br/>last stored candle?"}
+    After -- yes --> Forward["page forward from the<br/>last stored candle to to"]
+    After -- no --> Read
+    Forward --> Read["SELECT candles in range<br/>(primary key range scan)"]
+    Read --> Out["CandleList"]
+```
+
+- **Request:** `CandleHistoryRequest` is a plain internal record. Requests are checked where they enter, with nested `@Valid` request bodies (§16.6).
+- **No forming candle:** `to` is clamped to the last closed candle, so a candle that is still forming is never stored.
+- **Paging:**
+  - Nothing stored yet: page forward from `from`.
+  - Forward pages start right after the last stored candle, and stop on a short or empty page.
+  - Backward pages end at the first stored candle. They stop at `from`, or on an empty page (no older candles exist).
+- **Every page is one transaction.** An interrupted download keeps what it stored.
+- **Stored rows are skipped** with plain `INSERT … SELECT … WHERE NOT EXISTS`.
+- **One download at a time.**
+
+| Failure | Result |
+|---|---|
+| Binance page request fails or times out | Stored pages stay, 502 |
+| Unreadable page | Logged with ticker, interval and time, 502 |
+| Database down | 503 |
+| Range larger than 1,000,000 candles | 400 |
+
+### 16.2 Algorithms and their settings
+
+```mermaid
+classDiagram
+    class TradingAlgorithm {
+        <<abstract>>
+        id() String
+        displayName() String
+        settingDefinitions() AlgorithmSettingDefinitionList
+        resolveSettings(AlgorithmSettingsRequest) AlgorithmSettings
+        createSignalGenerator(AlgorithmSettings) SignalGenerator
+        warmUpCandles(AlgorithmSettings) int
+        #checkOptionRules(AlgorithmSettings)
+        #newSignalGenerator(AlgorithmSettings)* SignalGenerator
+    }
+    class SignalGenerator {
+        <<interface>>
+        onPrice(CandleUpdate) TradingSignal
+    }
+    class AlgorithmSettings {
+        algorithmId, timePeriod, timeframe
+        liveOnTick, updateTimeSeconds (optional)
+        orderSizePercent
+        riskPerTradePercent, stopLossPercent (optional)
+        options (the algorithm's own, optional)
+    }
+    class AlgorithmOptionStore {
+        <<interface>>
+        findOrInsertSettings(AlgorithmSettings) long
+        getSettings(long) AlgorithmSettings
+    }
+    class SimpleMovingAverageAlgorithm {
+        id example-strategy-SMA
+    }
+    TradingAlgorithm <|-- SimpleMovingAverageAlgorithm
+    TradingAlgorithm ..> SignalGenerator : creates one per run
+    TradingAlgorithm ..> AlgorithmSettings : resolves
+    SimpleMovingAverageAlgorithm ..> AlgorithmOptionStore : its own store
+```
+
+- **The algorithm only produces signals** (`BUY`, `SELL`, `HOLD`). It never sees the account. Whether a signal becomes an order is decided by `OrderCheckerService` (§16.3).
+- **Required and optional settings:**
+  - Every setting is described by an `AlgorithmSettingDefinition`: name, label, required, whole number, default, minimum and maximum. The dashboard builds its form from these.
+  - **Required** settings always have a value: a missing one takes its default, and the value is range-checked.
+  - **Optional** settings may be `null`. A `null` optional setting **skips every check that uses it**, including its range check.
+- **Shared settings** (every algorithm):
+
+| Setting | Required | Meaning |
+|---|---|---|
+| `timePeriod` | yes | Candles the algorithm looks back over |
+| `timeframe` | yes | The candle interval (`ONE_MINUTE` … `ONE_DAY`) |
+| `liveOnTick` | yes | Live: run on every price update |
+| `updateTimeSeconds` | only when `liveOnTick` is false | Live: run every this many seconds. `null` when `liveOnTick` is true |
+| `orderSizePercent` | yes | Share of the cash a buy spends |
+| `riskPerTradePercent`, `stopLossPercent` | optional, together | Cap each buy so the stop loses at most this share of the portfolio, and sell at the stop |
+
+- **Adding an algorithm** takes three things:
+  1. a class extending `TradingAlgorithm` (a Spring bean)
+  2. its own `…_settings` table in a new migration
+  3. its `AlgorithmOptionStore`
+
+  `AlgorithmRegistryService` finds it and rejects duplicate ids, and `GET /api/algorithms` lists it.
+- **`example-strategy-SMA`:** one simple moving average over `timePeriod` candles of the timeframe.
+  - **BUY** when the price **moves below** the average. **SELL** when it **moves above** it.
+  - Signals only fire when the price crosses to the other side, so it doesn't buy on every candle below the average.
+  - It has no optional settings yet. Its `sma_settings` table is ready for them.
+
+### 16.3 Order checks
+
+```mermaid
+flowchart TD
+    Price["price update"] --> Stop{"stopLossPercent set<br/>and price at or below the stop?"}
+    Stop -- yes --> ForcedSell["SELL everything"]
+    Stop -- "no, or not set" --> Signal["algorithm: BUY / SELL / HOLD"]
+    Signal -- HOLD --> Done["nothing"]
+    Signal -- "BUY / SELL" --> Check["OrderCheckerService.checkOrder"]
+    ForcedSell --> Check
+    Check -- "Refused(reason)" --> Count["count + log, run goes on"]
+    Check -- "Approved(order)" --> Gateway["virtual account (training)<br/>OrderService (trading)"]
+```
+
+- **The checker sees every order before it is placed.** Each optional check is skipped when its setting is `null`.
+  - **BUY:** spends `orderSizePercent` of the cash. With risk set, the amount is capped so that a fall to the stop costs at most `riskPerTradePercent` of the portfolio value. Refused with `INSUFFICIENT_FUNDS`, or `BELOW_MIN_ORDER_VALUE` (under the exchange's minimum, a named constant for now).
+  - **SELL:** sells the whole position. Refused with `NO_POSITION` when nothing is held.
+  - **Stop loss:** sits `stopLossPercent` below the buy price. A price at or below it forces a sell.
+- **`AccountView`** provides cash, base quantity and entry price. Training reads the virtual account; trading reads the cached Binance balances (§7.2).
+- **`VirtualTradingGateway`** implements the same `ExchangeTradingGateway` as Binance, with a 0.1% fee and its own order ids. That is the swap: training never sends an order to Binance.
+
+### 16.4 Recording settings and runs
+
+```mermaid
+erDiagram
+    algorithm_settings {
+        bigserial id PK
+        text algorithm_id
+        int time_period
+        text timeframe
+        boolean live_on_tick
+        int update_time_seconds "NULL when live_on_tick"
+        numeric order_size_percent
+        numeric risk_per_trade_percent "NULL = off"
+        numeric stop_loss_percent "NULL = off"
+    }
+    sma_settings {
+        bigint settings_id PK "FK to algorithm_settings.id"
+    }
+    algorithm_run {
+        bigserial id PK
+        text mode "TRAINING or TRADING"
+        text broker
+        text ticker
+        text status "STARTED, COMPLETED, STOPPED, FAILED"
+        timestamptz started_at
+        timestamptz finished_at "NULL while running"
+        timestamptz from_time "training only"
+        timestamptz to_time "training only"
+        numeric starting_value
+        numeric final_value
+        int buy_count
+        int sell_count
+        int stop_loss_count
+        int refused_order_count
+        text failure_reason
+    }
+    algorithm_run_settings {
+        bigint run_id PK
+        timestamptz recorded_at PK
+        text event PK "STARTED, CHANGED, COMPLETED"
+        bigint settings_id
+    }
+    training_portfolio_point {
+        bigint run_id PK
+        timestamptz point_time PK
+        numeric cash
+        numeric value
+    }
+    algorithm_settings ||--o| sma_settings : "1:1, same id"
+    algorithm_run ||--o{ algorithm_run_settings : "settings over time"
+    algorithm_settings ||--o{ algorithm_run_settings : "used by"
+    algorithm_run ||--o{ training_portfolio_point : "training chart"
+```
+
+- **One shared table, plus one table per algorithm:**
+  - `algorithm_settings` holds the shared settings.
+  - Each algorithm type has its own table of typed optional columns. Its key is also a foreign key back to `algorithm_settings.id` (1:1).
+  - The shared table has no column pointing at the algorithm tables, because one column can't point at several tables. Instead, `algorithm_id` picks the algorithm and its store, which joins its table on the id.
+- **Identical settings are stored once:**
+  - Saving settings looks for a row with the same values, with `NULL` matching `NULL`, in plain SQL: `(col = ? OR (col IS NULL AND ? IS NULL))`.
+  - A match is reused; otherwise the rows are inserted, in one transaction.
+  - Runs only point at `settings_id`.
+- **Cache, then record:** while a run is going, its settings live in memory (`currentParameters`). The database is written three times:
+  - **Start:** the run row (`STARTED`) and a `STARTED` settings record, in one transaction.
+  - **Saved change (live only):** a `CHANGED` settings record, with its time.
+  - **End:** status, counts, final value and a `COMPLETED` settings record, in one transaction. The status is `COMPLETED`, `STOPPED` (stopped on request, or interrupted by a restart) or `FAILED` (with its reason).
+- **Restart:** at startup, runs still marked `STARTED` are set to `STOPPED`, "interrupted by restart". A live bot does not resume by itself.
+
+### 16.5 When the algorithm runs
+
+| | `liveOnTick = true` | `liveOnTick = false` |
+|---|---|---|
+| **Trading** | On every live price update, including the forming candle | Every `updateTimeSeconds`, on the latest price |
+| **Training** | Once per stored candle of the timeframe | Once per stored candle of the timeframe |
+
+- **Training:**
+  1. Record the start.
+  2. Read the candles with `getCandles`.
+  3. Replay them in one thread with no waiting. For each candle: stop check, then signal, then order check, then fill at the **next** candle's open (no look-ahead). The portfolio value is thinned to at most 1,000 points.
+  4. Record the end.
+
+  Only one training run runs at a time.
+- **Trading (`TradingBotService`, one live bot per broker):**
+  - **Start** needs `TRADING` mode, otherwise 409. It loads `timePeriod` closed candles of the timeframe from the candle store, so the average is ready at once. Then it records the start and subscribes to the feeder.
+  - **Worker thread:** evaluations run on the bot's own thread with a bounded queue, so the feeder's dispatcher never waits. Orders go through `OrderService` to the demo account. Refusals and exchange rejections are counted and logged, and the bot goes on.
+  - **Longer timeframes:** the live feeder streams one interval from config (1 minute). Closed candles of a longer timeframe come from the candle store as each period closes; the live price is added on top.
+  - **Stop** records the end as `STOPPED`.
+  - **Mode switch:** refused while the bot runs.
+
+### 16.6 Editing settings (`areParametersEditable`)
+
+```mermaid
+stateDiagram-v2
+    state "Training" as T {
+        [*] --> Editable
+        Editable --> Locked: run starts
+        Locked --> Editable: run ends
+    }
+    state "Live bot" as L {
+        [*] --> ReadOnly: bot running
+        ReadOnly --> Editing: Edit
+        Editing --> ReadOnly: Cancel (discarded)
+        Editing --> Confirm: Save
+        Confirm --> ReadOnly: Confirm, PUT current-parameters
+        Confirm --> Editing: Back
+    }
+```
+
+- **The status responses carry `areParametersEditable`:**
+  - Training: `false` while a run is executing, `true` otherwise.
+  - Live bot: `true` while it runs.
+- **A saved live change:**
+  1. Checks the values (`@Valid`, then `resolveSettings`).
+  2. Finds or inserts the settings row and records `CHANGED`.
+  3. Swaps `currentParameters`.
+  4. Rebuilds the signal generator, warmed up from the recent candles.
+
+  It takes effect from the next evaluation.
+- **Request bodies use nested `@Valid`:**
+  - `AlgorithmSettingsBody`: `updateTimeSeconds` must be `null` exactly when `liveOnTick` is true, and risk and stop must be set together.
+  - `TrainingRunRequestBody(@Valid CandleRangeBody candles, @Valid AlgorithmSettingsBody settings, startingBalance)`.
+  - `LiveRunRequestBody(ticker, @Valid AlgorithmSettingsBody settings)`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/algorithms` | Algorithms and their setting definitions |
+| POST | `/brokers/{broker}/training/runs` | Run a training (409 outside `TRAINING` or while one runs) |
+| GET | `/brokers/{broker}/training` | `areParametersEditable`, and the running training run if there is one |
+| GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
+| GET | `/brokers/{broker}/bot` | Live bot status, `currentParameters`, `areParametersEditable`, counts |
+| POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING`) or stop the live bot |
+| PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings |

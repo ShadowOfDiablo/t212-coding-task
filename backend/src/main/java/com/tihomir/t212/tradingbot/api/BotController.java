@@ -1,0 +1,54 @@
+package com.tihomir.t212.tradingbot.api;
+
+import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
+import com.tihomir.t212.tradingbot.bot.TradingBotService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/brokers/{broker}/bot")
+public class BotController {
+
+  private final TradingBotService tradingBotService;
+  private final AlgorithmRunService runService;
+
+  public BotController(TradingBotService tradingBotService, AlgorithmRunService runService) {
+    this.tradingBotService = tradingBotService;
+    this.runService = runService;
+  }
+
+  @GetMapping
+  public LiveBotStatusResponse getBotStatus(@PathVariable String broker) {
+    return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker));
+  }
+
+  @PostMapping("/start")
+  @ResponseStatus(HttpStatus.CREATED)
+  public LiveBotStatusResponse startBot(
+      @PathVariable String broker, @Valid @RequestBody LiveRunRequestBody body) {
+    tradingBotService.startBot(body.toLiveRunRequest(broker));
+    return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker));
+  }
+
+  /** Stops the bot and answers with the recorded run. */
+  @PostMapping("/stop")
+  public RunDetailsResponse stopBot(@PathVariable String broker) {
+    long runId = tradingBotService.stopBot(broker);
+    return RunDetailsResponse.of(runService.getRun(broker, runId));
+  }
+
+  @PutMapping("/current-parameters")
+  public LiveBotStatusResponse updateCurrentParameters(
+      @PathVariable String broker, @Valid @RequestBody AlgorithmSettingsBody body) {
+    return LiveBotStatusResponse.running(
+        tradingBotService.updateCurrentParameters(broker, body.toSettingsRequest()));
+  }
+}

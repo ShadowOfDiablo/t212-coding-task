@@ -1,0 +1,307 @@
+package com.tihomir.t212.tradingbot.bot;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
+
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
+import com.tihomir.t212.tradingbot.algorithm.FakeAlgorithmOptionStore;
+import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
+import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
+import com.tihomir.t212.tradingbot.broker.FakeBroker;
+import com.tihomir.t212.tradingbot.marketdata.history.CandleHistoryService;
+import com.tihomir.t212.tradingbot.marketdata.history.FakeCandleStore;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceWriter;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuoteSource;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
+import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.mode.BotMode;
+import com.tihomir.t212.tradingbot.mode.BotModeService;
+import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
+import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
+import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.FakeOrderStore;
+import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.order.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.OrderCheckerService;
+import com.tihomir.t212.tradingbot.order.OrderService;
+import com.tihomir.t212.tradingbot.order.OrderSide;
+import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+
+class TradingBotServiceTest {
+
+  private static final String BROKER = "binance";
+  private static final String TICKER = FakeBroker.TRADED_TICKER;
+  private static final CandleInterval TIMEFRAME = CandleInterval.ONE_MINUTE;
+  private static final Instant START = Instant.parse("2026-01-01T00:00:00Z");
+  private static final Instant NOW = Instant.parse("2026-01-01T00:02:30Z");
+  private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+  private static final int TIME_PERIOD = 2;
+  private static final long TICKER_ID = 1;
+  private static final long ONE_HOUR_IN_SECONDS = 3600;
+  private static final List<TradingSignal> WARM_UP =
+      List.of(TradingSignal.HOLD, TradingSignal.HOLD);
+  private static final Map<String, BigDecimal> RISK_LIMITS =
+      Map.of(
+          TradingAlgorithm.RISK_PER_TRADE_PERCENT,
+          BigDecimal.ONE,
+          TradingAlgorithm.STOP_LOSS_PERCENT,
+          BigDecimal.TWO);
+
+  private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
+  private final FakeBroker broker = new FakeBroker(BROKER, gateway);
+  private final FakeCandleStore candleStore = new FakeCandleStore();
+  private final FakeAlgorithmRunStore runStore = new FakeAlgorithmRunStore();
+  private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
+  private final AtomicInteger evaluatedPrices = new AtomicInteger();
+  private final AlgorithmSettingsService settingsService =
+      new AlgorithmSettingsService(
+          List.of(new FakeAlgorithmOptionStore(ScriptedTestAlgorithm.ID, 1)));
+
+  @Test
+  void buysAndSellsOnLiveTicksAndRecordsTheStop() {
+    TradingBotService service = service(TradingSignal.BUY, TradingSignal.SELL);
+    long runId = service.startBot(request(true, Map.of()));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+    updateLastPrice(BigDecimal.ONE);
+
+    bot.onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    bot.onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    service.stopBot(BROKER);
+
+    RunDetails details = runDetails(runId);
+    assertThat(gateway.placedOrders())
+        .containsExactly(
+            new MarketOrderRequest(
+                TICKER,
+                OrderSide.BUY,
+                new BigDecimal("100.00000000"),
+                OrderAmountType.QUOTE_AMOUNT),
+            new MarketOrderRequest(
+                TICKER,
+                OrderSide.SELL,
+                new BigDecimal("100.00000000"),
+                OrderAmountType.BASE_QUANTITY));
+    assertThat(details.run().mode()).isEqualTo(BotMode.TRADING);
+    assertThat(details.run().status()).isEqualTo(RunStatus.STOPPED);
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
+    assertThat(details.run().startingValue()).isEqualByComparingTo("100");
+    assertThat(details.run().finalValue()).hasValueSatisfying(this::isTheStartingCash);
+    assertThat(details.settingsHistory().records())
+        .extracting(RunSettingsRecord::event)
+        .containsExactly(RunEvent.STARTED, RunEvent.COMPLETED);
+    assertThat(service.getBotStatus(BROKER)).isEmpty();
+  }
+
+  @Test
+  void sellsAtTheStopLossAfterARiskCappedBuy() {
+    TradingBotService service = service(TradingSignal.BUY);
+    long runId = service.startBot(request(true, RISK_LIMITS));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+    bot.evaluate(new BigDecimal("0.5"), NOW);
+    service.stopBot(BROKER);
+
+    assertThat(gateway.placedOrders())
+        .extracting(MarketOrderRequest::side, MarketOrderRequest::amount)
+        .containsExactly(
+            tuple(OrderSide.BUY, new BigDecimal("50.00000000")),
+            tuple(OrderSide.SELL, new BigDecimal("50.00000000")));
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0));
+  }
+
+  @Test
+  void countsRefusedAndRejectedOrdersAndKeepsGoingAfterAFailure() {
+    TradingBotService service =
+        service(TradingSignal.SELL, TradingSignal.BUY, TradingSignal.BUY, TradingSignal.BUY);
+    service.startBot(request(true, Map.of()));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+    gateway.failBalanceRequests(new ExchangeUnavailableException("timed out"), 1);
+    bot.evaluate(BigDecimal.ONE, NOW);
+    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "Not enough USDT"));
+    bot.evaluate(BigDecimal.ONE, NOW);
+
+    assertThat(service.getBotStatus(BROKER).orElseThrow().counts())
+        .isEqualTo(new RunCounts(0, 0, 0, 2));
+    assertThat(evaluatedPrices).hasValue(WARM_UP.size() + 3);
+  }
+
+  @Test
+  void refusesToStartOutsideTradingModeOrWithBadSettingsBeforeRecordingAnything() {
+    TradingBotService service = service();
+    Map<String, BigDecimal> riskWithoutStop =
+        Map.of(TradingAlgorithm.RISK_PER_TRADE_PERCENT, BigDecimal.ONE);
+
+    assertThatThrownBy(() -> service.startBot(request(true, riskWithoutStop)))
+        .isInstanceOf(InvalidAlgorithmSettingsException.class);
+    assertThatThrownBy(() ->
+            service.startBot(new LiveRunRequest(BROKER, "DOGEUSDT", settings(true, Map.of()))))
+        .isInstanceOf(TickerNotTradedException.class);
+    botModeService.setBotMode(BotMode.TRAINING);
+    assertThatThrownBy(() -> service.startBot(request(true, Map.of())))
+        .isInstanceOf(TradingModeRequiredException.class);
+    assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
+    assertThat(service.getBotStatus(BROKER)).isEmpty();
+  }
+
+  @Test
+  void refusesASecondBotAndAModeSwitchWhileItRuns() {
+    TradingBotService service = service();
+    service.startBot(request(true, Map.of()));
+
+    assertThatThrownBy(() -> service.startBot(request(true, Map.of())))
+        .isInstanceOf(LiveBotRunningException.class);
+    assertThatThrownBy(() -> service.switchBotMode(BotMode.TRAINING))
+        .isInstanceOf(LiveBotRunningException.class);
+    assertThat(botModeService.botMode()).isEqualTo(BotMode.TRADING);
+
+    service.stopBot(BROKER);
+    service.switchBotMode(BotMode.TRAINING);
+    assertThat(botModeService.botMode()).isEqualTo(BotMode.TRAINING);
+  }
+
+  @Test
+  void savesChangedParametersAndKeepsTheOldOnesWhenTheChangeIsInvalid() {
+    TradingBotService service = service();
+    long runId = service.startBot(request(true, Map.of()));
+    long startSettingsId = service.getBotStatus(BROKER).orElseThrow().settingsId();
+
+    LiveBotStatus changed = service.updateCurrentParameters(BROKER, settings(true, RISK_LIMITS));
+    assertThatThrownBy(() ->
+            service.updateCurrentParameters(
+                BROKER, settings(true, Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.ONE))))
+        .isInstanceOf(InvalidAlgorithmSettingsException.class);
+    LiveBotStatus afterInvalidChange = service.getBotStatus(BROKER).orElseThrow();
+    service.stopBot(BROKER);
+
+    assertThat(changed.settingsId()).isNotEqualTo(startSettingsId);
+    assertThat(changed.currentParameters().stopLossPercent()).isPresent();
+    assertThat(afterInvalidChange.settingsId()).isEqualTo(changed.settingsId());
+    assertThat(runDetails(runId).settingsHistory().records())
+        .extracting(RunSettingsRecord::event, RunSettingsRecord::settingsId)
+        .containsExactly(
+            tuple(RunEvent.STARTED, startSettingsId),
+            tuple(RunEvent.CHANGED, changed.settingsId()),
+            tuple(RunEvent.COMPLETED, changed.settingsId()));
+  }
+
+  @Test
+  void stoppingOrChangingWithoutARunningBotIsRefused() {
+    TradingBotService service = service();
+
+    assertThatThrownBy(() -> service.stopBot(BROKER))
+        .isInstanceOf(LiveBotNotRunningException.class);
+    assertThatThrownBy(() -> service.updateCurrentParameters(BROKER, settings(true, Map.of())))
+        .isInstanceOf(LiveBotNotRunningException.class);
+  }
+
+  @Test
+  void ignoresTicksOfOtherTickersAndAllTicksWhenRunningOnATimer() {
+    TradingBotService service = service(TradingSignal.BUY);
+    service.startBot(request(true, Map.of()));
+    service.findRunningBot(BROKER).orElseThrow().onCandleUpdate(tick("ETHUSDT", BigDecimal.ONE));
+    service.stopBot(BROKER);
+    service.startBot(request(false, Map.of()));
+    service.findRunningBot(BROKER).orElseThrow().onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    service.stopBot(BROKER);
+
+    assertThat(gateway.placedOrders()).isEmpty();
+    assertThat(evaluatedPrices).hasValue(WARM_UP.size() * 2);
+  }
+
+  private void isTheStartingCash(BigDecimal finalValue) {
+    assertThat(finalValue).isEqualByComparingTo("100");
+  }
+
+  private RunDetails runDetails(long runId) {
+    return new AlgorithmRunService(runStore, settingsService).getRun(BROKER, runId);
+  }
+
+  private void updateLastPrice(BigDecimal price) {
+    ((TickerPriceWriter) broker.tickerPrices())
+        .updateLastPrice(TICKER, price, NOW, TickerQuoteSource.WEBSOCKET);
+  }
+
+  private TradingBotService service(TradingSignal... signals) {
+    storeWarmUpCandles();
+    BrokerRegistryService brokers = new BrokerRegistryService(List.of(broker));
+    List<TradingSignal> script =
+        Stream.concat(WARM_UP.stream(), List.of(signals).stream()).toList();
+    return new TradingBotService(
+        botModeService,
+        new AlgorithmRegistryService(
+            List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet))),
+        settingsService,
+        new CandleHistoryService(brokers, candleStore, CLOCK),
+        new OrderCheckerService(),
+        new OrderService(brokers, new FakeOrderStore(), CLOCK),
+        runStore,
+        CLOCK);
+  }
+
+  private void storeWarmUpCandles() {
+    candleStore.storeCandles(TICKER_ID, List.of(candle(0), candle(1)));
+  }
+
+  private static LiveRunRequest request(boolean liveOnTick, Map<String, BigDecimal> values) {
+    return new LiveRunRequest(BROKER, TICKER, settings(liveOnTick, values));
+  }
+
+  private static AlgorithmSettingsRequest settings(
+      boolean liveOnTick, Map<String, BigDecimal> values) {
+    Map<String, BigDecimal> allValues = new HashMap<>(values);
+    allValues.put(TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(TIME_PERIOD));
+    if (!liveOnTick) {
+      allValues.put(TradingAlgorithm.UPDATE_TIME_SECONDS, BigDecimal.valueOf(ONE_HOUR_IN_SECONDS));
+    }
+    return new AlgorithmSettingsRequest(ScriptedTestAlgorithm.ID, TIMEFRAME, liveOnTick, allValues);
+  }
+
+  private static CandleUpdate tick(String ticker, BigDecimal price) {
+    return new CandleUpdate(
+        ticker,
+        TIMEFRAME,
+        START.plusSeconds(120),
+        START.plusSeconds(180).minusMillis(1),
+        price,
+        price,
+        price,
+        price,
+        BigDecimal.ONE,
+        false,
+        NOW);
+  }
+
+  private static CandleUpdate candle(int index) {
+    Instant openTime = START.plus(TIMEFRAME.duration().multipliedBy(index));
+    return new CandleUpdate(
+        TICKER,
+        TIMEFRAME,
+        openTime,
+        openTime.plus(TIMEFRAME.duration()).minusMillis(1),
+        BigDecimal.ONE,
+        BigDecimal.ONE,
+        BigDecimal.ONE,
+        BigDecimal.ONE,
+        BigDecimal.ONE,
+        true,
+        openTime.plus(TIMEFRAME.duration()));
+  }
+}

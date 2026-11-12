@@ -1258,11 +1258,25 @@ erDiagram
 
   Only one training run runs at a time.
 - **Trading (`TradingBotService`, one live bot per broker):**
-  - **Start** needs `TRADING` mode, otherwise 409. It loads `timePeriod` closed candles of the timeframe from the candle store, so the average is ready at once. Then it records the start and subscribes to the feeder.
-  - **Worker thread:** evaluations run on the bot's own thread with a bounded queue, so the feeder's dispatcher never waits. Orders go through `OrderService` to the demo account. Refusals and exchange rejections are counted and logged, and the bot goes on.
-  - **Longer timeframes:** the live feeder streams one interval from config (1 minute). Closed candles of a longer timeframe come from the candle store as each period closes; the live price is added on top.
-  - **Stop** records the end as `STOPPED`.
-  - **Mode switch:** refused while the bot runs.
+  - **Start** needs `TRADING` mode, otherwise 409. It loads `timePeriod` closed candles of the timeframe from the candle store, so the average is ready at once. Then it records the start and subscribes to the feeder. Every check (mode, ticker, settings, warm-up) runs before anything is recorded.
+  - **Worker thread:** evaluations run on the bot's own thread with a bounded queue (100 prices), so the feeder's dispatcher never waits. A full queue drops the price with a warning. Orders go through `OrderService` to the demo account. Refusals and exchange rejections are counted and logged, and the bot goes on. Any other failure in an evaluation is logged and the next price is evaluated as usual.
+  - **Longer timeframes:** the live feeder streams one interval from config (1 minute). Closed candles of a longer timeframe come from the candle store as each period closes; the live price is added on top as the forming candle. A failed read is retried at the next price, so no closed candle is skipped.
+  - **Account:** cash is the account's free USDT. The position is only what the bot bought (less fees taken in coins), so a sell never touches coins the account held before. The bot tracks the position's average entry price for the stop loss.
+  - **Lot step:** Binance only takes base quantities that are a multiple of the ticker's `LOT_SIZE` step. `BinanceTradingGateway` reads the step once per ticker from `/api/v3/exchangeInfo` and rounds a base quantity down to it; if the step can't be read, nothing is sent. A sell closes the bot's position, and the rest below one step stays in the account.
+  - **Stop** removes the listener, lets queued prices finish (up to 10 seconds) and records the end as `STOPPED`, with the final value at the latest price. On shutdown, running bots are stopped the same way.
+  - **Mode switch:** refused with 409 while a bot runs.
+
+```mermaid
+flowchart LR
+    Feeder["CandleFeeder<br/>1-minute updates"] -- "liveOnTick" --> Queue["bounded queue"]
+    Timer["timer<br/>every updateTimeSeconds"] -- "latest price" --> Queue
+    Queue --> Worker["LiveTradingBot<br/>worker thread"]
+    Worker --> Stop{"stop loss<br/>reached?"}
+    Stop -- yes --> Placer["LiveOrderPlacer<br/>order checks"]
+    Stop -- no --> Source["LiveSignalSource<br/>closed candles from the store<br/>+ forming candle"]
+    Source -- "BUY / SELL" --> Placer
+    Placer --> Orders["OrderService<br/>demo account"]
+```
 
 ### 16.6 Editing settings (`areParametersEditable`)
 
@@ -1305,5 +1319,6 @@ stateDiagram-v2
 | GET | `/brokers/{broker}/training` | `areParametersEditable`, and the running training run if there is one |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
 | GET | `/brokers/{broker}/bot` | Live bot status, `currentParameters`, `areParametersEditable`, counts |
-| POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING`) or stop the live bot |
-| PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings |
+| POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
+| PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
+| PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |

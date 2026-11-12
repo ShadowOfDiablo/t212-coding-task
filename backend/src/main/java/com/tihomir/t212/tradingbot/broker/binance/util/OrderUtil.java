@@ -22,6 +22,8 @@ public final class OrderUtil {
   private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
+  private static final String LOT_SIZE_FILTER = "LOT_SIZE";
+  private static final int FIRST_SYMBOL = 0;
 
   private OrderUtil() {}
 
@@ -75,6 +77,28 @@ public final class OrderUtil {
         StreamSupport.stream(required(accountPositionEvent, "B").spliterator(), false)
             .map(OrderUtil::accountPositionBalance)
             .toList());
+  }
+
+  /**
+   * The step every base quantity of the symbol must be a multiple of, from its LOT_SIZE filter.
+   *
+   * @throws IllegalArgumentException if the answer has no usable LOT_SIZE filter
+   */
+  public static BigDecimal lotStepSize(JsonNode exchangeInfo) {
+    JsonNode symbols = required(exchangeInfo, "symbols");
+    if (symbols.isEmpty()) {
+      throw new IllegalArgumentException("Binance listed no symbol");
+    }
+    BigDecimal lotStepSize =
+        StreamSupport.stream(required(symbols.get(FIRST_SYMBOL), "filters").spliterator(), false)
+            .filter(filter -> LOT_SIZE_FILTER.equals(required(filter, "filterType").asString()))
+            .map(filter -> decimal(filter, "stepSize"))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Missing LOT_SIZE filter"));
+    if (lotStepSize.signum() <= 0) {
+      throw new IllegalArgumentException("LOT_SIZE step must be greater than zero");
+    }
+    return lotStepSize;
   }
 
   public static JsonNode required(JsonNode node, String field) {

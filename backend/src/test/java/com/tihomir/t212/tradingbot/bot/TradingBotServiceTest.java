@@ -101,6 +101,9 @@ class TradingBotServiceTest {
     assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
     assertThat(details.run().startingValue()).isEqualByComparingTo("100");
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isTheStartingCash);
+    assertThat(details.points().points())
+        .singleElement()
+        .satisfies(point -> assertThat(point.time()).isEqualTo(NOW));
     assertThat(details.settingsHistory().records())
         .extracting(RunSettingsRecord::event)
         .containsExactly(RunEvent.STARTED, RunEvent.COMPLETED);

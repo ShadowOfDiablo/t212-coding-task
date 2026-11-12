@@ -475,3 +475,21 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+.mode-switch {
+  position: relative;
+}
+
+.mode-error {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  width: max-content;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: var(--radius-small);
+  background: var(--down-soft);
+  color: var(--down);
+  font-size: 0.78rem;
+}

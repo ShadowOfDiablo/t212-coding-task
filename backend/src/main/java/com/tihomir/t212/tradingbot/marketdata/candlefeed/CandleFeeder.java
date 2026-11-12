@@ -52,7 +52,7 @@ public final class CandleFeeder implements AutoCloseable {
       RestClient restClient) {
     this.name = name;
     this.protocol = protocol;
-    this.tickers = List.copyOf(tickers);
+    this.tickers = new CopyOnWriteArrayList<>(tickers);
     this.interval = interval;
     this.priceWriter = priceWriter;
     this.connectionFactory = connectionFactory;
@@ -111,6 +111,28 @@ public final class CandleFeeder implements AutoCloseable {
     }
   }
 
+  /**
+   * Streams one more ticker. While running, the connections are reopened with the new streams; if
+   * that fails, the ticker stays in the list and the error is passed on.
+   */
+  public synchronized void addTicker(String ticker) {
+    if (tickers.contains(ticker)) {
+      return;
+    }
+    tickers.add(ticker);
+    if (!running) {
+      return;
+    }
+    connections.forEach(MarketDataStreamConnection::close);
+    connections.clear();
+    openConnections();
+    log.info(
+        "{}: now streaming {} tickers over {} connection(s)",
+        name,
+        tickers.size(),
+        connections.size());
+  }
+
   public synchronized void stop() {
     if (!running) {
       return;
@@ -142,6 +164,11 @@ public final class CandleFeeder implements AutoCloseable {
             .retrieve()
             .body(String.class);
     return protocol.parseCandles(body, ticker, historyInterval);
+  }
+
+  /** The interval of the live candle streams. */
+  public CandleInterval interval() {
+    return interval;
   }
 
   public int maxCandlesPerHistoryPage() {

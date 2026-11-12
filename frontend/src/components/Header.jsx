@@ -2,7 +2,7 @@ import { Logo } from './Logo.jsx'
 import { ModeSwitch } from './ModeSwitch.jsx'
 import { ThemeToggle } from './ThemeToggle.jsx'
 
-export function Header({ theme, onToggleTheme, connected }) {
+export function Header({ theme, onToggleTheme, connected, botMode }) {
   return (
     <header className="header">
       <div className="brand">
@@ -17,7 +17,7 @@ export function Header({ theme, onToggleTheme, connected }) {
           <span className="live-dot" aria-hidden="true" />
           {connected ? 'Live' : 'Offline'}
         </span>
-        <ModeSwitch />
+        <ModeSwitch botMode={botMode} />
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
     </header>

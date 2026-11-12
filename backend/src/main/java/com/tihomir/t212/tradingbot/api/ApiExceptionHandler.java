@@ -11,6 +11,7 @@ import com.tihomir.t212.tradingbot.bot.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleDownloadFailedException;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleRangeTooLargeException;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.UnknownTickerException;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
@@ -41,6 +42,7 @@ public class ApiExceptionHandler {
 
   @ExceptionHandler({
     TickerNotTradedException.class,
+    UnknownTickerException.class,
     CandleRangeTooLargeException.class,
     UnknownAlgorithmException.class,
     InvalidAlgorithmSettingsException.class,

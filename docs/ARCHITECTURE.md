@@ -25,6 +25,7 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
 | Database: restart reconciliation, positions (FIFO lots), trades with PnL | Planned, next |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
+| Dashboard: live bot, training and runs tabs, settings forms, charts, following tickers (§15.1, §15.2) | In progress |
 | Rest of the REST API (bot controls, runs, charts) | Planned |
 
 ### System overview
@@ -845,7 +846,8 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/brokers/{broker}/orders/open` | **Built.** `{"openOrders": […]}`, orders resting on Binance (empty until take-profit and stop-loss orders exist) |
 | GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 executed orders with their fills |
 | GET | `/brokers/{broker}/orders/rejected` | **Built.** `{"rejectedOrders": […]}`, the latest 100 orders Binance refused, with its error |
-| GET | `/brokers/{broker}/tickers` | **Built.** `{"tickers": [{"ticker", "quote": {"bid", "ask", "lastPrice", "updatedAt", "source"}}, …]}`, every traded ticker with its latest quote from the ticker price map (`quote` is `null` until market data arrives) |
+| GET | `/brokers/{broker}/tickers` | **Built.** `{"tickers": [{"ticker", "quote": {"bid", "ask", "lastPrice", "updatedAt", "source"}}, …]}`, every followed ticker with its latest quote from the ticker price map (`quote` is `null` until market data arrives) |
+| POST | `/brokers/{broker}/tickers` | `{"ticker": "SOLUSDT"}`: follow one more ticker (§15.1). 400 when the exchange doesn't list it |
 | GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
 | | §16.6 | **Algorithms, training runs, recorded runs and the live bot:** see the table in §16.6 |
 | GET | `/bot/status` | State, mode, current run, latest price |
@@ -966,33 +968,59 @@ com.tihomir.t212.tradingbot
 A React app in plain JavaScript (`.jsx`), HTML and CSS, in `frontend/`, built with Vite. In development the Vite server forwards `/api` to the backend on port 8080. The accent colour is `#00A7E1`; the logo is the project's own.
 
 ```mermaid
-flowchart LR
-    subgraph Dashboard["Dashboard (one page)"]
-        Header["Header<br/>live dot, Trading/Training switch, theme toggle"]
-        Tickers["Ticker cards<br/>last price, bid, ask, flash on change"]
-        Orders["Orders card<br/>Executed / Rejected / Open tabs"]
-        Holdings["Holdings card<br/>balances valued in USDT, share of total"]
+flowchart TB
+    Header["Header<br/>live dot, Trading/Training switch, theme toggle"]
+    Tickers["Ticker cards + Follow a ticker"]
+    subgraph Sections["Tabs: Live bot | Training | Runs"]
+        Live["Live bot panel<br/>ticker, settings form, start/stop,<br/>Edit, Save, Confirm<br/>+ portfolio value chart and counts"]
+        Train["Training panel<br/>ticker, range, balance, settings form<br/>+ result chart and settings history"]
+        Runs["Runs panel<br/>recorded runs, pick one for its chart"]
     end
-
-    Header -- "GET / PUT /api/bot/mode" --> Api["Backend REST API"]
-    Tickers -- "GET /tickers every 2 s" --> Api
-    Orders -- "GET /orders/history, /rejected, /open every 5 s" --> Api
-    Holdings -- "GET /balance every 5 s" --> Api
-    Holdings -. "prices from" .-> Tickers
+    Account["Orders card + Holdings card"]
+    Header --> Tickers --> Sections --> Account
 ```
 
-- **Polling:** each card polls its endpoint (`usePolling`). On a failed request the card keeps its last data, and a banner says the backend is unreachable until it answers again.
-- **Holdings** stand in for open positions until the positions work (FIFO lots, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't traded show no value.
-- **Mode switch:** it updates at once and reverts if `PUT /api/bot/mode` fails.
+| Part | Calls |
+|---|---|
+| Header | `GET / PUT /api/bot/mode` (409 while a live bot runs; the error shows under the switch) |
+| Ticker cards | `GET /tickers` every 2 s; `POST /tickers` to follow one more |
+| Settings form | `GET /algorithms` once: every algorithm and its setting definitions |
+| Live bot panel | `GET /bot` every 2 s, `POST /bot/start`, `POST /bot/stop`, `PUT /bot/current-parameters` |
+| Training panel | `POST /training/runs` |
+| Runs panel | `GET /runs` every 10 s, `GET /runs/{id}` |
+| Orders, Holdings | `GET /orders/history`, `/rejected`, `/open`, `/balance` every 5 s |
+
+- **Settings form:** built from the algorithm's setting definitions (label, required, range, default). A required field left empty takes its default; an optional one left empty is off. `updateTimeSeconds` only shows when "Run on every price" is off. Settings that aren't shared go to `options`.
+- **Live bot editing** follows §16.6: the running bot's settings are read only; Edit unlocks them, Save asks to confirm, Confirm sends them, Back and Cancel keep the bot as it is.
+- **Charts** are plain SVG, with no chart library: portfolio value over time, the starting value as a dashed line, and the value under the mouse.
+- **Polling:** each part polls its endpoint (`usePolling`). On a failed request it keeps its last data, and a banner says the backend is unreachable until it answers again.
+- **Holdings** stand in for open positions until the positions work (FIFO lots, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't followed show no value.
+- **Mode switch:** it updates at once and reverts if `PUT /api/bot/mode` fails. It also opens the matching tab (Trading: Live bot, Training: Training).
 - **Theme:** light or dark, from the system setting at first, then remembered in `localStorage`. Colours are CSS variables switched with `data-theme` on `<html>`.
 - **Motion:** cards rise in, the mode switch and tabs slide, prices flash green or red when they move, and loading uses shimmering skeletons. All motion is turned off when the system asks for reduced motion.
 
 | File | Role |
 |---|---|
 | `src/api.js` | Every REST call |
-| `src/hooks/usePolling.js`, `useTheme.js` | Polling with last-good data; light and dark theme |
-| `src/components/` | `Header`, `ModeSwitch`, `ThemeToggle`, `TickerStrip`, `TickerCard`, `OrdersCard`, `HoldingsCard`, `Logo` |
+| `src/settings.js` | Settings form state to and from the API |
+| `src/hooks/usePolling.js`, `useTheme.js`, `useBotMode.js` | Polling with last-good data; light and dark theme; the bot mode shared by the header and the panels |
+| `src/components/` | `Header`, `ModeSwitch`, `ThemeToggle`, `TickerStrip`, `TickerCard`, `FollowTickerCard`, `LiveBotPanel`, `TrainingPanel`, `RunsPanel`, `RunDetails`, `SettingsForm`, `LineChart`, `OrdersCard`, `HoldingsCard`, `Logo` |
 | `src/styles.css` | Design tokens for both themes, layout and animations |
+
+### 15.1 Following tickers
+
+`POST /api/brokers/{broker}/tickers` with `{"ticker": "SOLUSDT"}` follows one more ticker on top of the configured ones.
+
+1. The body is checked with `@Valid`: 2 to 20 capital letters or digits.
+2. `FollowedTickerService` asks the exchange for one page of candles. A 4xx answer means the exchange doesn't list the ticker (400); any other failure is 502. Nothing is stored in either case.
+3. The ticker is stored once in `followed_ticker (broker, symbol, followed_at)` (V7).
+4. The broker adds it to its ticker price map, and the candle feeder reopens its connections with the new streams.
+
+At startup, `BrokerStartupRunner` adds the stored tickers before the streams open. If the database can't be read, startup goes on with the configured tickers only.
+
+### 15.2 Live bot chart
+
+The live bot keeps a portfolio point (time, free cash, and cash plus its position at the price) at most every 15 seconds, and at most 1,000 points; the oldest go first. `GET /bot` returns them as `points`. When the bot stops they are saved with the run, so `GET /runs/{id}` shows the chart of a stopped live run too.
 
 ## 16. Trading algorithm, training and the live bot
 

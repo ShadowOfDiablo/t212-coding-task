@@ -3,26 +3,32 @@ package com.tihomir.t212.tradingbot.marketdata.tickerprice;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class TickerPriceMap implements TickerPriceReader, TickerPriceWriter {
 
-  private final Map<String, AtomicReference<TickerQuote>> quotes;
+  private final List<String> tickerOrder = new CopyOnWriteArrayList<>();
+  private final Map<String, AtomicReference<TickerQuote>> quotes = new ConcurrentHashMap<>();
 
   public TickerPriceMap(Collection<String> tickers) {
-    Map<String, AtomicReference<TickerQuote>> map = new LinkedHashMap<>();
-    tickers.forEach(ticker -> map.put(ticker, new AtomicReference<>()));
-    this.quotes = Collections.unmodifiableMap(map);
+    tickers.forEach(this::addTicker);
   }
 
   @Override
   public TickerList tickers() {
-    return new TickerList(List.copyOf(quotes.keySet()));
+    return new TickerList(tickerOrder);
+  }
+
+  /** A followed ticker starts empty; adding one that is already there changes nothing. */
+  public synchronized void addTicker(String ticker) {
+    if (quotes.putIfAbsent(ticker, new AtomicReference<>()) == null) {
+      tickerOrder.add(ticker);
+    }
   }
 
   @Override

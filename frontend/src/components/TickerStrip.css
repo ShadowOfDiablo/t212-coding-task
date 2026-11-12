@@ -1,0 +1,104 @@
+/* Tickers */
+
+.ticker-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.ticker-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.ticker-strip .card:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.ticker-strip .card:nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.ticker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ticker-symbol {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.ticker-quote {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.trend {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  transition:
+    background-color 0.3s var(--ease),
+    color 0.3s var(--ease);
+}
+
+.trend-up {
+  color: var(--up);
+  background: var(--up-soft);
+}
+
+.trend-down {
+  color: var(--down);
+  background: var(--down-soft);
+}
+
+.trend-flat {
+  color: var(--text-muted);
+  background: var(--surface-raised);
+}
+
+.ticker-price {
+  margin: 10px 0 12px;
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+}
+
+.flash-up {
+  animation: flash-up 0.9s var(--ease);
+}
+
+.flash-down {
+  animation: flash-down 0.9s var(--ease);
+}
+
+.ticker-book {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.ticker-book div {
+  padding: 8px 10px;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.ticker-book dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.ticker-book dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+

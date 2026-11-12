@@ -1,6 +1,6 @@
 -- Orders that are not finished yet. A row is written before the order is sent and removed
 -- once the order reaches a final state, so this table only ever holds active orders.
-CREATE TABLE open_order (
+CREATE TABLE IF NOT EXISTS open_order (
     client_order_id   TEXT        PRIMARY KEY,
     exchange_order_id BIGINT      UNIQUE,
     broker            TEXT        NOT NULL,
@@ -14,10 +14,10 @@ CREATE TABLE open_order (
     updated_at        TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX open_order_broker_idx ON open_order (broker);
+CREATE INDEX IF NOT EXISTS open_order_broker_idx ON open_order (broker);
 
 -- Finished orders. Rows are only ever added.
-CREATE TABLE order_history (
+CREATE TABLE IF NOT EXISTS order_history (
     client_order_id   TEXT        PRIMARY KEY,
     exchange_order_id BIGINT      UNIQUE,
     broker            TEXT        NOT NULL,
@@ -36,10 +36,10 @@ CREATE TABLE order_history (
     closed_at         TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX order_history_broker_closed_at_idx ON order_history (broker, closed_at DESC);
+CREATE INDEX IF NOT EXISTS order_history_broker_closed_at_idx ON order_history (broker, closed_at DESC);
 
 -- Each piece an order was filled in, with its own price and fee.
-CREATE TABLE order_fill (
+CREATE TABLE IF NOT EXISTS order_fill (
     client_order_id  TEXT    NOT NULL,
     trade_id         BIGINT  NOT NULL,
     price            NUMERIC NOT NULL,

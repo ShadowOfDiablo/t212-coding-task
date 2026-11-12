@@ -9,7 +9,7 @@ import java.util.Optional;
  * values. An empty optional skips every check that uses it.
  */
 public record AlgorithmSettings(
-    String algorithmId,
+    int algorithmId,
     int timePeriod,
     CandleInterval timeframe,
     boolean liveOnTick,

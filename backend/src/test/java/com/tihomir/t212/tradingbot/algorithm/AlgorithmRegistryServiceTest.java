@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 
 class AlgorithmRegistryServiceTest {
 
+  private static final int MISSING_ALGORITHM_ID = 999;
+
   @Test
   void findsEveryAlgorithmByItsId() {
     SimpleMovingAverageAlgorithm movingAverage = new SimpleMovingAverageAlgorithm();
@@ -17,7 +19,8 @@ class AlgorithmRegistryServiceTest {
 
     assertThat(registry.get(SimpleMovingAverageAlgorithm.ID)).isSameAs(movingAverage);
     assertThat(registry.all().algorithms()).containsExactly(movingAverage, threshold);
-    assertThatThrownBy(() -> registry.get("missing")).isInstanceOf(UnknownAlgorithmException.class);
+    assertThatThrownBy(() -> registry.get(MISSING_ALGORITHM_ID))
+        .isInstanceOf(UnknownAlgorithmException.class);
   }
 
   @Test

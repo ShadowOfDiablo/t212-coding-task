@@ -8,7 +8,7 @@ import java.util.Optional;
  */
 public interface AlgorithmOptionStore {
 
-  String algorithmId();
+  int algorithmId();
 
   /** The id of a stored row with exactly these settings, inserting it if there is none. */
   long findOrInsertSettings(AlgorithmSettings settings);

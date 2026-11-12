@@ -9,10 +9,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class SimpleMovingAverageAlgorithm extends TradingAlgorithm {
 
-  public static final String ID = "example-strategy-SMA";
+  public static final int ID = 1;
+  public static final String NAME = "example-strategy-SMA";
 
   public SimpleMovingAverageAlgorithm() {
-    super(ID, "Example: price vs. SMA", AlgorithmSettingDefinitionList.NONE);
+    super(ID, NAME, "Example: price vs. SMA", AlgorithmSettingDefinitionList.NONE);
   }
 
   @Override

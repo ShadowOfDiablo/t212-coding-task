@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 @Service
 public final class AlgorithmSettingsService {
 
-  private final Map<String, AlgorithmOptionStore> storesByAlgorithm;
+  private final Map<Integer, AlgorithmOptionStore> storesByAlgorithm;
 
   public AlgorithmSettingsService(List<AlgorithmOptionStore> stores) {
     this.storesByAlgorithm =

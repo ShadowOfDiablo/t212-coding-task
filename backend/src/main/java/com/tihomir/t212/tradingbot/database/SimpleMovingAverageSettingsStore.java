@@ -25,7 +25,7 @@ public class SimpleMovingAverageSettingsStore implements AlgorithmOptionStore {
   }
 
   @Override
-  public String algorithmId() {
+  public int algorithmId() {
     return SimpleMovingAverageAlgorithm.ID;
   }
 

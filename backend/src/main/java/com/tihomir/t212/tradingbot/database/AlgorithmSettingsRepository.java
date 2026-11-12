@@ -87,7 +87,7 @@ public class AlgorithmSettingsRepository {
   static AlgorithmSettings sharedSettings(ResultSet row, AlgorithmSettingValues options)
       throws SQLException {
     return new AlgorithmSettings(
-        row.getString("algorithm_id"),
+        row.getInt("algorithm_id"),
         row.getInt("time_period"),
         CandleInterval.valueOf(row.getString("timeframe")),
         row.getBoolean("live_on_tick"),

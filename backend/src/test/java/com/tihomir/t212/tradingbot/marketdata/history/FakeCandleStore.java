@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.springframework.dao.DataAccessResourceFailureException;
 
-final class FakeCandleStore implements CandleStore {
+public final class FakeCandleStore implements CandleStore {
 
   private final Map<String, Long> tickerIds = new HashMap<>();
   private final Map<String, CandleUpdate> candles = new HashMap<>();
@@ -66,7 +66,7 @@ final class FakeCandleStore implements CandleStore {
             .toList());
   }
 
-  void storeCandles(long tickerId, List<CandleUpdate> storedCandles) {
+  public void storeCandles(long tickerId, List<CandleUpdate> storedCandles) {
     tickerIds.put("binance/" + storedCandles.getFirst().ticker(), tickerId);
     insertCandlePage(tickerId, new CandleList(storedCandles));
     insertedPages = 0;
@@ -76,11 +76,11 @@ final class FakeCandleStore implements CandleStore {
     return getStoredCandleRange(tickerIds.size(), interval);
   }
 
-  int insertedPages() {
+  public int insertedPages() {
     return insertedPages;
   }
 
-  void takeDatabaseDown() {
+  public void takeDatabaseDown() {
     databaseDown = true;
   }
 

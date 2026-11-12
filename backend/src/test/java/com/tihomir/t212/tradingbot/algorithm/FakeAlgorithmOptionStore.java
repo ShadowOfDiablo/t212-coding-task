@@ -5,13 +5,13 @@ import java.util.List;
 import java.util.Optional;
 
 /** Keeps settings in a list; the index plus an offset is the id. */
-final class FakeAlgorithmOptionStore implements AlgorithmOptionStore {
+public final class FakeAlgorithmOptionStore implements AlgorithmOptionStore {
 
   private final int algorithmId;
   private final long firstId;
   private final List<AlgorithmSettings> storedSettings = new ArrayList<>();
 
-  FakeAlgorithmOptionStore(int algorithmId, long firstId) {
+  public FakeAlgorithmOptionStore(int algorithmId, long firstId) {
     this.algorithmId = algorithmId;
     this.firstId = firstId;
   }

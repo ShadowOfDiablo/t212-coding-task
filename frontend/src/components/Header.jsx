@@ -8,7 +8,7 @@ export function Header({ theme, onToggleTheme, connected }) {
       <div className="brand">
         <Logo />
         <div>
-          <h1>Trading Bot</h1>
+          <h1>Trading Bot 212</h1>
           <p className="subtitle">Binance demo account</p>
         </div>
       </div>

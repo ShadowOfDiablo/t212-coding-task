@@ -6,7 +6,7 @@ import java.util.List;
 /** An algorithm with its own settings: a required window and an optional threshold. */
 final class ThresholdTestAlgorithm extends TradingAlgorithm {
 
-  static final String ID = "test-threshold";
+  static final int ID = 101;
   static final String WINDOW = "window";
   static final String THRESHOLD = "threshold";
   static final int MIN_WINDOW_WITH_THRESHOLD = 3;
@@ -14,6 +14,7 @@ final class ThresholdTestAlgorithm extends TradingAlgorithm {
   ThresholdTestAlgorithm() {
     super(
         ID,
+        "test-threshold",
         "Threshold test",
         new AlgorithmSettingDefinitionList(
             List.of(

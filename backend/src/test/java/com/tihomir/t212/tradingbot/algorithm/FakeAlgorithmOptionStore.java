@@ -7,17 +7,17 @@ import java.util.Optional;
 /** Keeps settings in a list; the index plus an offset is the id. */
 final class FakeAlgorithmOptionStore implements AlgorithmOptionStore {
 
-  private final String algorithmId;
+  private final int algorithmId;
   private final long firstId;
   private final List<AlgorithmSettings> storedSettings = new ArrayList<>();
 
-  FakeAlgorithmOptionStore(String algorithmId, long firstId) {
+  FakeAlgorithmOptionStore(int algorithmId, long firstId) {
     this.algorithmId = algorithmId;
     this.firstId = firstId;
   }
 
   @Override
-  public String algorithmId() {
+  public int algorithmId() {
     return algorithmId;
   }
 

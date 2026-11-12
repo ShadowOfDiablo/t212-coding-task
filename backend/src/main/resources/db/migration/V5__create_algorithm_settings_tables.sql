@@ -2,7 +2,7 @@
 -- uses them. NULL in an optional column means "not set": every check for it is skipped.
 CREATE TABLE IF NOT EXISTS algorithm_settings (
     id                     BIGSERIAL PRIMARY KEY,
-    algorithm_id           TEXT      NOT NULL,
+    algorithm_id           SMALLINT  NOT NULL,
     time_period            INT       NOT NULL,
     timeframe              TEXT      NOT NULL,
     live_on_tick           BOOLEAN   NOT NULL,

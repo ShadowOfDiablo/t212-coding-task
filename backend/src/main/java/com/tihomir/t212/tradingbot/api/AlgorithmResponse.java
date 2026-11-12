@@ -8,11 +8,12 @@ import java.util.List;
  * listed in {@code settings}, which holds the numeric settings.
  */
 public record AlgorithmResponse(
-    String id, String displayName, List<AlgorithmSettingDefinitionResponse> settings) {
+    int id, String name, String displayName, List<AlgorithmSettingDefinitionResponse> settings) {
 
   static AlgorithmResponse of(TradingAlgorithm algorithm) {
     return new AlgorithmResponse(
         algorithm.id(),
+        algorithm.name(),
         algorithm.displayName(),
         algorithm.settingDefinitions().definitions().stream()
             .map(AlgorithmSettingDefinitionResponse::of)

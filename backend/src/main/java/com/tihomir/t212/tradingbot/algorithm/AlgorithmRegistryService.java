@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 @Service
 public final class AlgorithmRegistryService {
 
-  private final Map<String, TradingAlgorithm> algorithmsById;
+  private final Map<Integer, TradingAlgorithm> algorithmsById;
   private final TradingAlgorithmList algorithms;
 
   public AlgorithmRegistryService(List<TradingAlgorithm> algorithms) {
@@ -29,7 +29,7 @@ public final class AlgorithmRegistryService {
   /**
    * @throws UnknownAlgorithmException if no algorithm has this id
    */
-  public TradingAlgorithm get(String algorithmId) {
+  public TradingAlgorithm get(int algorithmId) {
     TradingAlgorithm algorithm = algorithmsById.get(algorithmId);
     if (algorithm == null) {
       throw new UnknownAlgorithmException(algorithmId);
@@ -45,11 +45,12 @@ public final class AlgorithmRegistryService {
     if (!Collections.disjoint(
         algorithm.optionDefinitions().names(), TradingAlgorithm.SHARED_DEFINITIONS.names())) {
       throw new IllegalStateException(
-          algorithm.id() + " reuses the name of a shared setting for one of its own");
+          algorithm.name() + " reuses the name of a shared setting for one of its own");
     }
   }
 
   private static TradingAlgorithm refuseDuplicateId(TradingAlgorithm first, TradingAlgorithm next) {
-    throw new IllegalStateException("Two algorithms share the id " + first.id());
+    throw new IllegalStateException(
+        "Two algorithms share the id " + first.id() + ": " + first.name() + " and " + next.name());
   }
 }

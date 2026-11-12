@@ -44,19 +44,29 @@ public abstract class TradingAlgorithm {
               AlgorithmSettingDefinition.optionalNumber(
                   STOP_LOSS_PERCENT, "Stop loss (% below the buy)", "0.01", "99")));
 
-  private final String id;
+  private final int id;
+  private final String name;
   private final String displayName;
   private final AlgorithmSettingDefinitionList optionDefinitions;
 
+  /**
+   * @param id the number that identifies the algorithm in the API and the database; never reused
+   * @param name the algorithm's text name, e.g. {@code example-strategy-SMA}
+   */
   protected TradingAlgorithm(
-      String id, String displayName, AlgorithmSettingDefinitionList optionDefinitions) {
+      int id, String name, String displayName, AlgorithmSettingDefinitionList optionDefinitions) {
     this.id = id;
+    this.name = name;
     this.displayName = displayName;
     this.optionDefinitions = optionDefinitions;
   }
 
-  public final String id() {
+  public final int id() {
     return id;
+  }
+
+  public final String name() {
+    return name;
   }
 
   public final String displayName() {
@@ -79,9 +89,9 @@ public abstract class TradingAlgorithm {
    * @throws InvalidAlgorithmSettingsException if a value or a combination isn't allowed
    */
   public final AlgorithmSettings resolveSettings(AlgorithmSettingsRequest request) {
-    if (!id.equals(request.algorithmId())) {
+    if (id != request.algorithmId()) {
       throw new InvalidAlgorithmSettingsException(
-          "Settings for " + request.algorithmId() + " can't be used with " + id);
+          "Settings for algorithm " + request.algorithmId() + " can't be used with " + id);
     }
     AlgorithmSettingValues values = settingDefinitions().resolveValues(request.values());
     AlgorithmSettings settings =

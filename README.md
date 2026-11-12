@@ -12,7 +12,8 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Demo account orders: market buy and sell, balances, over a REST API | Built |
 | Order checks for every order (cash, order size, risk per trade, stop loss, minimum value) and a virtual account for training | Built |
 | Trading algorithms: required and optional settings, stored once and reused (`GET /api/algorithms`), SMA example | Built |
-| Trading bot loop: Training and Trading modes | Planned |
+| Training runs: replay stored candles on a virtual account, recorded with their settings | Built |
+| Live trading bot on the demo account | Planned, next |
 | Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
 | Database: restart reconciliation, positions and trades with PnL | Planned, next |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | Built |
@@ -207,6 +208,29 @@ $env:BINANCE_DEMO_LIVE_TESTS = "true"; .\mvnw.cmd test "-Dtest=DemoAccountRoundT
 In normal builds and in CI it is skipped.
 
 The trading and user data URLs must point to the demo hosts set in `application.yaml` (`binance.trading.demo-host`, `binance.user-data-stream.demo-host`), otherwise the application refuses to start, so a live account can't be traded by mistake.
+
+### Run a training
+
+Training replays a past period of real Binance candles through a trading algorithm on a virtual account, as fast as possible. Nothing is sent to Binance except public candle requests. It only runs in `TRAINING` mode:
+
+```bash
+curl -X PUT localhost:8080/api/bot/mode -H "Content-Type: application/json" -d '{"mode":"TRAINING"}'
+curl localhost:8080/api/algorithms
+curl -X POST localhost:8080/api/brokers/binance/training/runs -H "Content-Type: application/json" -d '{
+  "candles": {"ticker": "BTCUSDT", "from": "2021-01-01T00:00:00Z", "to": "2021-03-01T00:00:00Z"},
+  "settings": {"algorithmId": 1, "timeframe": "FIVE_MINUTES", "liveOnTick": true,
+               "timePeriod": 50, "orderSizePercent": 100, "riskPerTradePercent": 3, "stopLossPercent": 2},
+  "startingBalance": 10000}'
+```
+
+- **Settings:** left-out required settings take their default; left-out optional ones (`riskPerTradePercent` with `stopLossPercent`) skip their checks. `updateTimeSeconds` is set exactly when `liveOnTick` is false. Invalid bodies are refused with 400 naming the fields.
+- **Candles** are downloaded once, 1,000 at a time, and read from the database after that.
+- **Orders:** every signal goes through the order checks, then fills at the next candle's open with Binance's 0.1% fee.
+- **Recorded runs:** every run is stored with the settings it used at start and at the end. Identical settings are stored once.
+  - `GET /api/brokers/binance/runs` and `GET /api/brokers/binance/runs/{id}`
+  - `GET /api/brokers/binance/training` tells whether a run is going (`areParametersEditable` is false while it does)
+
+In `TRADING` mode a training run is refused with 409, and so is a second run while one is going.
 
 ### Code quality
 

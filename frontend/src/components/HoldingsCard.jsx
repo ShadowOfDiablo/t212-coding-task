@@ -1,3 +1,4 @@
+import './HoldingsCard.css'
 import { formatPrice, formatQuantity, QUOTE_ASSET } from '../format.js'
 
 const TRADING_OFF_STATUS = 409

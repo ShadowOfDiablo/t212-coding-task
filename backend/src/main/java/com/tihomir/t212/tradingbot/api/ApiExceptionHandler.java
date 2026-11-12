@@ -1,6 +1,8 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
+import com.tihomir.t212.tradingbot.marketdata.history.CandleDownloadFailedException;
+import com.tihomir.t212.tradingbot.marketdata.history.CandleRangeTooLargeException;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
@@ -24,7 +26,11 @@ public class ApiExceptionHandler {
     return problem(HttpStatus.NOT_FOUND, e);
   }
 
-  @ExceptionHandler({TickerNotTradedException.class, IllegalArgumentException.class})
+  @ExceptionHandler({
+    TickerNotTradedException.class,
+    CandleRangeTooLargeException.class,
+    IllegalArgumentException.class
+  })
   ProblemDetail invalidRequest(RuntimeException e) {
     return problem(HttpStatus.BAD_REQUEST, e);
   }
@@ -55,6 +61,12 @@ public class ApiExceptionHandler {
   @ExceptionHandler(ExchangeUnavailableException.class)
   ProblemDetail exchangeUnavailable(ExchangeUnavailableException e) {
     log.error("Exchange request failed: {}", e.getMessage(), e);
+    return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, e.getMessage());
+  }
+
+  @ExceptionHandler(CandleDownloadFailedException.class)
+  ProblemDetail candleDownloadFailed(CandleDownloadFailedException e) {
+    log.error("Candle download failed: {}", e.getMessage(), e);
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, e.getMessage());
   }
 

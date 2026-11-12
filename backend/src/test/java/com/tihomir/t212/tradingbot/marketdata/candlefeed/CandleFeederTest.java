@@ -27,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.ResponseCreator;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 class CandleFeederTest {
 
@@ -173,23 +174,38 @@ class CandleFeederTest {
   }
 
   @Test
-  void historyPagesUntilTheLastPartialPage() {
+  void historyPageReadsOnePageFromTheGivenStart() {
     feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
-    rest.expect(requestTo("http://rest.test/candles?from=0")).andRespond(text("0,1"));
     rest.expect(requestTo("http://rest.test/candles?from=2")).andRespond(text("2,3"));
-    rest.expect(requestTo("http://rest.test/candles?from=4")).andRespond(text("4"));
 
-    List<CandleUpdate> candles =
-        feeder.history(
+    CandleList page =
+        feeder.historyPage(
             "BTCUSDT",
             CandleInterval.ONE_SECOND,
-            Instant.ofEpochSecond(0),
+            Instant.ofEpochSecond(2),
             Instant.ofEpochSecond(5));
 
-    assertThat(candles)
+    assertThat(page.candles())
         .extracting(candle -> candle.openTime().getEpochSecond())
-        .containsExactly(0L, 1L, 2L, 3L, 4L);
+        .containsExactly(2L, 3L);
+    assertThat(page.candles()).allMatch(CandleUpdate::closed);
+    assertThat(feeder.maxCandlesPerHistoryPage())
+        .isEqualTo(FakeExchangeMarketDataProtocol.MAX_CANDLES_PER_REST_HISTORY_REQUEST);
     rest.verify();
+  }
+
+  @Test
+  void historyPagePassesOnAFailedRequest() {
+    feeder = feeder(List.of("BTCUSDT"), new TickerPriceMap(List.of("BTCUSDT")));
+    rest.expect(requestTo("http://rest.test/candles?from=0")).andRespond(withServerError());
+
+    assertThatThrownBy(() ->
+            feeder.historyPage(
+                "BTCUSDT",
+                CandleInterval.ONE_SECOND,
+                Instant.ofEpochSecond(0),
+                Instant.ofEpochSecond(5)))
+        .isInstanceOf(RestClientException.class);
   }
 
   private CandleFeeder feeder(List<String> tickers, TickerPriceMap prices) {

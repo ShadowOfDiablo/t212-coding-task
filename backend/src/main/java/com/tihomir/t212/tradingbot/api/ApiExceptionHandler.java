@@ -2,7 +2,10 @@ package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
 import com.tihomir.t212.tradingbot.algorithm.UnknownAlgorithmException;
+import com.tihomir.t212.tradingbot.bot.LiveBotNotRunningException;
+import com.tihomir.t212.tradingbot.bot.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.bot.RunNotFoundException;
+import com.tihomir.t212.tradingbot.bot.TradingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.TrainingAlreadyRunningException;
 import com.tihomir.t212.tradingbot.bot.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
@@ -66,7 +69,10 @@ public class ApiExceptionHandler {
   @ExceptionHandler({
     TradingNotConfiguredException.class,
     TrainingModeRequiredException.class,
-    TrainingAlreadyRunningException.class
+    TrainingAlreadyRunningException.class,
+    TradingModeRequiredException.class,
+    LiveBotRunningException.class,
+    LiveBotNotRunningException.class
   })
   ProblemDetail conflict(RuntimeException e) {
     return problem(HttpStatus.CONFLICT, e);

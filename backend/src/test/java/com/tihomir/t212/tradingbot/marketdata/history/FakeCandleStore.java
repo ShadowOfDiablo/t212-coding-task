@@ -84,6 +84,10 @@ public final class FakeCandleStore implements CandleStore {
     databaseDown = true;
   }
 
+  public void bringDatabaseBackUp() {
+    databaseDown = false;
+  }
+
   private static boolean isWithin(Instant openTime, CandleHistoryRequest request) {
     return !openTime.isBefore(request.from()) && openTime.isBefore(request.to());
   }

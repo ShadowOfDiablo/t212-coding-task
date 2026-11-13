@@ -63,6 +63,10 @@ public final class CandleFeeder implements AutoCloseable {
     listeners.add(listener);
   }
 
+  public void removeListener(CandleUpdateListener listener) {
+    listeners.remove(listener);
+  }
+
   public synchronized void start() {
     if (running) {
       return;

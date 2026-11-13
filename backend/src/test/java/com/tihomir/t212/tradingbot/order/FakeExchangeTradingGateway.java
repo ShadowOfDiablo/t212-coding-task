@@ -66,7 +66,7 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
     return List.copyOf(placedOrders);
   }
 
-  synchronized void failOrders(RuntimeException failure) {
+  public synchronized void failOrders(RuntimeException failure) {
     orderFailure = Optional.of(failure);
   }
 }

@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tihomir.t212.tradingbot.bot.LiveBotRunningException;
+import com.tihomir.t212.tradingbot.bot.TradingBotService;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,8 @@ class BotModeControllerTest {
   @Autowired MockMvc mockMvc;
 
   @MockitoBean BotModeService botModeService;
+
+  @MockitoBean TradingBotService tradingBotService;
 
   @Test
   void readsTheCurrentMode() throws Exception {
@@ -47,7 +51,7 @@ class BotModeControllerTest {
                 .content("{\"mode\":\"TRAINING\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.mode").value("TRAINING"));
-    verify(botModeService).setBotMode(BotMode.TRAINING);
+    verify(tradingBotService).switchBotMode(BotMode.TRAINING);
   }
 
   @Test
@@ -61,11 +65,25 @@ class BotModeControllerTest {
   @Test
   void missingModeIsABadRequest() throws Exception {
     doThrow(new IllegalArgumentException("The bot mode must be TRADING or TRAINING"))
-        .when(botModeService)
-        .setBotMode(null);
+        .when(tradingBotService)
+        .switchBotMode(null);
 
     mockMvc
         .perform(put(BOT_MODE).contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void switchingWhileALiveBotRunsIsAConflict() throws Exception {
+    doThrow(new LiveBotRunningException("binance"))
+        .when(tradingBotService)
+        .switchBotMode(BotMode.TRAINING);
+
+    mockMvc
+        .perform(
+            put(BOT_MODE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\":\"TRAINING\"}"))
+        .andExpect(status().isConflict());
   }
 }

@@ -45,6 +45,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.ResponseActions;
 import org.springframework.test.web.client.ResponseCreator;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
@@ -111,17 +112,67 @@ class BinanceTradingGatewayTest {
   }
 
   @Test
-  void sendsASellForABaseQuantity() throws IOException {
+  void sendsASellForABaseQuantityRoundedDownToTheLotStepReadOnce() throws IOException {
+    expectExchangeInfo()
+        .andRespond(withSuccess(fixture("exchange-info.json"), MediaType.APPLICATION_JSON));
     server
         .expect(queryParam("side", "SELL"))
-        .andExpect(queryParam("quantity", "0.0002"))
+        .andExpect(queryParam("quantity", "0.00067"))
+        .andRespond(withSuccess(fixture("order-full-response.json"), MediaType.APPLICATION_JSON));
+    server
+        .expect(queryParam("quantity", "0.0002"))
         .andRespond(withSuccess(fixture("order-full-response.json"), MediaType.APPLICATION_JSON));
 
-    gateway.placeMarketOrder(
-        new MarketOrderRequest(
-            "BTCUSDT", OrderSide.SELL, new BigDecimal("0.0002"), OrderAmountType.BASE_QUANTITY));
+    gateway.placeMarketOrder(sellForBaseQuantity("0.00067932"));
+    gateway.placeMarketOrder(sellForBaseQuantity("0.0002"));
 
     server.verify();
+  }
+
+  @Test
+  void sellOfLessThanOneLotStepIsARejectionWithoutSending() throws IOException {
+    expectExchangeInfo()
+        .andRespond(withSuccess(fixture("exchange-info.json"), MediaType.APPLICATION_JSON));
+
+    assertThatThrownBy(() -> gateway.placeMarketOrder(sellForBaseQuantity("0.000009")))
+        .isInstanceOfSatisfying(
+            ExchangeRejectedRequestException.class,
+            e -> assertThat(e.exchangeErrorCode()).isEqualTo(-1013))
+        .hasMessageContaining("less than one lot step");
+    server.verify();
+  }
+
+  @Test
+  void unreadableLotSizeFailsTheSellWithoutSendingAndIsReadAgainNextTime() throws IOException {
+    expectExchangeInfo().andRespond(withSuccess("{\"symbols\":[]}", MediaType.APPLICATION_JSON));
+    expectExchangeInfo().andRespond(withServerError());
+    expectExchangeInfo()
+        .andRespond(withSuccess(fixture("exchange-info.json"), MediaType.APPLICATION_JSON));
+    server
+        .expect(queryParam("quantity", "0.0002"))
+        .andRespond(withSuccess(fixture("order-full-response.json"), MediaType.APPLICATION_JSON));
+
+    assertThatThrownBy(() -> gateway.placeMarketOrder(sellForBaseQuantity("0.0002")))
+        .isInstanceOf(ExchangeUnavailableException.class);
+    assertThatThrownBy(() -> gateway.placeMarketOrder(sellForBaseQuantity("0.0002")))
+        .isInstanceOf(ExchangeUnavailableException.class);
+    gateway.placeMarketOrder(sellForBaseQuantity("0.0002"));
+    server.verify();
+  }
+
+  private ResponseActions expectExchangeInfo() {
+    return server
+        .expect(
+            requestTo(
+                "https://demo-api.binance.com"
+                    + BinanceTradingGateway.EXCHANGE_INFO_PATH
+                    + "?symbol=BTCUSDT"))
+        .andExpect(method(HttpMethod.GET));
+  }
+
+  private static MarketOrderRequest sellForBaseQuantity(String quantity) {
+    return new MarketOrderRequest(
+        "BTCUSDT", OrderSide.SELL, new BigDecimal(quantity), OrderAmountType.BASE_QUANTITY);
   }
 
   @Test

@@ -1,0 +1,49 @@
+package com.tihomir.t212.tradingbot.api;
+
+import com.tihomir.t212.tradingbot.bot.LiveBotStatus;
+import java.util.Optional;
+
+/** The live bot of a broker; the run fields are JSON {@code null} while it doesn't run. */
+public record LiveBotStatusResponse(
+    boolean running,
+    boolean areParametersEditable,
+    Optional<Long> runId,
+    Optional<String> ticker,
+    Optional<AlgorithmSettingsResponse> currentParameters,
+    Optional<Long> settingsId,
+    int buyCount,
+    int sellCount,
+    int stopLossCount,
+    int refusedOrderCount) {
+
+  private static final LiveBotStatusResponse NOT_RUNNING =
+      new LiveBotStatusResponse(
+          false,
+          false,
+          Optional.empty(),
+          Optional.empty(),
+          Optional.empty(),
+          Optional.empty(),
+          0,
+          0,
+          0,
+          0);
+
+  static LiveBotStatusResponse of(Optional<LiveBotStatus> status) {
+    return status.map(LiveBotStatusResponse::running).orElse(NOT_RUNNING);
+  }
+
+  static LiveBotStatusResponse running(LiveBotStatus status) {
+    return new LiveBotStatusResponse(
+        true,
+        true,
+        Optional.of(status.runId()),
+        Optional.of(status.ticker()),
+        Optional.of(AlgorithmSettingsResponse.of(status.currentParameters())),
+        Optional.of(status.settingsId()),
+        status.counts().buyCount(),
+        status.counts().sellCount(),
+        status.counts().stopLossCount(),
+        status.counts().refusedOrderCount());
+  }
+}

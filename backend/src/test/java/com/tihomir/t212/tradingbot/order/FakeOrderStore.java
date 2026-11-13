@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.dao.DataAccessResourceFailureException;
 
-final class FakeOrderStore implements OrderStore {
+public final class FakeOrderStore implements OrderStore {
 
   private final List<OrderHistoryEntry> executedOrders = new ArrayList<>();
   private final List<RejectedOrder> rejectedOrders = new ArrayList<>();

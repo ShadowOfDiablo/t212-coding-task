@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
 import tools.jackson.databind.JsonNode;
@@ -22,6 +24,9 @@ public final class OrderUtil {
   private static final String CLIENT_ORDER_ID_PREFIX = "tb-";
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
+  private static final String LOT_SIZE_FILTER = "LOT_SIZE";
+  private static final String STEP_SIZE_FIELD = "stepSize";
+  private static final int FIRST_SYMBOL = 0;
 
   private OrderUtil() {}
 
@@ -75,6 +80,43 @@ public final class OrderUtil {
         StreamSupport.stream(required(accountPositionEvent, "B").spliterator(), false)
             .map(OrderUtil::accountPositionBalance)
             .toList());
+  }
+
+  /**
+   * The symbol's lot step, from its LOT_SIZE filter: the smallest amount a coin quantity can change
+   * by. For BTCUSDT it is 0.00001 BTC, so 0.123456 BTC is sent as 0.12345 BTC.
+   *
+   * @throws IllegalArgumentException if the answer has no usable LOT_SIZE filter
+   */
+  public static BigDecimal lotStepSize(JsonNode exchangeInfo) {
+    JsonNode symbols = required(exchangeInfo, "symbols");
+    if (symbols.isEmpty()) {
+      throw new IllegalArgumentException("Binance listed no symbol");
+    }
+    List<JsonNode> filters =
+        StreamSupport.stream(required(symbols.get(FIRST_SYMBOL), "filters").spliterator(), false)
+            .toList();
+    BigDecimal lotStepSize =
+        filterValue(filters, Set.of(LOT_SIZE_FILTER), STEP_SIZE_FIELD)
+            .orElseThrow(() -> new IllegalArgumentException("Missing LOT_SIZE filter"));
+    if (lotStepSize.signum() <= 0) {
+      throw new IllegalArgumentException("LOT_SIZE step must be greater than zero");
+    }
+    return lotStepSize;
+  }
+
+  /** The quantity rounded down to a whole number of lot steps; zero when it is less than one. */
+  public static BigDecimal roundDownToLotStep(BigDecimal quantity, BigDecimal lotStepSize) {
+    return quantity.divideToIntegralValue(lotStepSize).multiply(lotStepSize).stripTrailingZeros();
+  }
+
+  /** A field of the first filter of one of these types; empty when the symbol has none of them. */
+  private static Optional<BigDecimal> filterValue(
+      List<JsonNode> filters, Set<String> filterTypes, String field) {
+    return filters.stream()
+        .filter(filter -> filterTypes.contains(required(filter, "filterType").asString()))
+        .map(filter -> decimal(filter, field))
+        .findFirst();
   }
 
   public static JsonNode required(JsonNode node, String field) {

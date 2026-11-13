@@ -10,7 +10,6 @@ import com.tihomir.t212.tradingbot.marketdata.history.CandleHistoryService;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
-import com.tihomir.t212.tradingbot.order.OrderService;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -24,7 +23,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Starts, changes and stops the live bots, one per broker, and records their runs. A live bot
- * trades on the exchange's demo account through {@link OrderService}.
+ * trades on the exchange's demo account; every order goes through {@link OrderCheckerService}.
  */
 @Service
 public class TradingBotService {
@@ -36,7 +35,6 @@ public class TradingBotService {
   private final AlgorithmSettingsService settingsService;
   private final CandleHistoryService candleHistory;
   private final OrderCheckerService orderChecker;
-  private final OrderService orderService;
   private final AlgorithmRunStore runStore;
   private final Clock clock;
   private final Map<String, LiveTradingBot> runningBots = new ConcurrentHashMap<>();
@@ -47,7 +45,6 @@ public class TradingBotService {
       AlgorithmSettingsService settingsService,
       CandleHistoryService candleHistory,
       OrderCheckerService orderChecker,
-      OrderService orderService,
       AlgorithmRunStore runStore,
       Clock clock) {
     this.botModeService = botModeService;
@@ -55,7 +52,6 @@ public class TradingBotService {
     this.settingsService = settingsService;
     this.candleHistory = candleHistory;
     this.orderChecker = orderChecker;
-    this.orderService = orderService;
     this.runStore = runStore;
     this.clock = clock;
   }
@@ -93,13 +89,7 @@ public class TradingBotService {
                 startingValue,
                 algorithmId));
     LiveTradingBot bot =
-        new LiveTradingBot(
-            broker,
-            runId,
-            new LiveOrderPlacer(broker.name(), account, orderChecker, orderService),
-            signalSource,
-            algorithmId,
-            clock);
+        new LiveTradingBot(broker, runId, account, orderChecker, signalSource, algorithmId, clock);
     runningBots.put(broker.name(), bot);
     bot.startListening();
     log.info(

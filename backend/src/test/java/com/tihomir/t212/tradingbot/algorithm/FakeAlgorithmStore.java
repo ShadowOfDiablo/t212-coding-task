@@ -1,28 +1,22 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** Keeps settings in a list; the index plus an offset is the id. */
-public final class FakeAlgorithmOptionStore implements AlgorithmOptionStore {
+/** Keeps variants in a list; the index plus an offset is the id. */
+public final class FakeAlgorithmStore implements AlgorithmStore {
 
-  private final int algorithmId;
   private final long firstId;
   private final List<AlgorithmSettings> storedSettings = new ArrayList<>();
 
-  public FakeAlgorithmOptionStore(int algorithmId, long firstId) {
-    this.algorithmId = algorithmId;
+  public FakeAlgorithmStore(long firstId) {
     this.firstId = firstId;
   }
 
   @Override
-  public int algorithmId() {
-    return algorithmId;
-  }
-
-  @Override
-  public long findOrInsertSettings(AlgorithmSettings settings) {
+  public long findOrInsertAlgorithm(AlgorithmSettings settings, Instant createdAt) {
     int index = storedSettings.indexOf(settings);
     if (index < 0) {
       storedSettings.add(settings);
@@ -32,8 +26,8 @@ public final class FakeAlgorithmOptionStore implements AlgorithmOptionStore {
   }
 
   @Override
-  public Optional<AlgorithmSettings> getSettings(long settingsId) {
-    long index = settingsId - firstId;
+  public Optional<AlgorithmSettings> getAlgorithm(long algorithmId) {
+    long index = algorithmId - firstId;
     if (index < 0 || index >= storedSettings.size()) {
       return Optional.empty();
     }

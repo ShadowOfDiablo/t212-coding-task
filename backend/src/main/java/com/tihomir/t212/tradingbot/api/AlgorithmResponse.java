@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.api;
 
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import java.util.List;
 
@@ -8,11 +9,14 @@ import java.util.List;
  * listed in {@code settings}, which holds the numeric settings.
  */
 public record AlgorithmResponse(
-    int id, String name, String displayName, List<AlgorithmSettingDefinitionResponse> settings) {
+    AlgorithmType type,
+    String name,
+    String displayName,
+    List<AlgorithmSettingDefinitionResponse> settings) {
 
   static AlgorithmResponse of(TradingAlgorithm algorithm) {
     return new AlgorithmResponse(
-        algorithm.id(),
+        algorithm.type(),
         algorithm.name(),
         algorithm.displayName(),
         algorithm.settingDefinitions().definitions().stream()

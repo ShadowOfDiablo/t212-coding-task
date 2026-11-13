@@ -71,7 +71,7 @@ final class LiveSignalSource {
         "{} {}: live {} warmed up with {} {} candle(s)",
         broker,
         ticker,
-        algorithm.id(),
+        algorithm.type(),
         candles.size(),
         settings.timeframe());
   }

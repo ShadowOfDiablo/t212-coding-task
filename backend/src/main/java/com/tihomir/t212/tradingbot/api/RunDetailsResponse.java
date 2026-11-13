@@ -5,13 +5,13 @@ import java.util.List;
 
 public record RunDetailsResponse(
     RecordedRunResponse run,
-    List<RunSettingsRecordResponse> settingsHistory,
+    AlgorithmSettingsResponse settings,
     List<PortfolioPointResponse> points) {
 
   static RunDetailsResponse of(RunDetails details) {
     return new RunDetailsResponse(
         RecordedRunResponse.of(details.run()),
-        details.settingsHistory().records().stream().map(RunSettingsRecordResponse::of).toList(),
+        AlgorithmSettingsResponse.of(details.settings()),
         details.points().points().stream().map(PortfolioPointResponse::of).toList());
   }
 }

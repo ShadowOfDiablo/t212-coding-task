@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.LiveBotNotRunningException;
@@ -43,7 +43,7 @@ class BotControllerTest {
   private static final String BOT = "/api/brokers/binance/bot";
   private static final String SETTINGS_BODY =
       """
-      {"algorithmId": 1, "timeframe": "FIFTEEN_MINUTES",
+      {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "15m",
        "liveOnTick": false, "updateTimeSeconds": 30, "timePeriod": 50}
       """;
   private static final String START_BODY =
@@ -118,7 +118,7 @@ class BotControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(SETTINGS_BODY))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.settingsId").value(3));
+        .andExpect(jsonPath("$.algorithmId").value(3));
     mockMvc.perform(post(BOT + "/stop")).andExpect(status().isConflict());
   }
 
@@ -127,7 +127,7 @@ class BotControllerTest {
         4,
         "BTCUSDT",
         new AlgorithmSettings(
-            SimpleMovingAverageAlgorithm.ID,
+            AlgorithmType.SIMPLE_MOVING_AVERAGE,
             50,
             CandleInterval.FIFTEEN_MINUTES,
             false,

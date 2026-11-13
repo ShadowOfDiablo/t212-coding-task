@@ -8,26 +8,28 @@ import org.junit.jupiter.api.Test;
 
 class AlgorithmRegistryServiceTest {
 
-  private static final int MISSING_ALGORITHM_ID = 999;
+  @Test
+  void findsEveryAlgorithmByItsType() {
+    SimpleMovingAverageAlgorithm movingAverage = new SimpleMovingAverageAlgorithm();
+    AlgorithmRegistryService registry = new AlgorithmRegistryService(List.of(movingAverage));
+
+    assertThat(registry.get(AlgorithmType.SIMPLE_MOVING_AVERAGE)).isSameAs(movingAverage);
+    assertThat(registry.all().algorithms()).containsExactly(movingAverage);
+  }
 
   @Test
-  void findsEveryAlgorithmByItsId() {
-    SimpleMovingAverageAlgorithm movingAverage = new SimpleMovingAverageAlgorithm();
-    ThresholdTestAlgorithm threshold = new ThresholdTestAlgorithm();
-    AlgorithmRegistryService registry =
-        new AlgorithmRegistryService(List.of(movingAverage, threshold));
+  void refusesATypeWithoutAnAlgorithm() {
+    AlgorithmRegistryService registry = new AlgorithmRegistryService(List.of());
 
-    assertThat(registry.get(SimpleMovingAverageAlgorithm.ID)).isSameAs(movingAverage);
-    assertThat(registry.all().algorithms()).containsExactly(movingAverage, threshold);
-    assertThatThrownBy(() -> registry.get(MISSING_ALGORITHM_ID))
+    assertThatThrownBy(() -> registry.get(AlgorithmType.SIMPLE_MOVING_AVERAGE))
         .isInstanceOf(UnknownAlgorithmException.class);
   }
 
   @Test
-  void refusesTwoAlgorithmsWithTheSameId() {
+  void refusesTwoAlgorithmsWithTheSameType() {
     assertThatThrownBy(() ->
             new AlgorithmRegistryService(
-                List.of(new SimpleMovingAverageAlgorithm(), new SimpleMovingAverageAlgorithm())))
+                List.of(new SimpleMovingAverageAlgorithm(), new ThresholdTestAlgorithm())))
         .isInstanceOf(IllegalStateException.class);
   }
 

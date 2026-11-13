@@ -72,7 +72,7 @@ class SimpleMovingAverageAlgorithmTest {
   private AlgorithmSettings settings() {
     return algorithm.resolveSettings(
         new AlgorithmSettingsRequest(
-            SimpleMovingAverageAlgorithm.ID,
+            AlgorithmType.SIMPLE_MOVING_AVERAGE,
             CandleInterval.ONE_MINUTE,
             true,
             Map.of(TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(TIME_PERIOD))));

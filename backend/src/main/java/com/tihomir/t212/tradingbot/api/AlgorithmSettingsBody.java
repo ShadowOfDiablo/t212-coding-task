@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import jakarta.validation.constraints.AssertTrue;
@@ -18,7 +19,7 @@ import java.util.Optional;
  * settings by name; the algorithm checks those.
  */
 public record AlgorithmSettingsBody(
-    @NotNull Integer algorithmId,
+    @NotNull AlgorithmType algorithmType,
     @NotNull CandleInterval timeframe,
     @NotNull Boolean liveOnTick,
     @Positive Integer timePeriod,
@@ -53,7 +54,7 @@ public record AlgorithmSettingsBody(
     putIfSet(
         values, TradingAlgorithm.RISK_PER_TRADE_PERCENT, Optional.ofNullable(riskPerTradePercent));
     putIfSet(values, TradingAlgorithm.STOP_LOSS_PERCENT, Optional.ofNullable(stopLossPercent));
-    return new AlgorithmSettingsRequest(algorithmId, timeframe, liveOnTick, values);
+    return new AlgorithmSettingsRequest(algorithmType, timeframe, liveOnTick, values);
   }
 
   /** A setting left out stays out of the map, so the algorithm uses its default or skips it. */

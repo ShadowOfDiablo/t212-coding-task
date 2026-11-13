@@ -77,7 +77,7 @@ public class CandleRepository implements CandleStore {
             HAVING COUNT(*) > 0
             """)
         .param(tickerId)
-        .param(interval.name())
+        .param(interval.code())
         .query((row, rowNumber) -> storedCandleRange(row, interval))
         .optional();
   }
@@ -105,7 +105,7 @@ public class CandleRepository implements CandleStore {
                 """)
             .param(request.broker())
             .param(request.ticker())
-            .param(request.interval().name())
+            .param(request.interval().code())
             .param(timestamp(request.from()))
             .param(timestamp(request.to()))
             .query(CandleRepository::candle)
@@ -113,7 +113,7 @@ public class CandleRepository implements CandleStore {
   }
 
   private static Object[] candleRow(long tickerId, CandleUpdate candle) {
-    String interval = candle.interval().name();
+    String interval = candle.interval().code();
     OffsetDateTime openTime = timestamp(candle.openTime());
     return new Object[] {
       tickerId,
@@ -141,7 +141,7 @@ public class CandleRepository implements CandleStore {
     Instant closeTime = instant(row, "close_time");
     return new CandleUpdate(
         row.getString("symbol"),
-        CandleInterval.valueOf(row.getString("candle_interval")),
+        CandleInterval.fromCode(row.getString("candle_interval")),
         instant(row, "open_time"),
         closeTime,
         row.getBigDecimal("open"),

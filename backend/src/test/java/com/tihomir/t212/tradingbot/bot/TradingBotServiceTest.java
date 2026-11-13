@@ -7,7 +7,8 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
-import com.tihomir.t212.tradingbot.algorithm.FakeAlgorithmOptionStore;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
+import com.tihomir.t212.tradingbot.algorithm.FakeAlgorithmStore;
 import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
@@ -69,8 +70,7 @@ class TradingBotServiceTest {
   private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
   private final AtomicInteger evaluatedPrices = new AtomicInteger();
   private final AlgorithmSettingsService settingsService =
-      new AlgorithmSettingsService(
-          List.of(new FakeAlgorithmOptionStore(ScriptedTestAlgorithm.ID, 1)));
+      new AlgorithmSettingsService(new FakeAlgorithmStore(1), Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
   void buysAndSellsOnLiveTicksAndRecordsTheStop() {
@@ -104,9 +104,7 @@ class TradingBotServiceTest {
     assertThat(details.points().points())
         .singleElement()
         .satisfies(point -> assertThat(point.time()).isEqualTo(NOW));
-    assertThat(details.settingsHistory().records())
-        .extracting(RunSettingsRecord::event)
-        .containsExactly(RunEvent.STARTED, RunEvent.COMPLETED);
+    assertThat(runStore.activeAlgorithmId(TICKER)).contains(details.run().algorithmId());
     assertThat(service.getBotStatus(BROKER)).isEmpty();
   }
 
@@ -181,10 +179,10 @@ class TradingBotServiceTest {
   }
 
   @Test
-  void savesChangedParametersAndKeepsTheOldOnesWhenTheChangeIsInvalid() {
+  void changedParametersEndTheRunAndStartANewOneAndAnInvalidChangeKeepsTheRun() {
     TradingBotService service = service();
-    long runId = service.startBot(request(true, Map.of()));
-    long startSettingsId = service.getBotStatus(BROKER).orElseThrow().settingsId();
+    long firstRunId = service.startBot(request(true, Map.of()));
+    long firstAlgorithmId = service.getBotStatus(BROKER).orElseThrow().algorithmId();
 
     LiveBotStatus changed = service.updateCurrentParameters(BROKER, settings(true, RISK_LIMITS));
     assertThatThrownBy(() ->
@@ -194,15 +192,19 @@ class TradingBotServiceTest {
     LiveBotStatus afterInvalidChange = service.getBotStatus(BROKER).orElseThrow();
     service.stopBot(BROKER);
 
-    assertThat(changed.settingsId()).isNotEqualTo(startSettingsId);
+    assertThat(changed.runId()).isNotEqualTo(firstRunId);
+    assertThat(changed.algorithmId()).isNotEqualTo(firstAlgorithmId);
     assertThat(changed.currentParameters().stopLossPercent()).isPresent();
-    assertThat(afterInvalidChange.settingsId()).isEqualTo(changed.settingsId());
-    assertThat(runDetails(runId).settingsHistory().records())
-        .extracting(RunSettingsRecord::event, RunSettingsRecord::settingsId)
-        .containsExactly(
-            tuple(RunEvent.STARTED, startSettingsId),
-            tuple(RunEvent.CHANGED, changed.settingsId()),
-            tuple(RunEvent.COMPLETED, changed.settingsId()));
+    assertThat(afterInvalidChange.runId()).isEqualTo(changed.runId());
+    assertThat(afterInvalidChange.algorithmId()).isEqualTo(changed.algorithmId());
+    RecordedRun firstRun = runDetails(firstRunId).run();
+    assertThat(firstRun.status()).isEqualTo(RunStatus.COMPLETED);
+    assertThat(firstRun.algorithmId()).isEqualTo(firstAlgorithmId);
+    RecordedRun secondRun = runDetails(changed.runId()).run();
+    assertThat(secondRun.status()).isEqualTo(RunStatus.STOPPED);
+    assertThat(secondRun.algorithmId()).isEqualTo(changed.algorithmId());
+    assertThat(secondRun.startedAt()).isEqualTo(firstRun.finishedAt().orElseThrow());
+    assertThat(runStore.activeAlgorithmId(TICKER)).contains(changed.algorithmId());
   }
 
   @Test
@@ -274,7 +276,8 @@ class TradingBotServiceTest {
     if (!liveOnTick) {
       allValues.put(TradingAlgorithm.UPDATE_TIME_SECONDS, BigDecimal.valueOf(ONE_HOUR_IN_SECONDS));
     }
-    return new AlgorithmSettingsRequest(ScriptedTestAlgorithm.ID, TIMEFRAME, liveOnTick, allValues);
+    return new AlgorithmSettingsRequest(
+        AlgorithmType.SIMPLE_MOVING_AVERAGE, TIMEFRAME, liveOnTick, allValues);
   }
 
   private static CandleUpdate tick(String ticker, BigDecimal price) {

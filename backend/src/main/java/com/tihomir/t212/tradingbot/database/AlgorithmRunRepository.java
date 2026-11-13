@@ -7,9 +7,6 @@ import com.tihomir.t212.tradingbot.bot.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.RecordedRunList;
 import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunEnd;
-import com.tihomir.t212.tradingbot.bot.RunEvent;
-import com.tihomir.t212.tradingbot.bot.RunSettingsChange;
-import com.tihomir.t212.tradingbot.bot.RunSettingsChangeList;
 import com.tihomir.t212.tradingbot.bot.RunStart;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
 import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
@@ -49,14 +46,15 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     jdbcClient
         .sql(
             """
-            INSERT INTO algorithm_run (mode, broker, ticker, status, started_at, from_time, to_time,
-                                       starting_value, buy_count, sell_count, stop_loss_count,
-                                       refused_order_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)
+            INSERT INTO algorithm_run (mode, broker, ticker, algorithm_id, status, started_at,
+                                       from_time, to_time, starting_value, buy_count, sell_count,
+                                       stop_loss_count, refused_order_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)
             """)
         .param(start.mode().name())
         .param(start.broker())
         .param(start.ticker())
+        .param(start.algorithmId())
         .param(RunStatus.STARTED.name())
         .param(timestamp(start.startedAt()))
         .param(optionalTimestamp(start.from()))
@@ -67,24 +65,10 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     if (runId == null) {
       throw new IllegalStateException("The database returned no id for the run");
     }
-    insertSettingsChange(
-        runId, new RunSettingsChange(RunEvent.STARTED, start.startedAt(), start.settingsId()));
+    if (start.mode() == BotMode.TRADING) {
+      updateActiveAlgorithm(start);
+    }
     return runId;
-  }
-
-  @Override
-  public void insertSettingsChange(long runId, RunSettingsChange change) {
-    jdbcClient
-        .sql(
-            """
-            INSERT INTO algorithm_run_settings (run_id, recorded_at, event, settings_id)
-            VALUES (?, ?, ?, ?)
-            """)
-        .param(runId)
-        .param(timestamp(change.recordedAt()))
-        .param(change.event().name())
-        .param(change.settingsId())
-        .update();
   }
 
   @Override
@@ -114,8 +98,6 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     if (updated == 0) {
       throw new IllegalStateException("Run " + runId + " is not running");
     }
-    insertSettingsChange(
-        runId, new RunSettingsChange(RunEvent.COMPLETED, end.finishedAt(), end.settingsId()));
     jdbcTemplate.batchUpdate(
         """
         INSERT INTO training_portfolio_point (run_id, point_time, cash, value)
@@ -126,23 +108,13 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
 
   @Override
   @Transactional
+  public long replaceRun(long runId, RunEnd end, RunStart next) {
+    finishRun(runId, end);
+    return insertStartedRun(next);
+  }
+
+  @Override
   public int stopUnfinishedRuns(Instant stoppedAt, String reason) {
-    OffsetDateTime stoppedTime = timestamp(stoppedAt);
-    jdbcClient
-        .sql(
-            """
-            INSERT INTO algorithm_run_settings (run_id, recorded_at, event, settings_id)
-            SELECT s.run_id, ?, ?, s.settings_id
-            FROM algorithm_run_settings s
-            JOIN algorithm_run r ON r.id = s.run_id
-            WHERE r.status = ?
-              AND s.recorded_at = (SELECT MAX(m.recorded_at) FROM algorithm_run_settings m
-                                   WHERE m.run_id = s.run_id)
-            """)
-        .param(stoppedTime)
-        .param(RunEvent.COMPLETED.name())
-        .param(RunStatus.STARTED.name())
-        .update();
     return jdbcClient
         .sql(
             """
@@ -150,7 +122,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             WHERE status = ?
             """)
         .param(RunStatus.STOPPED.name())
-        .param(stoppedTime)
+        .param(timestamp(stoppedAt))
         .param(reason)
         .param(RunStatus.STARTED.name())
         .update();
@@ -163,7 +135,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
         .param(runId)
         .query(AlgorithmRunRepository::recordedRun)
         .optional()
-        .map(this::withDetails);
+        .map(this::withPoints);
   }
 
   @Override
@@ -177,18 +149,37 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             .list());
   }
 
-  private StoredRunDetails withDetails(RecordedRun run) {
-    RunSettingsChangeList changes =
-        new RunSettingsChangeList(
-            jdbcClient
-                .sql(
-                    """
-                    SELECT recorded_at, event, settings_id FROM algorithm_run_settings
-                    WHERE run_id = ? ORDER BY recorded_at, event DESC
-                    """)
-                .param(run.id())
-                .query(AlgorithmRunRepository::settingsChange)
-                .list());
+  private void updateActiveAlgorithm(RunStart start) {
+    OffsetDateTime activatedAt = timestamp(start.startedAt());
+    int updated =
+        jdbcClient
+            .sql(
+                """
+                UPDATE active_algorithm SET algorithm_id = ?, activated_at = ?
+                WHERE broker = ? AND ticker = ?
+                """)
+            .param(start.algorithmId())
+            .param(activatedAt)
+            .param(start.broker())
+            .param(start.ticker())
+            .update();
+    if (updated > 0) {
+      return;
+    }
+    jdbcClient
+        .sql(
+            """
+            INSERT INTO active_algorithm (broker, ticker, algorithm_id, activated_at)
+            VALUES (?, ?, ?, ?)
+            """)
+        .param(start.broker())
+        .param(start.ticker())
+        .param(start.algorithmId())
+        .param(activatedAt)
+        .update();
+  }
+
+  private StoredRunDetails withPoints(RecordedRun run) {
     PortfolioPointList points =
         new PortfolioPointList(
             jdbcClient
@@ -200,7 +191,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
                 .param(run.id())
                 .query(AlgorithmRunRepository::portfolioPoint)
                 .list());
-    return new StoredRunDetails(run, changes, points);
+    return new StoredRunDetails(run, points);
   }
 
   private static RecordedRun recordedRun(ResultSet row, int rowNumber) throws SQLException {
@@ -209,6 +200,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
         BotMode.valueOf(row.getString("mode")),
         row.getString("broker"),
         row.getString("ticker"),
+        row.getLong("algorithm_id"),
         RunStatus.valueOf(row.getString("status")),
         instant(row, "started_at"),
         optionalInstant(row, "finished_at"),
@@ -222,14 +214,6 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             row.getInt("stop_loss_count"),
             row.getInt("refused_order_count")),
         Optional.ofNullable(row.getString("failure_reason")));
-  }
-
-  private static RunSettingsChange settingsChange(ResultSet row, int rowNumber)
-      throws SQLException {
-    return new RunSettingsChange(
-        RunEvent.valueOf(row.getString("event")),
-        instant(row, "recorded_at"),
-        row.getLong("settings_id"));
   }
 
   private static PortfolioPoint portfolioPoint(ResultSet row, int rowNumber) throws SQLException {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
@@ -90,7 +91,7 @@ class LiveSignalSourceTest {
             Clock.fixed(at(STORED_CANDLES, 30), ZoneOffset.UTC));
     AlgorithmSettings settings =
         new AlgorithmSettings(
-            RecordingTestAlgorithm.ID,
+            AlgorithmType.SIMPLE_MOVING_AVERAGE,
             TIME_PERIOD,
             TIMEFRAME,
             true,

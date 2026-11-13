@@ -5,14 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.bot.PortfolioPoint;
 import com.tihomir.t212.tradingbot.bot.PortfolioPointList;
 import com.tihomir.t212.tradingbot.bot.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunEnd;
-import com.tihomir.t212.tradingbot.bot.RunEvent;
-import com.tihomir.t212.tradingbot.bot.RunSettingsChange;
 import com.tihomir.t212.tradingbot.bot.RunStart;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
 import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
@@ -42,35 +40,34 @@ class AlgorithmRunRepositoryTest {
   static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
 
   private static final Instant STARTED_AT = Instant.parse("2026-01-01T10:00:00Z");
-  private static final Instant CHANGED_AT = Instant.parse("2026-01-01T10:05:00Z");
+  private static final Instant POINT_TIME = Instant.parse("2026-01-01T10:05:00Z");
   private static final Instant FINISHED_AT = Instant.parse("2026-01-01T10:10:00Z");
 
   @MockitoBean BrokerStartupRunner brokerStartupRunner;
 
   @Autowired AlgorithmRunRepository runRepository;
-  @Autowired SimpleMovingAverageSettingsStore settingsStore;
+  @Autowired AlgorithmRepository algorithmRepository;
   @Autowired JdbcClient jdbcClient;
 
-  private long firstSettingsId;
-  private long secondSettingsId;
+  private long firstAlgorithmId;
+  private long secondAlgorithmId;
 
   @BeforeEach
   void emptyTablesAndStoreSettings() {
     jdbcClient.sql("DELETE FROM training_portfolio_point").update();
-    jdbcClient.sql("DELETE FROM algorithm_run_settings").update();
+    jdbcClient.sql("DELETE FROM active_algorithm").update();
     jdbcClient.sql("DELETE FROM algorithm_run").update();
-    firstSettingsId = settingsStore.findOrInsertSettings(settings(20));
-    secondSettingsId = settingsStore.findOrInsertSettings(settings(30));
+    firstAlgorithmId = algorithmRepository.findOrInsertAlgorithm(settings(20), STARTED_AT);
+    secondAlgorithmId = algorithmRepository.findOrInsertAlgorithm(settings(30), STARTED_AT);
   }
 
   @Test
-  void recordsTheStartTheChangesAndTheEndOfARun() {
-    long runId = runRepository.insertStartedRun(start("binance"));
-    runRepository.insertSettingsChange(
-        runId, new RunSettingsChange(RunEvent.CHANGED, CHANGED_AT, secondSettingsId));
+  void recordsTheStartAndTheEndOfARun() {
+    long runId =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
     PortfolioPointList points =
         new PortfolioPointList(
-            List.of(new PortfolioPoint(CHANGED_AT, new BigDecimal("500"), new BigDecimal("1010"))));
+            List.of(new PortfolioPoint(POINT_TIME, new BigDecimal("500"), new BigDecimal("1010"))));
 
     runRepository.finishRun(runId, end(points));
 
@@ -79,17 +76,15 @@ class AlgorithmRunRepositoryTest {
     assertThat(details.run().finishedAt()).contains(FINISHED_AT);
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isFinalValue);
     assertThat(details.run().counts()).isEqualTo(new RunCounts(3, 2, 1, 4));
-    assertThat(details.settingsChanges().changes())
-        .containsExactly(
-            new RunSettingsChange(RunEvent.STARTED, STARTED_AT, firstSettingsId),
-            new RunSettingsChange(RunEvent.CHANGED, CHANGED_AT, secondSettingsId),
-            new RunSettingsChange(RunEvent.COMPLETED, FINISHED_AT, secondSettingsId));
+    assertThat(details.run().algorithmId()).isEqualTo(firstAlgorithmId);
+    assertThat(activeAlgorithmCount()).isZero();
     assertThat(details.points().points()).hasSize(1);
   }
 
   @Test
   void endsARunOnlyOnce() {
-    long runId = runRepository.insertStartedRun(start("binance"));
+    long runId =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
     runRepository.finishRun(runId, end(PortfolioPointList.NONE));
 
     assertThatThrownBy(() -> runRepository.finishRun(runId, end(PortfolioPointList.NONE)))
@@ -97,11 +92,11 @@ class AlgorithmRunRepositoryTest {
   }
 
   @Test
-  void stopsRunsLeftUnfinishedWithTheirLastSettings() {
-    long unfinished = runRepository.insertStartedRun(start("binance"));
-    runRepository.insertSettingsChange(
-        unfinished, new RunSettingsChange(RunEvent.CHANGED, CHANGED_AT, secondSettingsId));
-    long finished = runRepository.insertStartedRun(start("binance"));
+  void stopsRunsLeftUnfinished() {
+    long unfinished =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
+    long finished =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
     runRepository.finishRun(finished, end(PortfolioPointList.NONE));
 
     int stopped = runRepository.stopUnfinishedRuns(FINISHED_AT, "Interrupted by a restart");
@@ -110,17 +105,17 @@ class AlgorithmRunRepositoryTest {
     StoredRunDetails details = runRepository.getRun(unfinished).orElseThrow();
     assertThat(details.run().status()).isEqualTo(RunStatus.STOPPED);
     assertThat(details.run().failureReason()).contains("Interrupted by a restart");
-    assertThat(details.settingsChanges().changes().getLast())
-        .isEqualTo(new RunSettingsChange(RunEvent.COMPLETED, FINISHED_AT, secondSettingsId));
     assertThat(runRepository.getRun(finished).orElseThrow().run().status())
         .isEqualTo(RunStatus.COMPLETED);
   }
 
   @Test
   void listsTheRunsOfOneBrokerNewestFirst() {
-    long older = runRepository.insertStartedRun(start("binance"));
-    long newer = runRepository.insertStartedRun(start("binance"));
-    runRepository.insertStartedRun(start("kraken"));
+    long older =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
+    long newer =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
+    runRepository.insertStartedRun(start(BotMode.TRAINING, "kraken", firstAlgorithmId));
 
     assertThat(runRepository.getRuns("binance").runs())
         .extracting(RecordedRun::id)
@@ -128,36 +123,85 @@ class AlgorithmRunRepositoryTest {
     assertThat(runRepository.getRun(Long.MAX_VALUE)).isEmpty();
   }
 
+  @Test
+  void replacesALiveRunAndKeepsTheActiveAlgorithmOfItsTicker() {
+    long firstRunId =
+        runRepository.insertStartedRun(start(BotMode.TRADING, "binance", firstAlgorithmId));
+    assertThat(activeAlgorithmId()).isEqualTo(firstAlgorithmId);
+
+    long nextRunId =
+        runRepository.replaceRun(
+            firstRunId,
+            end(PortfolioPointList.NONE),
+            start(BotMode.TRADING, "binance", secondAlgorithmId));
+
+    assertThat(runRepository.getRun(firstRunId).orElseThrow().run().status())
+        .isEqualTo(RunStatus.COMPLETED);
+    RecordedRun nextRun = runRepository.getRun(nextRunId).orElseThrow().run();
+    assertThat(nextRun.status()).isEqualTo(RunStatus.STARTED);
+    assertThat(nextRun.algorithmId()).isEqualTo(secondAlgorithmId);
+    assertThat(activeAlgorithmCount()).isEqualTo(1);
+    assertThat(activeAlgorithmId()).isEqualTo(secondAlgorithmId);
+  }
+
+  @Test
+  void replacesNothingWhenTheRunIsNotRunning() {
+    long runId =
+        runRepository.insertStartedRun(start(BotMode.TRADING, "binance", firstAlgorithmId));
+    runRepository.finishRun(runId, end(PortfolioPointList.NONE));
+
+    assertThatThrownBy(() ->
+            runRepository.replaceRun(
+                runId,
+                end(PortfolioPointList.NONE),
+                start(BotMode.TRADING, "binance", secondAlgorithmId)))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(runRepository.getRuns("binance").runs()).hasSize(1);
+    assertThat(activeAlgorithmId()).isEqualTo(firstAlgorithmId);
+  }
+
+  private long activeAlgorithmCount() {
+    return jdbcClient.sql("SELECT count(*) FROM active_algorithm").query(Long.class).single();
+  }
+
+  private long activeAlgorithmId() {
+    return jdbcClient
+        .sql("SELECT algorithm_id FROM active_algorithm WHERE broker = ? AND ticker = ?")
+        .param("binance")
+        .param("BTCUSDT")
+        .query(Long.class)
+        .single();
+  }
+
   private void isFinalValue(BigDecimal finalValue) {
     assertThat(finalValue).isEqualByComparingTo("1010");
   }
 
-  private RunStart start(String broker) {
+  private static RunStart start(BotMode mode, String broker, long algorithmId) {
     return new RunStart(
-        BotMode.TRAINING,
+        mode,
         broker,
         "BTCUSDT",
         STARTED_AT,
         Optional.of(Instant.parse("2020-01-01T00:00:00Z")),
         Optional.of(Instant.parse("2020-02-01T00:00:00Z")),
         new BigDecimal("1000"),
-        firstSettingsId);
+        algorithmId);
   }
 
-  private RunEnd end(PortfolioPointList points) {
+  private static RunEnd end(PortfolioPointList points) {
     return new RunEnd(
         RunStatus.COMPLETED,
         FINISHED_AT,
         Optional.of(new BigDecimal("1010")),
         new RunCounts(3, 2, 1, 4),
         Optional.empty(),
-        secondSettingsId,
         points);
   }
 
   private static AlgorithmSettings settings(int timePeriod) {
     return new AlgorithmSettings(
-        SimpleMovingAverageAlgorithm.ID,
+        AlgorithmType.SIMPLE_MOVING_AVERAGE,
         timePeriod,
         CandleInterval.FIVE_MINUTES,
         true,

@@ -7,6 +7,7 @@ import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.TickerTradingRules;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.Instant;
@@ -25,7 +26,10 @@ public final class OrderUtil {
   private static final String FULL_ORDER_RESPONSE = "FULL";
   private static final MathContext AVERAGE_PRICE_PRECISION = MathContext.DECIMAL64;
   private static final String LOT_SIZE_FILTER = "LOT_SIZE";
+  private static final String NOTIONAL_FILTER = "NOTIONAL";
+  private static final String MIN_NOTIONAL_FILTER = "MIN_NOTIONAL";
   private static final String STEP_SIZE_FIELD = "stepSize";
+  private static final String MIN_NOTIONAL_FIELD = "minNotional";
   private static final int FIRST_SYMBOL = 0;
 
   private OrderUtil() {}
@@ -83,12 +87,12 @@ public final class OrderUtil {
   }
 
   /**
-   * The symbol's lot step, from its LOT_SIZE filter: the smallest amount a coin quantity can change
-   * by. For BTCUSDT it is 0.00001 BTC, so 0.123456 BTC is sent as 0.12345 BTC.
+   * The symbol's lot step from its LOT_SIZE filter and its minimum order value from its NOTIONAL
+   * (or older MIN_NOTIONAL) filter. Without either notional filter there is no minimum.
    *
    * @throws IllegalArgumentException if the answer has no usable LOT_SIZE filter
    */
-  public static BigDecimal lotStepSize(JsonNode exchangeInfo) {
+  public static TickerTradingRules tradingRules(JsonNode exchangeInfo) {
     JsonNode symbols = required(exchangeInfo, "symbols");
     if (symbols.isEmpty()) {
       throw new IllegalArgumentException("Binance listed no symbol");
@@ -99,15 +103,10 @@ public final class OrderUtil {
     BigDecimal lotStepSize =
         filterValue(filters, Set.of(LOT_SIZE_FILTER), STEP_SIZE_FIELD)
             .orElseThrow(() -> new IllegalArgumentException("Missing LOT_SIZE filter"));
-    if (lotStepSize.signum() <= 0) {
-      throw new IllegalArgumentException("LOT_SIZE step must be greater than zero");
-    }
-    return lotStepSize;
-  }
-
-  /** The quantity rounded down to a whole number of lot steps; zero when it is less than one. */
-  public static BigDecimal roundDownToLotStep(BigDecimal quantity, BigDecimal lotStepSize) {
-    return quantity.divideToIntegralValue(lotStepSize).multiply(lotStepSize).stripTrailingZeros();
+    BigDecimal minOrderValue =
+        filterValue(filters, Set.of(NOTIONAL_FILTER, MIN_NOTIONAL_FILTER), MIN_NOTIONAL_FIELD)
+            .orElse(BigDecimal.ZERO);
+    return new TickerTradingRules(lotStepSize, minOrderValue);
   }
 
   /** A field of the first filter of one of these types; empty when the symbol has none of them. */

@@ -19,6 +19,7 @@ import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
+import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.FakeOrderStore;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
@@ -167,6 +168,18 @@ class TrainingServiceTest {
 
     assertThat(editableDuringRun).isFalse();
     assertThat(secondRunRefused).isTrue();
+    assertThat(service.areParametersEditable()).isTrue();
+  }
+
+  @Test
+  void recordsNothingWhenTheTradingRulesCannotBeRead() {
+    storeCandles(candle(0, 100, 100), candle(1, 100, 100));
+    liveGateway.failTradingRules(new ExchangeUnavailableException("Binance is down"));
+    TrainingService service = service(List.of(), () -> {});
+
+    assertThatThrownBy(() -> service.runTraining(request(2, Map.of())))
+        .isInstanceOf(ExchangeUnavailableException.class);
+    assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
     assertThat(service.areParametersEditable()).isTrue();
   }
 

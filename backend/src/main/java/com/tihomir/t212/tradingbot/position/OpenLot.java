@@ -5,8 +5,7 @@ import java.time.Instant;
 
 /**
  * A lot: one buy that still holds coins. A position is the sum of its lots, and a sell uses up the
- * oldest lot first (FIFO). Not the same as the exchange's lot step, the smallest amount a coin
- * quantity can change by.
+ * oldest lot first (FIFO). Not the same as the exchange's lot step in {@code TickerTradingRules}.
  *
  * @param runId the run the buy happened in
  * @param buyOrderId the exchange order id of the buy

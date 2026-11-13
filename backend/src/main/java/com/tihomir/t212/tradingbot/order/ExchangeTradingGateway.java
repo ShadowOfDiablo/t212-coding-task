@@ -17,4 +17,9 @@ public interface ExchangeTradingGateway {
    * @throws ExchangeUnavailableException the exchange could not be reached or failed
    */
   AccountBalanceSnapshot accountBalances();
+
+  /**
+   * @throws ExchangeUnavailableException the rules could not be read from the exchange
+   */
+  TickerTradingRules tradingRules(String ticker);
 }

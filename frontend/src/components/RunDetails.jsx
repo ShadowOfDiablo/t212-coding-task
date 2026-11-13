@@ -4,7 +4,7 @@ import { LineChart } from './LineChart.jsx'
 
 function SettingsSummary({ settings }) {
   const entries = [
-    settings.algorithmId,
+    settings.algorithmType,
     timeframeLabel(settings.timeframe),
     `period ${settings.timePeriod}`,
     settings.liveOnTick ? 'every price' : `every ${settings.updateTimeSeconds}s`,
@@ -23,9 +23,9 @@ function SettingsSummary({ settings }) {
   )
 }
 
-/** A recorded run: result, value chart and the settings it used over time. */
+/** A recorded run: result, value chart and the settings of its algorithm. */
 export function RunDetails({ details }) {
-  const { run, settingsHistory, points } = details
+  const { run, settings, points } = details
   const result =
     run.finalValue == null ? null : ((run.finalValue - run.startingValue) / run.startingValue) * 100
   return (
@@ -63,16 +63,8 @@ export function RunDetails({ details }) {
         baseline={run.startingValue}
         emptyText="This run has no chart points."
       />
-      <ul className="history-list">
-        {settingsHistory.map((record) => (
-          <li key={`${record.event}-${record.recordedAt}`}>
-            <p className="muted small">
-              {record.event} · {formatTime(record.recordedAt)} · settings {record.settingsId}
-            </p>
-            <SettingsSummary settings={record.settings} />
-          </li>
-        ))}
-      </ul>
+      <p className="muted small">Algorithm {run.algorithmId}</p>
+      <SettingsSummary settings={settings} />
     </div>
   )
 }

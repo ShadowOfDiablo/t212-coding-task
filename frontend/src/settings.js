@@ -1,10 +1,10 @@
 export const TIMEFRAMES = [
-  { id: 'ONE_MINUTE', label: '1 minute' },
-  { id: 'FIVE_MINUTES', label: '5 minutes' },
-  { id: 'FIFTEEN_MINUTES', label: '15 minutes' },
-  { id: 'ONE_HOUR', label: '1 hour' },
-  { id: 'FOUR_HOURS', label: '4 hours' },
-  { id: 'ONE_DAY', label: '1 day' },
+  { id: '1m', label: '1 minute' },
+  { id: '5m', label: '5 minutes' },
+  { id: '15m', label: '15 minutes' },
+  { id: '1h', label: '1 hour' },
+  { id: '4h', label: '4 hours' },
+  { id: '1d', label: '1 day' },
 ]
 
 export const UPDATE_TIME_SECONDS = 'updateTimeSeconds'
@@ -25,7 +25,7 @@ export function defaultSettings(algorithm) {
   for (const definition of algorithm.settings) {
     values[definition.name] = asText(definition.defaultValue)
   }
-  return { algorithmId: algorithm.id, timeframe: 'FIFTEEN_MINUTES', liveOnTick: true, values }
+  return { algorithmType: algorithm.type, timeframe: '15m', liveOnTick: true, values }
 }
 
 /** Form state of settings as the API returns them (`currentParameters`, a run's settings). */
@@ -38,7 +38,7 @@ export function settingsFromResponse(settings) {
     values[name] = asText(value)
   }
   return {
-    algorithmId: settings.algorithmId,
+    algorithmType: settings.algorithmType,
     timeframe: settings.timeframe,
     liveOnTick: settings.liveOnTick,
     values,
@@ -55,7 +55,7 @@ export function settingsToBody(form) {
     }
   }
   return {
-    algorithmId: form.algorithmId,
+    algorithmType: form.algorithmType,
     timeframe: form.timeframe,
     liveOnTick: form.liveOnTick,
     timePeriod: number('timePeriod'),

@@ -218,7 +218,7 @@ curl -X PUT localhost:8080/api/bot/mode -H "Content-Type: application/json" -d '
 curl localhost:8080/api/algorithms
 curl -X POST localhost:8080/api/brokers/binance/training/runs -H "Content-Type: application/json" -d '{
   "candles": {"ticker": "BTCUSDT", "from": "2021-01-01T00:00:00Z", "to": "2021-03-01T00:00:00Z"},
-  "settings": {"algorithmId": 1, "timeframe": "FIVE_MINUTES", "liveOnTick": true,
+  "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "5m", "liveOnTick": true,
                "timePeriod": 50, "orderSizePercent": 100, "riskPerTradePercent": 3, "stopLossPercent": 2},
   "startingBalance": 10000}'
 ```

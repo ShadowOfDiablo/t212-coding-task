@@ -24,6 +24,8 @@ class PositionTrackerTest {
   private static final Instant FIRST_BUY = Instant.parse("2026-01-01T10:00:00Z");
   private static final Instant SECOND_BUY = Instant.parse("2026-01-01T11:00:00Z");
   private static final Instant SELL = Instant.parse("2026-01-01T12:00:00Z");
+  private static final Instant SECOND_SELL = Instant.parse("2026-01-01T13:00:00Z");
+  private static final Instant LAST_SELL = Instant.parse("2026-01-01T14:00:00Z");
 
   private final PositionTracker tracker = new PositionTracker(BROKER, TICKER);
 
@@ -91,7 +93,7 @@ class PositionTrackerTest {
   }
 
   @Test
-  void splitsALotWhenASellUsesOnlyPartOfItAndClosesThePositionWithTheLotStepRest() {
+  void splitsALotWhenASellUsesOnlyPartOfItAndKeepsTheRestOpen() {
     tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "100", "100", FIRST_BUY));
     tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "100", "100", SECOND_BUY));
 
@@ -102,7 +104,61 @@ class PositionTrackerTest {
         .extracting(Trade::boughtAt, Trade::quantity)
         .containsExactly(
             tuple(FIRST_BUY, new BigDecimal("1")), tuple(SECOND_BUY, new BigDecimal("0.5")));
+    assertThat(write.position().status()).isEqualTo(PositionStatus.OPEN);
+    assertThat(write.openLots().lots())
+        .singleElement()
+        .satisfies(lot -> {
+          assertThat(lot.boughtAt()).isEqualTo(SECOND_BUY);
+          assertThat(lot.quantity()).isEqualByComparingTo("0.5");
+        });
+  }
+
+  @Test
+  void sharesOneLotBetweenSeveralSellsUntilItIsUsedUp() {
+    tracker.recordExecutedOrder(order(OrderSide.BUY, "10", "1000", "100", FIRST_BUY));
+
+    PositionWrite firstSell =
+        tracker.recordExecutedOrder(order(OrderSide.SELL, "3", "330", "110", SELL)).orElseThrow();
+    PositionWrite secondSell =
+        tracker
+            .recordExecutedOrder(order(OrderSide.SELL, "3", "360", "120", SECOND_SELL))
+            .orElseThrow();
+
+    assertThat(List.of(firstSell, secondSell))
+        .allSatisfy(write -> {
+          assertThat(write.position().status()).isEqualTo(PositionStatus.OPEN);
+          assertThat(write.newTrades().trades())
+              .singleElement()
+              .satisfies(trade -> assertThat(trade.buyOrderId()).isEqualTo(orderId(FIRST_BUY)));
+        });
+    assertThat(secondSell.newTrades().trades().getFirst().sellOrderId())
+        .isEqualTo(orderId(SECOND_SELL));
+    assertThat(secondSell.openLots().lots())
+        .singleElement()
+        .satisfies(lot -> assertThat(lot.quantity()).isEqualByComparingTo("4"));
+    assertThat(secondSell.position().realisedPnl()).isEqualByComparingTo("90");
+
+    PositionWrite lastSell =
+        tracker
+            .recordExecutedOrder(order(OrderSide.SELL, "4", "400", "100", LAST_SELL))
+            .orElseThrow();
+
+    assertThat(lastSell.position().status()).isEqualTo(PositionStatus.CLOSED);
+    assertThat(lastSell.position().realisedPnl()).isEqualByComparingTo("90");
+    assertThat(lastSell.openLots().lots()).isEmpty();
+  }
+
+  @Test
+  void closesThePositionWhenWhatIsLeftIsWorthLessThanTheMinimumOrderValue() {
+    tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "100", "100", FIRST_BUY));
+
+    PositionWrite write =
+        tracker
+            .recordExecutedOrder(order(OrderSide.SELL, "0.99999", "99.999", "100", SELL))
+            .orElseThrow();
+
     assertThat(write.position().status()).isEqualTo(PositionStatus.CLOSED);
+    assertThat(write.openLots().lots()).isEmpty();
     assertThat(tracker.quantity()).isZero();
   }
 

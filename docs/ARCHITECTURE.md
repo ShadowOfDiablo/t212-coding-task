@@ -624,7 +624,7 @@ stateDiagram-v2
 
 ## 8. Positions and trades (in progress)
 
-Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. Today a sell always sells the whole position, but the lots already allow partial sells later.
+Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. A sell uses only the quantity it sold, so one lot can be shared by several sells: buy 10, sell 3, sell 3, and a lot of 4 stays open. The position closes when nothing is left, or when what is left is worth less than the minimum order value at the sell price: that rest (what the lot step leaves after "sell everything") can never be sold, so it leaves the position and stays in the account.
 
 > **Two meanings of "lot":**
 > - **A lot** (`OpenLot`, `open_lot`) is one buy that still holds coins. Buy twice and the position has two lots.

@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.position;
 
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.OrderFill;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
 import java.math.BigDecimal;
@@ -18,8 +19,10 @@ import org.slf4j.LoggerFactory;
  * The bot's position on one ticker, as FIFO lots: a buy adds a lot, a sell uses up the oldest lots
  * first. Fees paid in the base or quote asset are counted; fees in any other asset are not.
  *
- * <p>Until partial sells exist, a sell closes the position. What the exchange's lot step leaves
- * behind stays in the account but is no longer part of the position.
+ * <p>A sell uses only the quantity it sold, so one lot can be shared by several sells and the rest
+ * stays open. When what is left is worth less than the minimum order value at the sell price, it
+ * can never be sold: it stays in the account but leaves the position, which closes. That is what
+ * the exchange's lot step leaves behind when the whole position is sold.
  */
 public final class PositionTracker {
 
@@ -121,12 +124,16 @@ public final class PositionTracker {
       return Optional.empty();
     }
     TradeList trades = matchOldestLots(order);
-    lots.clear();
     BigDecimal realisedPnl =
         trades.trades().stream().map(Trade::realisedPnl).reduce(BigDecimal.ZERO, BigDecimal::add);
-    Position closed = closed(openPosition.get(), order.transactTime(), realisedPnl);
+    Position afterSell = withRealisedPnl(openPosition.get(), realisedPnl);
+    if (isSellable(order.averagePrice())) {
+      openPosition = Optional.of(afterSell);
+      return Optional.of(write(afterSell, trades));
+    }
+    lots.clear();
     openPosition = Optional.empty();
-    return Optional.of(write(closed, trades));
+    return Optional.of(write(closed(afterSell, order.transactTime()), trades));
   }
 
   private TradeList matchOldestLots(ExecutedOrder order) {
@@ -239,7 +246,26 @@ public final class PositionTracker {
         position.mfe());
   }
 
-  private static Position closed(Position position, Instant closedAt, BigDecimal realisedPnl) {
+  /** True while what is left is worth at least the minimum order value at this price. */
+  private boolean isSellable(BigDecimal price) {
+    return quantity().multiply(price).compareTo(OrderCheckerService.MIN_ORDER_VALUE) >= 0;
+  }
+
+  private static Position withRealisedPnl(Position position, BigDecimal addedPnl) {
+    return new Position(
+        position.runId(),
+        position.broker(),
+        position.ticker(),
+        position.status(),
+        position.openedAt(),
+        position.closedAt(),
+        position.cost(),
+        position.realisedPnl().add(addedPnl),
+        position.mae(),
+        position.mfe());
+  }
+
+  private static Position closed(Position position, Instant closedAt) {
     return new Position(
         position.runId(),
         position.broker(),
@@ -248,7 +274,7 @@ public final class PositionTracker {
         position.openedAt(),
         Optional.of(closedAt),
         position.cost(),
-        position.realisedPnl().add(realisedPnl),
+        position.realisedPnl(),
         position.mae(),
         position.mfe());
   }

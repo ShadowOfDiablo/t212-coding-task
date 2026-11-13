@@ -24,7 +24,8 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
 | Positions (FIFO lots) and trades with P&L, MAE and MFE (§8) | In progress |
-| Database: restart reconciliation | Planned, next |
+| Background training: pause, resume, stop, live progress and chart over Server-Sent Events (§16.7) | Planned, next |
+| Database: restart reconciliation | Planned |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
 | Dashboard: live bot, training and runs tabs, settings forms, charts, following tickers (§15.1, §15.2) | In progress |
 | Rest of the REST API (bot controls, runs, charts) | Planned |
@@ -768,7 +769,7 @@ stateDiagram-v2
 
 Both options replay **as fast as possible**. A backtest over 1.5 years takes minutes, not 1.5 years.
 - **Archived (the default):** keeps everything in memory, and writes all trades and snapshots in one transaction when the run completes. The results are viewable afterwards.
-- **`live`:** the run is observable while it's in progress. Every trade is written immediately, and progress is pushed to the dashboard as it happens (see §12):
+- **`live`:** the run is observable while it's in progress. Every trade is written immediately, and progress is pushed to the dashboard as it happens (see §12). The first step is planned in §16.7: progress and the growing chart over Server-Sent Events, with pause, resume and stop.
   - progress: the simulated time reached and the % of the range done
   - the portfolio value chart, growing as the run advances
   - the trades appearing in the history table and on the price chart
@@ -795,6 +796,11 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
 - One dispatcher thread per feeder: delivers `CandleUpdate`s to listeners in arrival order.
 - One shared scheduler thread for reconnects.
 - The price map is lock-free (`AtomicReference` per ticker); readers on any thread see whole quotes.
+
+**Planned (training, §16.7):**
+- One training thread runs the single training replay; the request thread only checks, records the start and hands it over.
+- One events thread sends the training's progress to the dashboard every 250 ms. It only reads `RunningTraining`, so it never slows the replay down.
+- Pause, resume and stop come from request threads and only change `RunningTraining`, under its lock.
 
 **Planned (bot):**
 - **Events:** the `PriorityBlockingQueue` is ordered by **execution time**, the moment each event should be processed.
@@ -918,7 +924,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
 | GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration (§8) |
 | GET | `/runs/{id}/positions/{positionId}/chart` | The price path around one position, with the entry, exit, MAE and MFE marked |
-| GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading |
+| GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading. Training progress and its chart come first, as `/brokers/{broker}/training/events` (§16.7) |
 
 ## 13. Configuration
 
@@ -1031,7 +1037,7 @@ flowchart TB
     Tickers["Ticker cards + Follow a ticker"]
     subgraph Sections["Tabs: Live bot | Training | Runs"]
         Live["Live bot panel<br/>ticker, settings form, start/stop,<br/>Edit, Save, Confirm<br/>+ portfolio value chart and counts"]
-        Train["Training panel<br/>ticker, range, balance, settings form<br/>+ result chart and settings history"]
+        Train["Training panel<br/>ticker, range, balance, settings form<br/>pause/resume and stop while a run is going<br/>+ live chart, result and settings history"]
         Runs["Runs panel<br/>recorded runs, pick one for its chart"]
     end
     Account["Orders card + Holdings card"]
@@ -1044,7 +1050,7 @@ flowchart TB
 | Ticker cards | `GET /tickers` every 2 s; `POST /tickers` to follow one more |
 | Settings form | `GET /algorithms` once: every algorithm and its setting definitions |
 | Live bot panel | `GET /bot` every 2 s, `POST /bot/start`, `POST /bot/stop`, `PUT /bot/current-parameters` |
-| Training panel | `POST /training/runs` |
+| Training panel | `POST /training/runs`, then `pause`, `resume`, `stop`; `GET /training` when it opens; the `/training/events` stream (§16.7) |
 | Runs panel | `GET /runs` every 10 s, `GET /runs/{id}` |
 | Orders, Holdings | `GET /orders/history`, `/rejected`, `/open`, `/balance` every 5 s |
 
@@ -1331,10 +1337,10 @@ erDiagram
 | **Trading** | On every live price update, including the forming candle | Every `updateTimeSeconds`, on the latest price |
 | **Training** | Once per stored candle of the timeframe | Once per stored candle of the timeframe |
 
-- **Training:**
-  1. Record the start.
+- **Training** (in the background, §16.7):
+  1. Record the start; the request answers with the run id.
   2. Read the candles with `getCandles`.
-  3. Replay them in one thread with no waiting. For each candle: stop check, then signal, then order check, then fill at the **next** candle's open (no look-ahead). The portfolio value is thinned to at most 1,000 points.
+  3. Replay them on the training thread with no waiting. For each candle: stop and pause check, then stop-loss check, then signal, then order check, then fill at the **next** candle's open (no look-ahead). The portfolio value is thinned to at most 1,000 points.
   4. Record the end.
 
   Only one training run runs at a time.
@@ -1379,7 +1385,7 @@ stateDiagram-v2
 ```
 
 - **The status responses carry `areParametersEditable`:**
-  - Training: `false` while a run is executing, `true` otherwise.
+  - Training: `false` while a run is going (running or paused), `true` otherwise.
   - Live bot: `true` while it runs.
 - **A saved live change:**
   1. Checks the values (`@Valid`, then `resolveSettings`).
@@ -1397,10 +1403,65 @@ stateDiagram-v2
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/algorithms` | Algorithms and their setting definitions |
-| POST | `/brokers/{broker}/training/runs` | Run a training (409 outside `TRAINING` or while one runs) |
-| GET | `/brokers/{broker}/training` | `areParametersEditable`, and the running training run if there is one |
+| POST | `/brokers/{broker}/training/runs` | Start a training in the background: `202 {"runId"}` (409 outside `TRAINING` or while one is going) |
+| POST | `/brokers/{broker}/training/runs/{runId}/pause`, `/resume`, `/stop` | Control the training that is going: 202 (409 when that run isn't going) |
+| GET | `/brokers/{broker}/training` | `running`, `state` (`RUNNING` or `PAUSED`), `runId` and `areParametersEditable` |
+| GET | `/brokers/{broker}/training/events` | Server-Sent Events of the training that is going: `progress` and `finished` (§16.7) |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
 | GET | `/brokers/{broker}/bot` | Live bot status, `currentParameters`, `areParametersEditable`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
-| PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
+| PUT | `/bot/mode` | Switch the mode (409 while a live bot runs or a training is going) |
+
+### 16.7 Background training (planned)
+
+A training run is started by one request and then runs on its own thread. The dashboard follows it over Server-Sent Events and can pause, resume or stop it. Later the training thread can become a separate process; `TrainingService` stays the only way in, so only how it runs a replay changes.
+
+```mermaid
+flowchart LR
+    Ui["Dashboard<br/>training panel"] -- "POST /training/runs" --> Ctrl["RunController"]
+    Ctrl -- "startTraining" --> Service["TrainingService<br/>checks, records STARTED"]
+    Service -- "202 {runId}" --> Ui
+    Service -- "submit" --> Thread["training thread"]
+    Thread --> Replay["TrainingReplay<br/>per candle: stop? pause? replay"]
+    Replay -- "progress" --> Running["RunningTraining<br/>in memory"]
+    Publisher["TrainingEventPublisher<br/>events thread, every 250 ms"] -- "reads" --> Running
+    Publisher -- "SSE progress, finished" --> Ui
+    Ui -- "pause, resume, stop" --> Service
+    Service -. "flags" .-> Running
+    Replay --> RunDb[("algorithm_run<br/>COMPLETED, STOPPED, FAILED")]
+```
+
+**Starting** (on the request thread):
+1. Every check runs before anything is recorded: the mode is `TRAINING` (409), the settings resolve (400) and the ticker's trading rules can be read (503).
+2. The single training slot is taken (409 while another training is going).
+3. The variant is saved and the run is inserted as `STARTED`.
+4. The replay is handed to the training thread, and the request answers `202 {"runId"}`.
+
+If the training thread refuses the work (the application is shutting down), the run is recorded `FAILED`, the slot is freed and the request answers 503.
+
+**Running** (on the training thread):
+- Reads the candles (downloading missing pages), replays them and records the end:
+  - `COMPLETED` at the end of the range.
+  - `STOPPED` when a stop was asked. It keeps everything up to the stop: final value, counts, chart points and positions. A position still open is stored as `OPEN`.
+  - `FAILED` on any error, with its reason. No closed candles in the range is such an error, since the request has already answered.
+- The slot is freed and a `finished` event is sent whatever happens.
+
+**Pause, resume and stop:**
+- `RunningTraining` holds the run id, its state (`RUNNING` or `PAUSED`), the stop flag and the latest progress. One lock guards them, so a paused replay wakes on resume or on stop.
+- The replay checks them before each candle: on stop it ends with what it has; while paused it waits.
+- A pause lives in memory only: the run row stays `STARTED`. Pausing a paused run or resuming a running one changes nothing (202). A run id that isn't the training going is refused (409).
+- The mode can't be switched while a training is going, running or paused (409).
+- **Shutdown:** the run is stopped (a paused one wakes up), the training thread gets up to 10 seconds to record it, then it is interrupted. A run left `STARTED` is marked `STOPPED` at the next start (§16.4).
+
+**Live updates** (`GET /brokers/{broker}/training/events`):
+- **`progress`:** run id, state, simulated time, % of the candles done, cash, value, counts and the chart points added since the last event. A new connection first gets every point so far, so a reloaded page catches up.
+- **`finished`:** the recorded run, as `GET /runs/{id}` returns it, with its status.
+- `TrainingEventPublisher` sends from its own thread every 250 ms, and only when something changed. The training thread never writes to a browser, so a slow connection can't slow the replay down.
+- **Failures:** a connection that fails to receive is dropped and logged; the others go on. Connections are dropped when they complete, time out or fail. At most 10 are open at once (503 for more). A failed round of sending is logged and the next one runs.
+- The replay still runs as fast as it can; the chart grows at the rate of the events. A run over a week finishes almost at once; one over months shows the chart growing.
+
+**Dashboard:**
+- The training panel listens to the events and reads `GET /training` when it opens, so it shows a training already going.
+- While a training is going, the settings and the range are greyed out and only two buttons are shown: **Pause** (or **Resume**) and **Stop**. The progress and the chart grow with each event.
+- On `finished` it shows the run's details, the runs list refreshes and the settings can be edited again.

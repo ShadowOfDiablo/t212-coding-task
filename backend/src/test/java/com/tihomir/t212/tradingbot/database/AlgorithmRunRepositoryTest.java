@@ -190,7 +190,7 @@ class AlgorithmRunRepositoryTest {
         new PositionWrite(
             position,
             new OpenLotList(
-                List.of(new OpenLot(runId, STARTED_AT, BigDecimal.ONE, new BigDecimal("100")))),
+                List.of(new OpenLot(runId, 1, STARTED_AT, BigDecimal.ONE, new BigDecimal("100")))),
             TradeList.NONE);
 
     runRepository.finishRun(

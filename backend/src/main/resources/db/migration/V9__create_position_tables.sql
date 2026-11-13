@@ -16,28 +16,34 @@ CREATE TABLE IF NOT EXISTS position (
 );
 CREATE INDEX IF NOT EXISTS position_open_idx ON position (broker, ticker, status);
 
--- Buys that still hold coins. A lot that is sold completely is deleted.
+-- Buys that still hold coins, each with the exchange order id of its buy. A lot that is sold
+-- completely is deleted.
 CREATE TABLE IF NOT EXISTS open_lot (
-    id          BIGSERIAL   PRIMARY KEY,
-    position_id BIGINT      NOT NULL REFERENCES position (id),
-    run_id      BIGINT      NOT NULL REFERENCES algorithm_run (id),
-    bought_at   TIMESTAMPTZ NOT NULL,
-    quantity    NUMERIC     NOT NULL,
-    entry_price NUMERIC     NOT NULL
-);
-CREATE INDEX IF NOT EXISTS open_lot_position_idx ON open_lot (position_id);
-
--- One row per lot, or part of a lot, that a sell used. Rows are only ever added.
-CREATE TABLE IF NOT EXISTS trade (
     id           BIGSERIAL   PRIMARY KEY,
     position_id  BIGINT      NOT NULL REFERENCES position (id),
     run_id       BIGINT      NOT NULL REFERENCES algorithm_run (id),
+    buy_order_id BIGINT      NOT NULL,
     bought_at    TIMESTAMPTZ NOT NULL,
-    sold_at      TIMESTAMPTZ NOT NULL,
     quantity     NUMERIC     NOT NULL,
-    entry_price  NUMERIC     NOT NULL,
-    exit_price   NUMERIC     NOT NULL,
-    fee          NUMERIC     NOT NULL,
-    realised_pnl NUMERIC     NOT NULL
+    entry_price  NUMERIC     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS open_lot_position_idx ON open_lot (position_id);
+
+-- One row per lot, or part of a lot, that a sell used: the trades of one sell share its
+-- sell_order_id, and each points at the buy of its lot. Live order ids are Binance's orderId;
+-- training ones come from the virtual account. Rows are only ever added.
+CREATE TABLE IF NOT EXISTS trade (
+    id            BIGSERIAL   PRIMARY KEY,
+    position_id   BIGINT      NOT NULL REFERENCES position (id),
+    run_id        BIGINT      NOT NULL REFERENCES algorithm_run (id),
+    buy_order_id  BIGINT      NOT NULL,
+    sell_order_id BIGINT      NOT NULL,
+    bought_at     TIMESTAMPTZ NOT NULL,
+    sold_at       TIMESTAMPTZ NOT NULL,
+    quantity      NUMERIC     NOT NULL,
+    entry_price   NUMERIC     NOT NULL,
+    exit_price    NUMERIC     NOT NULL,
+    fee           NUMERIC     NOT NULL,
+    realised_pnl  NUMERIC     NOT NULL
 );
 CREATE INDEX IF NOT EXISTS trade_run_idx ON trade (run_id, sold_at);

@@ -655,6 +655,7 @@ erDiagram
         bigserial id PK
         bigint position_id "FK"
         bigint run_id "FK, the run of the buy"
+        bigint buy_order_id "exchange order id of the buy"
         timestamptz bought_at
         numeric quantity "still held"
         numeric entry_price "cost per coin, buy fee included"
@@ -663,6 +664,8 @@ erDiagram
         bigserial id PK
         bigint position_id "FK"
         bigint run_id "FK, the run of the sell"
+        bigint buy_order_id "the buy of its lot"
+        bigint sell_order_id "shared by the trades of one sell"
         timestamptz bought_at
         timestamptz sold_at
         numeric quantity
@@ -677,6 +680,7 @@ erDiagram
 
 - **`position`:** from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps it in memory; the table is its stored state.
 - **`open_lot` is a current table, `trade` a history table** (§11): a lot lives in `open_lot` while it holds coins. A sell matches the oldest lots and writes one `trade` row per lot (or part of a lot) it used. A lot used up completely is deleted.
+- **Order ids link everything:** a lot keeps the exchange order id of its buy. Each trade keeps the buy of its lot and the sell that used it, so the trades of one sell share its `sell_order_id`. Example: 3 buys make 3 lots; one sell of everything writes 3 trades with the same `sell_order_id` and 3 different `buy_order_id`s. Live ids are Binance's `orderId` and join to `order_history`; training ids come from the virtual account.
 - **Fees:**
   - A buy's fee is taken from the coins bought, on Binance and in the virtual gateway. A lot's quantity is what was received, and its entry price is the USDT spent divided by that quantity, so the fee is in the cost.
   - A sell's fee is in USDT. It is shared over the matched lots by quantity.

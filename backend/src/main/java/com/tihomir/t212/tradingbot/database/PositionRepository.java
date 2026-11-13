@@ -53,15 +53,15 @@ public class PositionRepository implements PositionStore {
     jdbcClient.sql("DELETE FROM open_lot WHERE position_id = ?").param(positionId).update();
     jdbcTemplate.batchUpdate(
         """
-        INSERT INTO open_lot (position_id, run_id, bought_at, quantity, entry_price)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO open_lot (position_id, run_id, buy_order_id, bought_at, quantity, entry_price)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         write.openLots().lots().stream().map(lot -> lotRow(positionId, lot)).toList());
     jdbcTemplate.batchUpdate(
         """
-        INSERT INTO trade (position_id, run_id, bought_at, sold_at, quantity, entry_price,
-                           exit_price, fee, realised_pnl)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO trade (position_id, run_id, buy_order_id, sell_order_id, bought_at, sold_at,
+                           quantity, entry_price, exit_price, fee, realised_pnl)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         write.newTrades().trades().stream().map(trade -> tradeRow(positionId, trade)).toList());
   }
@@ -185,6 +185,7 @@ public class PositionRepository implements PositionStore {
   private static OpenLot openLot(ResultSet row, int rowNumber) throws SQLException {
     return new OpenLot(
         row.getLong("run_id"),
+        row.getLong("buy_order_id"),
         instant(row, "bought_at"),
         row.getBigDecimal("quantity"),
         row.getBigDecimal("entry_price"));
@@ -193,6 +194,8 @@ public class PositionRepository implements PositionStore {
   private static Trade trade(ResultSet row, int rowNumber) throws SQLException {
     return new Trade(
         row.getLong("run_id"),
+        row.getLong("buy_order_id"),
+        row.getLong("sell_order_id"),
         instant(row, "bought_at"),
         instant(row, "sold_at"),
         row.getBigDecimal("quantity"),
@@ -204,7 +207,12 @@ public class PositionRepository implements PositionStore {
 
   private static Object[] lotRow(long positionId, OpenLot lot) {
     return new Object[] {
-      positionId, lot.runId(), timestamp(lot.boughtAt()), lot.quantity(), lot.entryPrice()
+      positionId,
+      lot.runId(),
+      lot.buyOrderId(),
+      timestamp(lot.boughtAt()),
+      lot.quantity(),
+      lot.entryPrice()
     };
   }
 
@@ -212,6 +220,8 @@ public class PositionRepository implements PositionStore {
     return new Object[] {
       positionId,
       trade.runId(),
+      trade.buyOrderId(),
+      trade.sellOrderId(),
       timestamp(trade.boughtAt()),
       timestamp(trade.soldAt()),
       trade.quantity(),

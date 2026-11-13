@@ -20,6 +20,7 @@ class PositionTrackerTest {
   private static final String TICKER = "BTCUSDT";
   private static final long RUN_ID = 3;
   private static final long NEXT_RUN_ID = 4;
+  private static final long RESTORED_BUY_ORDER_ID = 9;
   private static final Instant FIRST_BUY = Instant.parse("2026-01-01T10:00:00Z");
   private static final Instant SECOND_BUY = Instant.parse("2026-01-01T11:00:00Z");
   private static final Instant SELL = Instant.parse("2026-01-01T12:00:00Z");
@@ -63,6 +64,10 @@ class PositionTrackerTest {
                 order(OrderSide.SELL, "2", "240", "120", SELL, fill("0.24", "USDT")))
             .orElseThrow();
 
+    assertThat(write.newTrades().trades())
+        .extracting(Trade::buyOrderId, Trade::sellOrderId)
+        .containsExactly(
+            tuple(orderId(FIRST_BUY), orderId(SELL)), tuple(orderId(SECOND_BUY), orderId(SELL)));
     assertThat(write.newTrades().trades())
         .extracting(Trade::boughtAt, Trade::entryPrice, Trade::fee, Trade::realisedPnl)
         .containsExactly(
@@ -129,7 +134,9 @@ class PositionTrackerTest {
 
   @Test
   void goesOnWithARestoredPositionAndRecordsTheSellInTheNewRun() {
-    OpenLot lot = new OpenLot(RUN_ID, FIRST_BUY, BigDecimal.ONE, new BigDecimal("100"));
+    OpenLot lot =
+        new OpenLot(
+            RUN_ID, RESTORED_BUY_ORDER_ID, FIRST_BUY, BigDecimal.ONE, new BigDecimal("100"));
     Position stored =
         new Position(
             RUN_ID,
@@ -156,6 +163,7 @@ class PositionTrackerTest {
         .satisfies(trade -> {
           assertThat(trade.runId()).isEqualTo(NEXT_RUN_ID);
           assertThat(trade.realisedPnl()).isEqualByComparingTo("20");
+          assertThat(trade.buyOrderId()).isEqualTo(RESTORED_BUY_ORDER_ID);
         });
   }
 
@@ -174,6 +182,11 @@ class PositionTrackerTest {
         1, BigDecimal.ONE, BigDecimal.ONE, new BigDecimal(commission), commissionAsset);
   }
 
+  /** Each test order gets the second of its time as its exchange order id. */
+  private static long orderId(Instant time) {
+    return time.getEpochSecond();
+  }
+
   private static ExecutedOrder order(
       OrderSide side,
       String quantity,
@@ -182,7 +195,7 @@ class PositionTrackerTest {
       Instant time,
       OrderFill... fills) {
     return new ExecutedOrder(
-        1,
+        orderId(time),
         "tb-test",
         TICKER,
         side,

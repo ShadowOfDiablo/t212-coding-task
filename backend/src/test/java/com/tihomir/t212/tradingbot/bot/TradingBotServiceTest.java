@@ -59,6 +59,7 @@ class TradingBotServiceTest {
   private static final Instant START = Instant.parse("2026-01-01T00:00:00Z");
   private static final Instant NOW = Instant.parse("2026-01-01T00:02:30Z");
   private static final long EARLIER_RUN_ID = 99;
+  private static final long EARLIER_BUY_ORDER_ID = 12;
   private static final BigDecimal RESTORED_QUANTITY = new BigDecimal("50");
   private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
   private static final int TIME_PERIOD = 2;
@@ -314,7 +315,13 @@ class TradingBotServiceTest {
     return new PositionWrite(
         position,
         new OpenLotList(
-            List.of(new OpenLot(EARLIER_RUN_ID, Instant.EPOCH, RESTORED_QUANTITY, BigDecimal.ONE))),
+            List.of(
+                new OpenLot(
+                    EARLIER_RUN_ID,
+                    EARLIER_BUY_ORDER_ID,
+                    Instant.EPOCH,
+                    RESTORED_QUANTITY,
+                    BigDecimal.ONE))),
         TradeList.NONE);
   }
 

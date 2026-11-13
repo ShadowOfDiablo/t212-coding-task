@@ -107,6 +107,7 @@ public final class PositionTracker {
     lots.addLast(
         new OpenLot(
             currentRunId(),
+            order.exchangeOrderId(),
             boughtAt,
             received,
             spent.divide(received, AMOUNT_SCALE, RoundingMode.HALF_EVEN)));
@@ -142,13 +143,7 @@ public final class PositionTracker {
     while (unmatched.signum() > 0 && !lots.isEmpty()) {
       OpenLot oldest = lots.removeFirst();
       BigDecimal matched = oldest.quantity().min(unmatched);
-      trades.add(
-          trade(
-              oldest,
-              matched,
-              order.transactTime(),
-              exitPrice,
-              feeShare(fee, matched, soldQuantity)));
+      trades.add(trade(oldest, matched, order, feeShare(fee, matched, soldQuantity)));
       unmatched = unmatched.subtract(matched);
       if (matched.compareTo(oldest.quantity()) < 0) {
         lots.addFirst(withQuantity(oldest, oldest.quantity().subtract(matched)));
@@ -157,8 +152,8 @@ public final class PositionTracker {
     return new TradeList(trades);
   }
 
-  private Trade trade(
-      OpenLot lot, BigDecimal quantity, Instant soldAt, BigDecimal exitPrice, BigDecimal fee) {
+  private Trade trade(OpenLot lot, BigDecimal quantity, ExecutedOrder sell, BigDecimal fee) {
+    BigDecimal exitPrice = sell.averagePrice();
     BigDecimal realisedPnl =
         exitPrice
             .subtract(lot.entryPrice())
@@ -167,8 +162,10 @@ public final class PositionTracker {
             .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
     return new Trade(
         currentRunId(),
+        lot.buyOrderId(),
+        sell.exchangeOrderId(),
         lot.boughtAt(),
-        soldAt,
+        sell.transactTime(),
         quantity,
         lot.entryPrice(),
         exitPrice,
@@ -181,7 +178,7 @@ public final class PositionTracker {
   }
 
   private static OpenLot withQuantity(OpenLot lot, BigDecimal quantity) {
-    return new OpenLot(lot.runId(), lot.boughtAt(), quantity, lot.entryPrice());
+    return new OpenLot(lot.runId(), lot.buyOrderId(), lot.boughtAt(), quantity, lot.entryPrice());
   }
 
   private static BigDecimal fees(ExecutedOrder order, String asset) {

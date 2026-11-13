@@ -6,6 +6,8 @@ import java.time.Instant;
 
 public record TradeResponse(
     long runId,
+    long buyOrderId,
+    long sellOrderId,
     Instant boughtAt,
     Instant soldAt,
     BigDecimal quantity,
@@ -17,6 +19,8 @@ public record TradeResponse(
   static TradeResponse of(Trade trade) {
     return new TradeResponse(
         trade.runId(),
+        trade.buyOrderId(),
+        trade.sellOrderId(),
         trade.boughtAt(),
         trade.soldAt(),
         trade.quantity(),

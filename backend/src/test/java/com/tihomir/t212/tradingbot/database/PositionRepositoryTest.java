@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
@@ -47,6 +48,8 @@ class PositionRepositoryTest {
   private static final Instant SECOND_BUY = Instant.parse("2026-01-01T11:00:00Z");
   private static final Instant SELL = Instant.parse("2026-01-01T12:00:00Z");
   private static final long MISSING_RUN_ID = Long.MAX_VALUE;
+  private static final long BUY_ORDER_ID = 21;
+  private static final long SELL_ORDER_ID = 22;
 
   @MockitoBean BrokerStartupRunner brokerStartupRunner;
 
@@ -84,6 +87,9 @@ class PositionRepositoryTest {
           assertThat(open.openLots().lots())
               .extracting(OpenLot::boughtAt)
               .containsExactly(FIRST_BUY, SECOND_BUY);
+          assertThat(open.openLots().lots())
+              .extracting(OpenLot::buyOrderId)
+              .containsOnly(BUY_ORDER_ID);
         });
   }
 
@@ -98,6 +104,9 @@ class PositionRepositoryTest {
     assertThat(repository.getTrades(liveRunId).trades())
         .extracting(Trade::realisedPnl)
         .containsExactly(new BigDecimal("-5"), new BigDecimal("8"));
+    assertThat(repository.getTrades(liveRunId).trades())
+        .extracting(Trade::buyOrderId, Trade::sellOrderId)
+        .containsOnly(tuple(BUY_ORDER_ID, SELL_ORDER_ID));
     assertThat(repository.getWorstPositions(liveRunId, 1).positions())
         .singleElement()
         .satisfies(stored -> {
@@ -147,6 +156,8 @@ class PositionRepositoryTest {
     Trade trade =
         new Trade(
             runId,
+            BUY_ORDER_ID,
+            SELL_ORDER_ID,
             openedAt,
             SELL,
             BigDecimal.ONE,
@@ -180,7 +191,7 @@ class PositionRepositoryTest {
   }
 
   private static OpenLot lot(long runId, Instant boughtAt) {
-    return new OpenLot(runId, boughtAt, BigDecimal.ONE, new BigDecimal("100"));
+    return new OpenLot(runId, BUY_ORDER_ID, boughtAt, BigDecimal.ONE, new BigDecimal("100"));
   }
 
   private static RunStart start(BotMode mode, long algorithmId) {

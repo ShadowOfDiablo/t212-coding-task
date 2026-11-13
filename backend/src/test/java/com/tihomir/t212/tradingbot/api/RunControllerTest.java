@@ -139,6 +139,8 @@ class RunControllerTest {
         .perform(get(RUNS + "/7/trades"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trades[0].realisedPnl").value(-5))
+        .andExpect(jsonPath("$.trades[0].buyOrderId").value(31))
+        .andExpect(jsonPath("$.trades[0].sellOrderId").value(32))
         .andExpect(jsonPath("$.trades[0].soldAt").value("2020-01-01T01:00:00Z"));
     mockMvc
         .perform(get(RUNS + "/7/positions/worst").param("limit", "3"))
@@ -165,6 +167,8 @@ class RunControllerTest {
   private static Trade trade() {
     return new Trade(
         7,
+        31,
+        32,
         FROM,
         FROM.plusSeconds(3600),
         BigDecimal.ONE,

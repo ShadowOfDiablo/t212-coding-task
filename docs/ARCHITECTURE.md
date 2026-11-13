@@ -1300,7 +1300,7 @@ flowchart LR
     Timer["timer<br/>every updateTimeSeconds"] -- "latest price" --> Queue
     Queue --> Worker["LiveTradingBot<br/>worker thread"]
     Worker --> Stop{"stop loss<br/>reached?"}
-    Stop -- yes --> Placer["LiveOrderPlacer<br/>order checks"]
+    Stop -- yes --> Placer["OrderCheckerService<br/>checks, then places"]
     Stop -- no --> Source["LiveSignalSource<br/>closed candles from the store<br/>+ forming candle"]
     Source -- "BUY / SELL" --> Placer
     Placer --> Orders["OrderService<br/>demo account"]

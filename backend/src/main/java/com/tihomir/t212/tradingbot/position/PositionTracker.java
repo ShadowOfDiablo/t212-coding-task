@@ -62,7 +62,6 @@ public final class PositionTracker {
     return lots.stream().map(OpenLot::quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 
-  /** The average entry price of the coins held; empty while nothing is held. */
   public synchronized Optional<BigDecimal> entryPrice() {
     BigDecimal quantity = quantity();
     if (quantity.signum() <= 0) {
@@ -71,7 +70,6 @@ public final class PositionTracker {
     return Optional.of(lotsCost().divide(quantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN));
   }
 
-  /** Moves MAE and MFE with the unrealised P&L at this price. */
   public synchronized void updateExcursions(BigDecimal price) {
     if (openPosition.isPresent()) {
       openPosition = Optional.of(withExcursions(openPosition.get(), price));

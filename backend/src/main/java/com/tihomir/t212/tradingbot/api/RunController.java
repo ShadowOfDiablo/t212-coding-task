@@ -60,7 +60,6 @@ public class RunController {
     return TradeListResponse.of(runService.getTrades(broker, runId));
   }
 
-  /** The run's closed positions with the lowest realised P&L, worst first. */
   @GetMapping("/runs/{runId}/positions/worst")
   public PositionListResponse getWorstPositions(
       @PathVariable String broker,

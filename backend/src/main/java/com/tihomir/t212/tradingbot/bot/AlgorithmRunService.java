@@ -6,7 +6,6 @@ import com.tihomir.t212.tradingbot.position.StoredPositionList;
 import com.tihomir.t212.tradingbot.position.TradeList;
 import org.springframework.stereotype.Service;
 
-/** Reads recorded runs, live and training, with their trades and positions. */
 @Service
 public class AlgorithmRunService {
 

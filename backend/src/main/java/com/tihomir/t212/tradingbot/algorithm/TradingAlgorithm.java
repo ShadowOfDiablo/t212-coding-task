@@ -50,7 +50,6 @@ public abstract class TradingAlgorithm {
   private final AlgorithmSettingDefinitionList optionDefinitions;
 
   /**
-   * @param type identifies the algorithm in the API and the database
    * @param name the algorithm's text name, e.g. {@code example-strategy-SMA}
    */
   protected TradingAlgorithm(

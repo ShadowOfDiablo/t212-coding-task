@@ -10,8 +10,6 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * A position as the API shows it.
- *
  * @param realisedPnlPercent the realised P&L as a share of what its buys cost
  * @param durationSeconds from the first buy to the close; empty while open
  */

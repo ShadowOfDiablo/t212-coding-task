@@ -166,7 +166,6 @@ public final class CandleFeeder implements AutoCloseable {
     return protocol.parseCandles(body, ticker, historyInterval);
   }
 
-  /** The interval of the live candle streams. */
   public CandleInterval interval() {
     return interval;
   }

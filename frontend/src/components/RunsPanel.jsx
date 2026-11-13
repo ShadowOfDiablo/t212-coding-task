@@ -4,7 +4,6 @@ import { api } from '../api.js'
 import { formatPrice, formatTime } from '../format.js'
 import { RunDetails } from './RunDetails.jsx'
 
-/** Every recorded run, live and training; pick one to see its chart and settings history. */
 export function RunsPanel({ runs }) {
   const [selectedId, setSelectedId] = useState(null)
   const [details, setDetails] = useState(null)

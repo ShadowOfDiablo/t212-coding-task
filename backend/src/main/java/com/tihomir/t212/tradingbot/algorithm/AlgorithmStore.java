@@ -9,6 +9,5 @@ public interface AlgorithmStore {
   /** The id of the stored variant with exactly these settings, inserting it if there is none. */
   long findOrInsertAlgorithm(AlgorithmSettings settings, Instant createdAt);
 
-  /** Empty if no variant has this id. */
   Optional<AlgorithmSettings> getAlgorithm(long algorithmId);
 }

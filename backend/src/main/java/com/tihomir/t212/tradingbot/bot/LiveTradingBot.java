@@ -114,7 +114,6 @@ final class LiveTradingBot implements CandleUpdateListener {
     }
   }
 
-  /** The new settings apply from the next evaluation. */
   synchronized void replaceSignalSource(LiveSignalSource newSignalSource, long newSettingsId) {
     signalSource = newSignalSource;
     settingsId = newSettingsId;
@@ -165,7 +164,6 @@ final class LiveTradingBot implements CandleUpdateListener {
     stopLossCount++;
   }
 
-  /** True when the checks approved the order and the exchange executed it. */
   private boolean placeCheckedOrder(
       TradingSignal signal, BigDecimal price, AlgorithmSettings settings) {
     Optional<ExecutedOrder> order =

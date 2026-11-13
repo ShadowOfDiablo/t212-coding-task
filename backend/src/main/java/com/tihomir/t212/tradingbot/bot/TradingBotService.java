@@ -139,7 +139,6 @@ public class TradingBotService {
     return bot.status();
   }
 
-  /** Empty while the broker's bot doesn't run. */
   public Optional<LiveBotStatus> getBotStatus(String broker) {
     return findRunningBot(broker).map(LiveTradingBot::status);
   }

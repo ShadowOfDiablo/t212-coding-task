@@ -40,6 +40,7 @@ public class TradingBotService {
   private final OrderCheckerService orderChecker;
   private final AlgorithmRunStore runStore;
   private final PositionStore positionStore;
+  private final TrainingActivity trainingActivity;
   private final Clock clock;
   private final Map<String, LiveTradingBot> runningBots = new ConcurrentHashMap<>();
 
@@ -51,6 +52,7 @@ public class TradingBotService {
       OrderCheckerService orderChecker,
       AlgorithmRunStore runStore,
       PositionStore positionStore,
+      TrainingActivity trainingActivity,
       Clock clock) {
     this.botModeService = botModeService;
     this.algorithms = algorithms;
@@ -59,6 +61,7 @@ public class TradingBotService {
     this.orderChecker = orderChecker;
     this.runStore = runStore;
     this.positionStore = positionStore;
+    this.trainingActivity = trainingActivity;
     this.clock = clock;
   }
 
@@ -163,11 +166,15 @@ public class TradingBotService {
 
   /**
    * @throws LiveBotRunningException while any live bot runs
+   * @throws TrainingAlreadyRunningException while a training is going
    */
   public synchronized void switchBotMode(BotMode botMode) {
     Optional<String> brokerWithBot = runningBots.keySet().stream().findFirst();
     if (brokerWithBot.isPresent()) {
       throw new LiveBotRunningException(brokerWithBot.get());
+    }
+    if (trainingActivity.isTrainingGoing()) {
+      throw new TrainingAlreadyRunningException();
     }
     botModeService.setBotMode(botMode);
   }

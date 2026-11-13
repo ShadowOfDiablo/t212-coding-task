@@ -23,6 +23,7 @@ import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunDetails;
 import com.tihomir.t212.tradingbot.bot.RunNotFoundException;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
+import com.tihomir.t212.tradingbot.bot.RunningTraining;
 import com.tihomir.t212.tradingbot.bot.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.TrainingRunRequest;
 import com.tihomir.t212.tradingbot.bot.TrainingService;
@@ -38,6 +39,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,13 +70,29 @@ class RunControllerTest {
   @MockitoBean AlgorithmRunService runService;
 
   @Test
-  void runsATrainingAndAnswersWithTheRecordedRun() throws Exception {
-    when(trainingService.runTraining(any(TrainingRunRequest.class))).thenReturn(7L);
-    when(runService.getRun("binance", 7)).thenReturn(details());
+  void startsATrainingAndAnswersWithItsRunId() throws Exception {
+    when(trainingService.startTraining(any(TrainingRunRequest.class))).thenReturn(7L);
 
     mockMvc
         .perform(post(TRAINING_RUNS).contentType(MediaType.APPLICATION_JSON).content(RUN_BODY))
-        .andExpect(status().isCreated())
+        .andExpect(status().isAccepted())
+        .andExpect(jsonPath("$.runId").value(7));
+
+    ArgumentCaptor<TrainingRunRequest> request = ArgumentCaptor.forClass(TrainingRunRequest.class);
+    verify(trainingService).startTraining(request.capture());
+    assertThat(request.getValue().settings().values())
+        .containsEntry(TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(20))
+        .containsEntry(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.valueOf(2))
+        .doesNotContainKey(TradingAlgorithm.ORDER_SIZE_PERCENT);
+  }
+
+  @Test
+  void answersWithTheRecordedRun() throws Exception {
+    when(runService.getRun("binance", 7)).thenReturn(details());
+
+    mockMvc
+        .perform(get(RUNS + "/7"))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.run.id").value(7))
         .andExpect(jsonPath("$.run.status").value("COMPLETED"))
         .andExpect(jsonPath("$.run.finishedAt").isEmpty())
@@ -83,13 +101,6 @@ class RunControllerTest {
         .andExpect(jsonPath("$.settings.timePeriod").value(20))
         .andExpect(jsonPath("$.settings.riskPerTradePercent").isEmpty())
         .andExpect(jsonPath("$.points[0].value").value(1000));
-
-    ArgumentCaptor<TrainingRunRequest> request = ArgumentCaptor.forClass(TrainingRunRequest.class);
-    verify(trainingService).runTraining(request.capture());
-    assertThat(request.getValue().settings().values())
-        .containsEntry(TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(20))
-        .containsEntry(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.valueOf(2))
-        .doesNotContainKey(TradingAlgorithm.ORDER_SIZE_PERCENT);
   }
 
   @Test
@@ -108,7 +119,7 @@ class RunControllerTest {
 
   @Test
   void answersConflictOutsideTrainingModeAndNotFoundForAnUnknownRun() throws Exception {
-    when(trainingService.runTraining(any(TrainingRunRequest.class)))
+    when(trainingService.startTraining(any(TrainingRunRequest.class)))
         .thenThrow(new TrainingModeRequiredException());
     when(runService.getRun("binance", 99)).thenThrow(new RunNotFoundException(99));
 
@@ -121,12 +132,25 @@ class RunControllerTest {
   @Test
   void tellsWhetherTheSettingsCanBeEdited() throws Exception {
     when(trainingService.areParametersEditable()).thenReturn(false);
+    when(trainingService.latestTraining())
+        .thenReturn(Optional.of(new RunningTraining("binance", 7, BigDecimal.ONE)));
 
     mockMvc
         .perform(get("/api/brokers/binance/training"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.running").value(true))
-        .andExpect(jsonPath("$.areParametersEditable").value(false));
+        .andExpect(jsonPath("$.areParametersEditable").value(false))
+        .andExpect(jsonPath("$.runId").value(7));
+  }
+
+  @Test
+  void answersUnavailableWhenTheTrainingThreadIsShutDown() throws Exception {
+    when(trainingService.startTraining(any(TrainingRunRequest.class)))
+        .thenThrow(new RejectedExecutionException("shut down"));
+
+    mockMvc
+        .perform(post(TRAINING_RUNS).contentType(MediaType.APPLICATION_JSON).content(RUN_BODY))
+        .andExpect(status().isServiceUnavailable());
   }
 
   @Test

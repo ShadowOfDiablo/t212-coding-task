@@ -1413,7 +1413,7 @@ stateDiagram-v2
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs or a training is going) |
 
-### 16.7 Background training (planned)
+### 16.7 Background training (in progress)
 
 A training run is started by one request and then runs on its own thread. The dashboard follows it over Server-Sent Events and can pause, resume or stop it. Later the training thread can become a separate process; `TrainingService` stays the only way in, so only how it runs a replay changes.
 

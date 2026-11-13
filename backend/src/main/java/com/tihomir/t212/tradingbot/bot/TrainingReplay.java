@@ -59,12 +59,12 @@ final class TrainingReplay {
     this.positionTracker = positionTracker;
   }
 
-  PortfolioPointList replay(List<CandleUpdate> candles) {
+  /** Publishes the progress and the kept chart points to the training after every candle. */
+  PortfolioPointList replay(List<CandleUpdate> candles, RunningTraining training) {
     int candleCount = candles.size();
     int lastIndex = candleCount - 1;
     int pointStep =
         Math.max(MIN_POINT_STEP, Math.ceilDiv(candleCount, MAX_PORTFOLIO_POINTS_PER_RUN));
-    List<PortfolioPoint> points = new ArrayList<>();
     for (int index = 0; index < candleCount; index++) {
       CandleUpdate candle = candles.get(index);
       positionTracker.updateExcursions(candle.low());
@@ -73,13 +73,21 @@ final class TrainingReplay {
       TradingSignal signal = signalGenerator.onPrice(candle);
       PortfolioPoint point = portfolioPointAt(candle);
       if (index % pointStep == 0 || index == lastIndex) {
-        points.add(point);
+        training.addPoint(point);
       }
       if (signal != TradingSignal.HOLD) {
         nextCandle(candles, index).ifPresent(next -> actOnSignal(signal, next));
       }
+      training.recordProgress(
+          new TrainingProgress(
+              Optional.of(candle.closeTime()),
+              index + 1,
+              candleCount,
+              point.cash(),
+              point.value(),
+              counts()));
     }
-    return new PortfolioPointList(points);
+    return training.pointsFrom(0);
   }
 
   BigDecimal finalValue() {

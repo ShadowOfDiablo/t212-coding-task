@@ -47,6 +47,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -81,6 +82,7 @@ class TradingBotServiceTest {
   private final FakePositionStore positionStore = new FakePositionStore();
   private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
   private final AtomicInteger evaluatedPrices = new AtomicInteger();
+  private final AtomicBoolean trainingGoing = new AtomicBoolean();
   private final AlgorithmSettingsService settingsService =
       new AlgorithmSettingsService(new FakeAlgorithmStore(1), Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -186,6 +188,20 @@ class TradingBotServiceTest {
     assertThat(botModeService.botMode()).isEqualTo(BotMode.TRADING);
 
     service.stopBot(BROKER);
+    service.switchBotMode(BotMode.TRAINING);
+    assertThat(botModeService.botMode()).isEqualTo(BotMode.TRAINING);
+  }
+
+  @Test
+  void refusesAModeSwitchWhileATrainingIsGoing() {
+    TradingBotService service = service();
+    trainingGoing.set(true);
+
+    assertThatThrownBy(() -> service.switchBotMode(BotMode.TRAINING))
+        .isInstanceOf(TrainingAlreadyRunningException.class);
+    assertThat(botModeService.botMode()).isEqualTo(BotMode.TRADING);
+
+    trainingGoing.set(false);
     service.switchBotMode(BotMode.TRAINING);
     assertThat(botModeService.botMode()).isEqualTo(BotMode.TRAINING);
   }
@@ -356,6 +372,7 @@ class TradingBotServiceTest {
         new OrderCheckerService(new OrderService(brokers, new FakeOrderStore(), CLOCK)),
         runStore,
         positionStore,
+        trainingGoing::get,
         CLOCK);
   }
 

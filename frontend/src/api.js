@@ -38,7 +38,7 @@ export const api = {
   stopBot: () => request(`${BROKER_PATH}/bot/stop`, { method: 'POST' }),
   updateBotParameters: (settings) => send('PUT', `${BROKER_PATH}/bot/current-parameters`, settings),
   getTraining: () => request(`${BROKER_PATH}/training`),
-  runTraining: (body) => send('POST', `${BROKER_PATH}/training/runs`, body),
+  startTraining: (body) => send('POST', `${BROKER_PATH}/training/runs`, body),
   getRuns: () => request(`${BROKER_PATH}/runs`),
   getRun: (id) => request(`${BROKER_PATH}/runs/${id}`),
 }

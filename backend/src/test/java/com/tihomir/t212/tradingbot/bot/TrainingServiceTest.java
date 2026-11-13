@@ -35,6 +35,11 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -49,6 +54,7 @@ class TrainingServiceTest {
       Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
   private static final BigDecimal STARTING_BALANCE = new BigDecimal("1000");
   private static final long TICKER_ID = 1;
+  private static final long TEST_TIMEOUT_SECONDS = 5;
 
   private final FakeExchangeTradingGateway liveGateway = new FakeExchangeTradingGateway();
   private final FakeCandleStore candleStore = new FakeCandleStore();
@@ -62,7 +68,7 @@ class TrainingServiceTest {
     TrainingService service =
         service(List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL), () -> {});
 
-    RunDetails details = runDetails(service.runTraining(request(4, Map.of())));
+    RunDetails details = runDetails(service.startTraining(request(4, Map.of())));
 
     assertThat(details.points().points())
         .extracting(PortfolioPoint::value)
@@ -91,7 +97,7 @@ class TrainingServiceTest {
             List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL, TradingSignal.BUY),
             () -> {});
 
-    long runId = service.runTraining(request(5, Map.of()));
+    long runId = service.startTraining(request(5, Map.of()));
 
     assertThat(runStore.positionWrites(runId).writes())
         .extracting(write -> write.position().status())
@@ -109,7 +115,8 @@ class TrainingServiceTest {
   void recordsTheRunWithTheSettingsOfItsAlgorithmVariant() {
     storeCandles(candle(0, 100, 100), candle(1, 100, 100));
 
-    RunDetails details = runDetails(service(List.of(), () -> {}).runTraining(request(2, Map.of())));
+    RunDetails details =
+        runDetails(service(List.of(), () -> {}).startTraining(request(2, Map.of())));
 
     assertThat(details.settings().timeframe()).isEqualTo(TIMEFRAME);
     assertThat(runStore.activeAlgorithmId(TICKER)).isEmpty();
@@ -129,7 +136,7 @@ class TrainingServiceTest {
 
     RunDetails details =
         runDetails(
-            service(List.of(TradingSignal.BUY), () -> {}).runTraining(request(4, riskLimits)));
+            service(List.of(TradingSignal.BUY), () -> {}).startTraining(request(4, riskLimits)));
 
     assertThat(details.points().points().get(1).cash()).isEqualByComparingTo("500");
     assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0));
@@ -144,7 +151,7 @@ class TrainingServiceTest {
             List.of(TradingSignal.SELL, TradingSignal.BUY, TradingSignal.BUY, TradingSignal.BUY),
             () -> {});
 
-    RunDetails details = runDetails(service.runTraining(request(4, Map.of())));
+    RunDetails details = runDetails(service.startTraining(request(4, Map.of())));
 
     assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 0, 0, 2));
   }
@@ -164,7 +171,7 @@ class TrainingServiceTest {
             });
     serviceHolder.set(service);
 
-    service.runTraining(request(2, Map.of()));
+    service.startTraining(request(2, Map.of()));
 
     assertThat(editableDuringRun).isFalse();
     assertThat(secondRunRefused).isTrue();
@@ -177,7 +184,7 @@ class TrainingServiceTest {
     liveGateway.failTradingRules(new ExchangeUnavailableException("Binance is down"));
     TrainingService service = service(List.of(), () -> {});
 
-    assertThatThrownBy(() -> service.runTraining(request(2, Map.of())))
+    assertThatThrownBy(() -> service.startTraining(request(2, Map.of())))
         .isInstanceOf(ExchangeUnavailableException.class);
     assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
     assertThat(service.areParametersEditable()).isTrue();
@@ -189,10 +196,10 @@ class TrainingServiceTest {
     Map<String, BigDecimal> riskWithoutStop =
         Map.of(TradingAlgorithm.RISK_PER_TRADE_PERCENT, BigDecimal.ONE);
 
-    assertThatThrownBy(() -> service.runTraining(request(2, riskWithoutStop)))
+    assertThatThrownBy(() -> service.startTraining(request(2, riskWithoutStop)))
         .isInstanceOf(InvalidAlgorithmSettingsException.class);
     assertThatThrownBy(() ->
-            service.runTraining(
+            service.startTraining(
                 new TrainingRunRequest(
                     BROKER,
                     "DOGEUSDT",
@@ -202,7 +209,7 @@ class TrainingServiceTest {
                     STARTING_BALANCE)))
         .isInstanceOf(TickerNotTradedException.class);
     botModeService.setBotMode(BotMode.TRADING);
-    assertThatThrownBy(() -> service.runTraining(request(2, Map.of())))
+    assertThatThrownBy(() -> service.startTraining(request(2, Map.of())))
         .isInstanceOf(TrainingModeRequiredException.class);
     assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
   }
@@ -215,13 +222,80 @@ class TrainingServiceTest {
         new TrainingRunRequest(
             BROKER, TICKER, openTime(2), openTime(4), settings(Map.of()), STARTING_BALANCE);
 
-    assertThatThrownBy(() -> service.runTraining(gapInTheStoredCandles))
-        .isInstanceOf(IllegalArgumentException.class);
+    service.startTraining(gapInTheStoredCandles);
 
     RecordedRun run = runStore.getRuns(BROKER).runs().getFirst();
     assertThat(run.status()).isEqualTo(RunStatus.FAILED);
     assertThat(run.failureReason()).contains("There are no closed candles in this range");
     assertThat(service.areParametersEditable()).isTrue();
+    assertThat(service.latestTraining()).hasValueSatisfying(this::isFinished);
+  }
+
+  @Test
+  void answersWithTheRunIdBeforeTheReplayEndsOnTheTrainingThread() throws InterruptedException {
+    storeCandles(candle(0, 100, 100), candle(1, 100, 100));
+    CountDownLatch replayMayGoOn = new CountDownLatch(1);
+    ExecutorService trainingThread = Executors.newSingleThreadExecutor();
+    TrainingService service = service(List.of(), () -> awaitQuietly(replayMayGoOn), trainingThread);
+
+    long runId = service.startTraining(request(2, Map.of()));
+
+    assertThat(runDetails(runId).run().status()).isEqualTo(RunStatus.STARTED);
+    assertThat(service.isTrainingGoing()).isTrue();
+    assertThat(service.latestTraining())
+        .hasValueSatisfying(training -> assertThat(training.isFinished()).isFalse());
+    replayMayGoOn.countDown();
+    trainingThread.shutdown();
+    assertThat(trainingThread.awaitTermination(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+    assertThat(runDetails(runId).run().status()).isEqualTo(RunStatus.COMPLETED);
+    assertThat(service.isTrainingGoing()).isFalse();
+  }
+
+  @Test
+  void publishesTheProgressAndTheChartPointsOfEveryCandle() {
+    storeCandles(
+        candle(0, 100, 100), candle(1, 200, 200), candle(2, 300, 300), candle(3, 400, 400));
+    TrainingService service =
+        service(List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL), () -> {});
+
+    long runId = service.startTraining(request(4, Map.of()));
+
+    RunningTraining training = service.latestTraining().orElseThrow();
+    assertThat(training.runId()).isEqualTo(runId);
+    assertThat(training.progress().replayedCandleCount()).isEqualTo(4);
+    assertThat(training.progress().candleCount()).isEqualTo(4);
+    assertThat(training.progress().simulatedTime()).contains(openTime(4).minusMillis(1));
+    assertThat(training.progress().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
+    assertThat(training.progress().value()).satisfies(this::isFinalValueOfTheTrade);
+    assertThat(training.pointsFrom(2).points()).hasSize(2);
+    assertThat(training.pointsFrom(4).points()).isEmpty();
+  }
+
+  @Test
+  void recordsTheRunAsFailedWhenTheTrainingThreadRefusesIt() {
+    storeCandles(candle(0, 100, 100), candle(1, 100, 100));
+    FakeExecutorService trainingThread = new FakeExecutorService();
+    trainingThread.shutdown();
+    TrainingService service = service(List.of(), () -> {}, trainingThread);
+
+    assertThatThrownBy(() -> service.startTraining(request(2, Map.of())))
+        .isInstanceOf(RejectedExecutionException.class);
+
+    assertThat(runStore.getRuns(BROKER).runs().getFirst().status()).isEqualTo(RunStatus.FAILED);
+    assertThat(service.isTrainingGoing()).isFalse();
+    assertThat(service.latestTraining()).hasValueSatisfying(this::isFinished);
+  }
+
+  private void isFinished(RunningTraining training) {
+    assertThat(training.isFinished()).isTrue();
+  }
+
+  private static void awaitQuietly(CountDownLatch latch) {
+    try {
+      latch.await(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void isFinalValueOfTheTrade(BigDecimal finalValue) {
@@ -230,7 +304,7 @@ class TrainingServiceTest {
 
   private boolean isRefused(TrainingService service) {
     try {
-      service.runTraining(request(2, Map.of()));
+      service.startTraining(request(2, Map.of()));
       return false;
     } catch (TrainingAlreadyRunningException e) {
       return true;
@@ -244,6 +318,11 @@ class TrainingServiceTest {
   }
 
   private TrainingService service(List<TradingSignal> signals, Runnable onEveryPrice) {
+    return service(signals, onEveryPrice, new FakeExecutorService());
+  }
+
+  private TrainingService service(
+      List<TradingSignal> signals, Runnable onEveryPrice, ExecutorService trainingThread) {
     CandleHistoryService candleHistory =
         new CandleHistoryService(
             new BrokerRegistryService(List.of(new FakeBroker(BROKER, liveGateway))),
@@ -260,7 +339,8 @@ class TrainingServiceTest {
                 new FakeOrderStore(),
                 CLOCK)),
         runStore,
-        CLOCK);
+        CLOCK,
+        trainingThread);
   }
 
   private final AlgorithmSettingsService sharedSettingsService =

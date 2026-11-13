@@ -16,17 +16,23 @@ import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Runs an algorithm over stored candles on a fresh virtual account and records the run: its start,
- * then its end (completed or failed). One training run at a time.
+ * Runs an algorithm over stored candles on a fresh virtual account, in the background on the
+ * training thread, and records the run: its start, then its end (completed or failed). One training
+ * run at a time.
  */
 @Service
-public class TrainingService {
+public class TrainingService implements TrainingActivity {
 
   private static final Logger log = LoggerFactory.getLogger(TrainingService.class);
 
@@ -37,8 +43,12 @@ public class TrainingService {
   private final OrderCheckerService orderChecker;
   private final AlgorithmRunStore runStore;
   private final Clock clock;
+  private final ExecutorService trainingThread;
   private final AtomicBoolean trainingRunning = new AtomicBoolean();
+  private final AtomicReference<Optional<RunningTraining>> latestTraining =
+      new AtomicReference<>(Optional.empty());
 
+  @Autowired
   public TrainingService(
       BotModeService botModeService,
       AlgorithmRegistryService algorithms,
@@ -47,6 +57,26 @@ public class TrainingService {
       OrderCheckerService orderChecker,
       AlgorithmRunStore runStore,
       Clock clock) {
+    this(
+        botModeService,
+        algorithms,
+        settingsService,
+        candleHistory,
+        orderChecker,
+        runStore,
+        clock,
+        Executors.newSingleThreadExecutor(TrainingService::newDaemonThread));
+  }
+
+  TrainingService(
+      BotModeService botModeService,
+      AlgorithmRegistryService algorithms,
+      AlgorithmSettingsService settingsService,
+      CandleHistoryService candleHistory,
+      OrderCheckerService orderChecker,
+      AlgorithmRunStore runStore,
+      Clock clock,
+      ExecutorService trainingThread) {
     this.botModeService = botModeService;
     this.algorithms = algorithms;
     this.settingsService = settingsService;
@@ -54,17 +84,20 @@ public class TrainingService {
     this.orderChecker = orderChecker;
     this.runStore = runStore;
     this.clock = clock;
+    this.trainingThread = trainingThread;
   }
 
   /**
-   * Checks everything that can be checked, then records the start, replays the candles and records
-   * the end.
+   * Checks everything that can be checked, records the start and hands the replay to the training
+   * thread. Nothing is recorded when a check fails.
    *
-   * @return the id of the recorded run
+   * @return the id of the recorded run, before the replay has ended
    * @throws TrainingModeRequiredException unless the bot is in training mode
    * @throws TrainingAlreadyRunningException while another training run goes on
+   * @throws RejectedExecutionException when the training thread is shut down; the run is then
+   *     recorded as failed
    */
-  public long runTraining(TrainingRunRequest request) {
+  public long startTraining(TrainingRunRequest request) {
     if (botModeService.botMode() != BotMode.TRAINING) {
       throw new TrainingModeRequiredException();
     }
@@ -81,11 +114,22 @@ public class TrainingService {
     if (!trainingRunning.compareAndSet(false, true)) {
       throw new TrainingAlreadyRunningException();
     }
+    RunningTraining training;
     try {
-      return recordedTraining(setup);
-    } finally {
+      training = recordStart(request, setup);
+    } catch (RuntimeException e) {
       trainingRunning.set(false);
+      throw e;
     }
+    latestTraining.set(Optional.of(training));
+    try {
+      trainingThread.execute(() -> replayAndRecordEnd(setup, training));
+    } catch (RejectedExecutionException e) {
+      recordFailure(training.runId(), e);
+      endTraining(training);
+      throw e;
+    }
+    return training.runId();
   }
 
   /** False while a training run goes on: its settings can't change until it ends. */
@@ -93,8 +137,17 @@ public class TrainingService {
     return !trainingRunning.get();
   }
 
-  private long recordedTraining(TrainingSetup setup) {
-    TrainingRunRequest request = setup.request();
+  @Override
+  public boolean isTrainingGoing() {
+    return trainingRunning.get();
+  }
+
+  /** The training going on, or the last one; empty before the first. */
+  public Optional<RunningTraining> latestTraining() {
+    return latestTraining.get();
+  }
+
+  private RunningTraining recordStart(TrainingRunRequest request, TrainingSetup setup) {
     long algorithmId = settingsService.saveSettings(setup.settings());
     long runId =
         runStore.insertStartedRun(
@@ -107,24 +160,35 @@ public class TrainingService {
                 Optional.of(request.to()),
                 request.startingBalance(),
                 algorithmId));
+    return new RunningTraining(request.broker(), runId, request.startingBalance());
+  }
+
+  /** Runs on the training thread; every failure is recorded with the run, never thrown. */
+  private void replayAndRecordEnd(TrainingSetup setup, RunningTraining training) {
+    long runId = training.runId();
     try {
-      RunEnd end = replay(setup, runId);
+      RunEnd end = replay(setup, training);
       runStore.finishRun(runId, end);
       log.info(
           "Training run {}: {} {} with {}, final value {}",
           runId,
-          request.ticker(),
+          setup.request().ticker(),
           setup.settings().timeframe(),
           setup.algorithm().type(),
           end.finalValue().orElseThrow());
-      return runId;
     } catch (RuntimeException e) {
       recordFailure(runId, e);
-      throw e;
+    } finally {
+      endTraining(training);
     }
   }
 
-  private RunEnd replay(TrainingSetup setup, long runId) {
+  private void endTraining(RunningTraining training) {
+    training.markFinished();
+    trainingRunning.set(false);
+  }
+
+  private RunEnd replay(TrainingSetup setup, RunningTraining training) {
     TrainingRunRequest request = setup.request();
     AlgorithmSettings settings = setup.settings();
     List<CandleUpdate> candles =
@@ -149,8 +213,8 @@ public class TrainingService {
             account,
             orderChecker,
             settings,
-            positionTracker(request, runId));
-    PortfolioPointList points = replay.replay(candles);
+            positionTracker(request, training.runId()));
+    PortfolioPointList points = replay.replay(candles, training);
     return new RunEnd(
         RunStatus.COMPLETED,
         clock.instant(),
@@ -182,7 +246,12 @@ public class TrainingService {
               PositionWriteList.NONE));
     } catch (RuntimeException recordingFailure) {
       log.error("Recording the failure of training run {} failed", runId, recordingFailure);
-      failure.addSuppressed(recordingFailure);
     }
+  }
+
+  private static Thread newDaemonThread(Runnable runnable) {
+    Thread thread = new Thread(runnable, "training");
+    thread.setDaemon(true);
+    return thread;
   }
 }

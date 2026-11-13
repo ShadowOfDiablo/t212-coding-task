@@ -1,10 +1,12 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
+import com.tihomir.t212.tradingbot.bot.RunningTraining;
 import com.tihomir.t212.tradingbot.bot.TrainingService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,19 +32,24 @@ public class RunController {
     this.runService = runService;
   }
 
-  /** Runs a training to the end and answers with the recorded run. */
+  /** Starts a training in the background and answers with its run id at once. */
   @PostMapping("/training/runs")
-  @ResponseStatus(HttpStatus.CREATED)
-  public RunDetailsResponse runTraining(
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public TrainingRunStartedResponse startTraining(
       @PathVariable String broker, @Valid @RequestBody TrainingRunRequestBody body) {
-    long runId = trainingService.runTraining(body.toTrainingRunRequest(broker));
-    return RunDetailsResponse.of(runService.getRun(broker, runId));
+    return new TrainingRunStartedResponse(
+        trainingService.startTraining(body.toTrainingRunRequest(broker)));
   }
 
   @GetMapping("/training")
   public TrainingStatusResponse getTrainingStatus() {
     boolean editable = trainingService.areParametersEditable();
-    return new TrainingStatusResponse(!editable, editable);
+    Optional<Long> runningRunId =
+        trainingService
+            .latestTraining()
+            .filter(training -> !training.isFinished())
+            .map(RunningTraining::runId);
+    return new TrainingStatusResponse(!editable, editable, runningRunId);
   }
 
   @GetMapping("/runs")

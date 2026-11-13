@@ -1,5 +1,5 @@
 import './Panels.css'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { defaultSettings, settingsToBody } from '../settings.js'
 import { RunDetails } from './RunDetails.jsx'
@@ -8,6 +8,7 @@ import { SettingsForm } from './SettingsForm.jsx'
 const DEFAULT_FROM = '2021-01-01T00:00'
 const DEFAULT_TO = '2021-02-01T00:00'
 const DEFAULT_BALANCE = '10000'
+const RUN_CHECK_INTERVAL_MS = 2000
 
 const toInstant = (localDateTime) => `${localDateTime}:00Z`
 
@@ -17,28 +18,57 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
   const [to, setTo] = useState(DEFAULT_TO)
   const [balance, setBalance] = useState(DEFAULT_BALANCE)
   const [draft, setDraft] = useState(null)
-  const [running, setRunning] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const [runningRunId, setRunningRunId] = useState(null)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
+  const running = starting || runningRunId != null
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const form = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
 
-  const runTraining = async () => {
-    setRunning(true)
+  useEffect(() => {
+    api
+      .getTraining()
+      .then((status) => status.runId != null && setRunningRunId(status.runId))
+      .catch(setError)
+  }, [])
+
+  useEffect(() => {
+    if (runningRunId == null) {
+      return undefined
+    }
+    const checkRun = async () => {
+      try {
+        const details = await api.getRun(runningRunId)
+        if (details.run.status !== 'STARTED') {
+          setResult(details)
+          setRunningRunId(null)
+          onRunRecorded()
+        }
+      } catch (failure) {
+        setError(failure)
+      }
+    }
+    const timer = setInterval(checkRun, RUN_CHECK_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [runningRunId, onRunRecorded])
+
+  const startTraining = async () => {
+    setStarting(true)
     setError(null)
+    setResult(null)
     try {
-      const details = await api.runTraining({
+      const { runId } = await api.startTraining({
         candles: { ticker: chosenTicker, from: toInstant(from), to: toInstant(to) },
         settings: settingsToBody(form),
         startingBalance: Number(balance),
       })
-      setResult(details)
-      onRunRecorded()
+      setRunningRunId(runId)
     } catch (failure) {
       setError(failure)
     } finally {
-      setRunning(false)
+      setStarting(false)
     }
   }
 
@@ -94,7 +124,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
             type="button"
             className="button button-primary"
             disabled={running || mode !== 'TRAINING' || !form || !chosenTicker}
-            onClick={runTraining}
+            onClick={startTraining}
           >
             {running ? 'Running…' : 'Run training'}
           </button>

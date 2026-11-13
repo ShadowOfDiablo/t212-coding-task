@@ -17,6 +17,7 @@ import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
 import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -108,6 +109,13 @@ public class ApiExceptionHandler {
   ProblemDetail candleDownloadFailed(CandleDownloadFailedException e) {
     log.error("Candle download failed: {}", e.getMessage(), e);
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, e.getMessage());
+  }
+
+  @ExceptionHandler(RejectedExecutionException.class)
+  ProblemDetail threadUnavailable(RejectedExecutionException e) {
+    log.error("Work refused by a shut down thread: {}", e.getMessage(), e);
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.SERVICE_UNAVAILABLE, "The application is shutting down");
   }
 
   @ExceptionHandler(DataAccessException.class)

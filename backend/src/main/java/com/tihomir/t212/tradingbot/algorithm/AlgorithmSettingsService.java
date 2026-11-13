@@ -3,7 +3,6 @@ package com.tihomir.t212.tradingbot.algorithm;
 import java.time.Clock;
 import org.springframework.stereotype.Service;
 
-/** Saves and reads algorithm variants. */
 @Service
 public final class AlgorithmSettingsService {
 

@@ -38,7 +38,6 @@ public class BotController {
     return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker));
   }
 
-  /** Stops the bot and answers with the recorded run. */
   @PostMapping("/stop")
   public RunDetailsResponse stopBot(@PathVariable String broker) {
     long runId = tradingBotService.stopBot(broker);

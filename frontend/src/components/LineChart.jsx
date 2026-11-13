@@ -31,7 +31,6 @@ function scaleFor(points, baseline) {
   }
 }
 
-/** Portfolio value over time, with the starting value as a dashed line. */
 export function LineChart({ points, baseline = null, emptyText = 'No data yet.' }) {
   const [hoverIndex, setHoverIndex] = useState(null)
 

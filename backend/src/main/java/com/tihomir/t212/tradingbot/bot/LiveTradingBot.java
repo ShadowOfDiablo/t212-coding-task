@@ -193,7 +193,6 @@ final class LiveTradingBot implements CandleUpdateListener {
     stopLossCount++;
   }
 
-  /** True when the checks approved the order and the exchange executed it. */
   private boolean placeCheckedOrder(
       TradingSignal signal, BigDecimal price, AlgorithmSettings settings) {
     Optional<ExecutedOrder> order =

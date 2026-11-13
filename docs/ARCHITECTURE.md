@@ -626,6 +626,10 @@ stateDiagram-v2
 
 Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. Today a sell always sells the whole position, but the lots already allow partial sells later.
 
+> **Two meanings of "lot":**
+> - **A lot** (`OpenLot`, `open_lot`) is one buy that still holds coins. Buy twice and the position has two lots.
+> - **The lot step** is Binance's `LOT_SIZE` rule: the smallest amount a coin quantity can change by. For BTCUSDT it is 0.00001 BTC, so an order for 0.123456 BTC is sent as 0.12345 BTC.
+
 ```mermaid
 flowchart LR
     Signal["signal"] --> Checker["OrderCheckerService"]

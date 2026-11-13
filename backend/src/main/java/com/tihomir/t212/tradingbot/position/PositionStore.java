@@ -13,9 +13,7 @@ public interface PositionStore {
   /** The open position the live bot left on this ticker, if any. Training positions don't count. */
   Optional<OpenPosition> findOpenLivePosition(String broker, String ticker);
 
-  /** The trades sold in the run, oldest first. */
   TradeList getTrades(long runId);
 
-  /** The closed positions opened in the run, lowest realised P&L first. */
   StoredPositionList getWorstPositions(long runId, int maxPositions);
 }

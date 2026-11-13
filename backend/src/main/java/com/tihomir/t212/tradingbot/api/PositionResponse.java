@@ -12,6 +12,8 @@ import java.util.Optional;
 /**
  * @param realisedPnlPercent the realised P&L as a share of what its buys cost
  * @param durationSeconds from the first buy to the close; empty while open
+ * @param mae maximum adverse excursion: the worst unrealised P&L while it was open, zero or below
+ * @param mfe maximum favourable excursion: the best unrealised P&L while it was open, zero or above
  */
 public record PositionResponse(
     long id,

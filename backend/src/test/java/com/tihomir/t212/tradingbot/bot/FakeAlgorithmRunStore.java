@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.bot;
 
 import com.tihomir.t212.tradingbot.mode.BotMode;
+import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -12,6 +13,7 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
 
   private final Map<Long, RecordedRun> runs = new HashMap<>();
   private final Map<Long, PortfolioPointList> points = new HashMap<>();
+  private final Map<Long, PositionWriteList> positionWrites = new HashMap<>();
   private final Map<String, Long> activeAlgorithmIds = new HashMap<>();
 
   @Override
@@ -49,6 +51,7 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
     }
     runs.put(runId, finished(run, end));
     points.put(runId, end.points());
+    positionWrites.put(runId, end.positionWrites());
   }
 
   @Override
@@ -79,6 +82,11 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
         runs.values().stream().filter(run -> run.broker().equals(broker)).toList());
   }
 
+  /** The position writes a run ended with; none while it runs. */
+  public synchronized PositionWriteList positionWrites(long runId) {
+    return positionWrites.getOrDefault(runId, PositionWriteList.NONE);
+  }
+
   /** The variant the last live run of the ticker started with. */
   public synchronized Optional<Long> activeAlgorithmId(String ticker) {
     return Optional.ofNullable(activeAlgorithmIds.get(ticker));
@@ -97,7 +105,8 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
             Optional.empty(),
             RunCounts.NONE,
             Optional.of(reason),
-            PortfolioPointList.NONE));
+            PortfolioPointList.NONE,
+            PositionWriteList.NONE));
   }
 
   private static RecordedRun finished(RecordedRun run, RunEnd end) {

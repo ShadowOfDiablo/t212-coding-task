@@ -6,6 +6,7 @@ import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleUpdateListener;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -132,6 +133,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   synchronized void startNextRun(
       long nextRunId, LiveSignalSource newSignalSource, long newAlgorithmId) {
     runId = nextRunId;
+    orderPlacer.account().startRun(nextRunId);
     signalSource = newSignalSource;
     algorithmId = newAlgorithmId;
     buyCount = 0;
@@ -159,6 +161,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   private void evaluatePrice(BigDecimal price, Instant time) {
+    orderPlacer.account().updateExcursions(price);
     AlgorithmSettings settings = signalSource.settings();
     if (orderPlacer.isStopLossReached(price, settings)) {
       sellAtStopLoss(price, settings);
@@ -254,7 +257,13 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   synchronized RunEnd runEnd(RunStatus status) {
     return new RunEnd(
-        status, clock.instant(), finalValue(), counts(), Optional.empty(), portfolioPoints());
+        status,
+        clock.instant(),
+        finalValue(),
+        counts(),
+        Optional.empty(),
+        portfolioPoints(),
+        PositionWriteList.NONE);
   }
 
   /** Empty when there is no live price or the balances can't be read. */

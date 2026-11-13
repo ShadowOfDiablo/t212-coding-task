@@ -7,6 +7,8 @@ import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.OrderCheck;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.OrderService;
+import com.tihomir.t212.tradingbot.position.PositionStore;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,16 +22,19 @@ final class LiveOrderPlacer {
   private final LiveTradingAccount account;
   private final OrderCheckerService orderChecker;
   private final OrderService orderService;
+  private final PositionStore positionStore;
 
   LiveOrderPlacer(
       String brokerName,
       LiveTradingAccount account,
       OrderCheckerService orderChecker,
-      OrderService orderService) {
+      OrderService orderService,
+      PositionStore positionStore) {
     this.brokerName = brokerName;
     this.account = account;
     this.orderChecker = orderChecker;
     this.orderService = orderService;
+    this.positionStore = positionStore;
   }
 
   LiveTradingAccount account() {
@@ -57,7 +62,7 @@ final class LiveOrderPlacer {
     }
     try {
       ExecutedOrder order = orderService.placeMarketOrder(brokerName, check.order().orElseThrow());
-      account.recordExecutedOrder(order);
+      account.recordExecutedOrder(order).ifPresent(write -> savePosition(order, write));
       return true;
     } catch (ExchangeRejectedRequestException e) {
       log.warn(
@@ -67,6 +72,20 @@ final class LiveOrderPlacer {
           signal,
           e.getMessage());
       return false;
+    }
+  }
+
+  /** The order did happen: a failed write is logged and the position stays in memory. */
+  private void savePosition(ExecutedOrder order, PositionWrite write) {
+    try {
+      positionStore.savePosition(write);
+    } catch (RuntimeException e) {
+      log.error(
+          "{} {}: the position change of order {} could not be stored",
+          brokerName,
+          account.ticker(),
+          order.exchangeOrderId(),
+          e);
     }
   }
 }

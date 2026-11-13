@@ -32,6 +32,13 @@ import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
+import com.tihomir.t212.tradingbot.position.FakePositionStore;
+import com.tihomir.t212.tradingbot.position.OpenLot;
+import com.tihomir.t212.tradingbot.position.OpenLotList;
+import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionStatus;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
+import com.tihomir.t212.tradingbot.position.TradeList;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -39,6 +46,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -50,6 +58,8 @@ class TradingBotServiceTest {
   private static final CandleInterval TIMEFRAME = CandleInterval.ONE_MINUTE;
   private static final Instant START = Instant.parse("2026-01-01T00:00:00Z");
   private static final Instant NOW = Instant.parse("2026-01-01T00:02:30Z");
+  private static final long EARLIER_RUN_ID = 99;
+  private static final BigDecimal RESTORED_QUANTITY = new BigDecimal("50");
   private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
   private static final int TIME_PERIOD = 2;
   private static final long TICKER_ID = 1;
@@ -67,6 +77,7 @@ class TradingBotServiceTest {
   private final FakeBroker broker = new FakeBroker(BROKER, gateway);
   private final FakeCandleStore candleStore = new FakeCandleStore();
   private final FakeAlgorithmRunStore runStore = new FakeAlgorithmRunStore();
+  private final FakePositionStore positionStore = new FakePositionStore();
   private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
   private final AtomicInteger evaluatedPrices = new AtomicInteger();
   private final AlgorithmSettingsService settingsService =
@@ -231,12 +242,92 @@ class TradingBotServiceTest {
     assertThat(evaluatedPrices).hasValue(WARM_UP.size() * 2);
   }
 
+  @Test
+  void storesTheLivePositionAfterEachOrderAndItsTradeInTheRun() {
+    TradingBotService service = service(TradingSignal.BUY, TradingSignal.SELL);
+    long runId = service.startBot(request(true, Map.of()));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+    bot.evaluate(BigDecimal.ONE, NOW);
+    service.stopBot(BROKER);
+
+    assertThat(positionStore.writes().writes())
+        .extracting(write -> write.position().status())
+        .containsExactly(PositionStatus.OPEN, PositionStatus.CLOSED);
+    assertThat(positionStore.writes().writes().getFirst().openLots().lots())
+        .singleElement()
+        .satisfies(lot -> assertThat(lot.quantity()).isEqualByComparingTo("100"));
+    assertThat(runService().getTrades(BROKER, runId).trades())
+        .singleElement()
+        .satisfies(trade -> assertThat(trade.runId()).isEqualTo(runId));
+  }
+
+  @Test
+  void sellsAPositionLeftOpenByAnEarlierLiveRun() {
+    positionStore.savePosition(openPositionOfAnEarlierRun());
+    updateLastPrice(BigDecimal.ONE);
+    TradingBotService service = service(TradingSignal.SELL);
+    long runId = service.startBot(request(true, Map.of()));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+    service.stopBot(BROKER);
+
+    assertThat(gateway.placedOrders())
+        .singleElement()
+        .satisfies(order -> {
+          assertThat(order.side()).isEqualTo(OrderSide.SELL);
+          assertThat(order.amount()).isEqualByComparingTo(RESTORED_QUANTITY);
+        });
+    assertThat(runDetails(runId).run().startingValue()).isEqualByComparingTo("150");
+    assertThat(positionStore.findOpenLivePosition(BROKER, TICKER)).isEmpty();
+  }
+
+  @Test
+  void keepsTradingWhenThePositionCannotBeStored() {
+    positionStore.failWrites();
+    TradingBotService service = service(TradingSignal.BUY);
+    service.startBot(request(true, Map.of()));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+
+    LiveBotStatus status = service.getBotStatus(BROKER).orElseThrow();
+    assertThat(status.counts().buyCount()).isEqualTo(1);
+    service.stopBot(BROKER);
+  }
+
+  private static PositionWrite openPositionOfAnEarlierRun() {
+    Position position =
+        new Position(
+            EARLIER_RUN_ID,
+            BROKER,
+            TICKER,
+            PositionStatus.OPEN,
+            Instant.EPOCH,
+            Optional.empty(),
+            RESTORED_QUANTITY,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO);
+    return new PositionWrite(
+        position,
+        new OpenLotList(
+            List.of(new OpenLot(EARLIER_RUN_ID, Instant.EPOCH, RESTORED_QUANTITY, BigDecimal.ONE))),
+        TradeList.NONE);
+  }
+
+  private AlgorithmRunService runService() {
+    return new AlgorithmRunService(runStore, settingsService, positionStore);
+  }
+
   private void isTheStartingCash(BigDecimal finalValue) {
     assertThat(finalValue).isEqualByComparingTo("100");
   }
 
   private RunDetails runDetails(long runId) {
-    return new AlgorithmRunService(runStore, settingsService).getRun(BROKER, runId);
+    return new AlgorithmRunService(runStore, settingsService, positionStore).getRun(BROKER, runId);
   }
 
   private void updateLastPrice(BigDecimal price) {
@@ -258,6 +349,7 @@ class TradingBotServiceTest {
         new OrderCheckerService(),
         new OrderService(brokers, new FakeOrderStore(), CLOCK),
         runStore,
+        positionStore,
         CLOCK);
   }
 

@@ -11,7 +11,10 @@ public interface AlgorithmRunStore {
    */
   long insertStartedRun(RunStart start);
 
-  /** Stores how the run ended: status, counts, final value and points, in one transaction. */
+  /**
+   * Stores how the run ended: status, counts, final value, points and position writes, in one
+   * transaction.
+   */
   void finishRun(long runId, RunEnd end);
 
   /**

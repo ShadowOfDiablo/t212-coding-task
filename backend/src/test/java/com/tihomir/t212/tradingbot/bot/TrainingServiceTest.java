@@ -22,6 +22,9 @@ import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
+import com.tihomir.t212.tradingbot.position.FakePositionStore;
+import com.tihomir.t212.tradingbot.position.PositionStatus;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -70,6 +73,33 @@ class TrainingServiceTest {
     assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isFinalValueOfTheTrade);
     assertThat(liveGateway.placedOrders()).isEmpty();
+  }
+
+  @Test
+  void endsTheRunWithItsClosedPositionAndTheOneStillOpen() {
+    storeCandles(
+        candle(0, 100, 100),
+        candle(1, 200, 200),
+        candle(2, 300, 300),
+        candle(3, 400, 400),
+        candle(4, 400, 400));
+    TrainingService service =
+        service(
+            List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL, TradingSignal.BUY),
+            () -> {});
+
+    long runId = service.runTraining(request(5, Map.of()));
+
+    assertThat(runStore.positionWrites(runId).writes())
+        .extracting(write -> write.position().status())
+        .containsExactly(
+            PositionStatus.OPEN, PositionStatus.CLOSED, PositionStatus.OPEN, PositionStatus.OPEN);
+    PositionWrite closing = runStore.positionWrites(runId).writes().get(1);
+    assertThat(closing.position().realisedPnl()).isEqualByComparingTo("996.002");
+    assertThat(closing.position().mfe()).isPositive();
+    assertThat(closing.newTrades().trades())
+        .singleElement()
+        .satisfies(trade -> assertThat(trade.runId()).isEqualTo(runId));
   }
 
   @Test
@@ -193,7 +223,8 @@ class TrainingServiceTest {
   }
 
   private RunDetails runDetails(long runId) {
-    AlgorithmRunService runService = new AlgorithmRunService(runStore, settingsService());
+    AlgorithmRunService runService =
+        new AlgorithmRunService(runStore, settingsService(), new FakePositionStore());
     return runService.getRun(BROKER, runId);
   }
 

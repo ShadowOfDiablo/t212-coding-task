@@ -7,10 +7,13 @@ import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleHistoryService;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.OrderService;
+import com.tihomir.t212.tradingbot.position.PositionStore;
+import com.tihomir.t212.tradingbot.position.PositionTracker;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -38,6 +41,7 @@ public class TradingBotService {
   private final OrderCheckerService orderChecker;
   private final OrderService orderService;
   private final AlgorithmRunStore runStore;
+  private final PositionStore positionStore;
   private final Clock clock;
   private final Map<String, LiveTradingBot> runningBots = new ConcurrentHashMap<>();
 
@@ -49,6 +53,7 @@ public class TradingBotService {
       OrderCheckerService orderChecker,
       OrderService orderService,
       AlgorithmRunStore runStore,
+      PositionStore positionStore,
       Clock clock) {
     this.botModeService = botModeService;
     this.algorithms = algorithms;
@@ -57,6 +62,7 @@ public class TradingBotService {
     this.orderChecker = orderChecker;
     this.orderService = orderService;
     this.runStore = runStore;
+    this.positionStore = positionStore;
     this.clock = clock;
   }
 
@@ -76,10 +82,15 @@ public class TradingBotService {
       throw new LiveBotRunningException(request.broker());
     }
     Broker broker = candleHistory.tradingBroker(request.broker(), request.ticker());
-    LiveTradingAccount account = new LiveTradingAccount(request.ticker(), broker.tradingGateway());
+    PositionTracker positionTracker = new PositionTracker(broker.name(), request.ticker());
+    positionStore
+        .findOpenLivePosition(broker.name(), request.ticker())
+        .ifPresent(positionTracker::restorePosition);
+    LiveTradingAccount account =
+        new LiveTradingAccount(request.ticker(), broker.tradingGateway(), positionTracker);
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
-    BigDecimal startingValue = account.cash();
+    BigDecimal startingValue = currentValue(broker, account);
     long algorithmId = settingsService.saveSettings(signalSource.settings());
     long runId =
         runStore.insertStartedRun(
@@ -92,11 +103,12 @@ public class TradingBotService {
                 Optional.empty(),
                 startingValue,
                 algorithmId));
+    account.startRun(runId);
     LiveTradingBot bot =
         new LiveTradingBot(
             broker,
             runId,
-            new LiveOrderPlacer(broker.name(), account, orderChecker, orderService),
+            new LiveOrderPlacer(broker.name(), account, orderChecker, orderService, positionStore),
             signalSource,
             algorithmId,
             clock);
@@ -190,6 +202,16 @@ public class TradingBotService {
 
   private LiveTradingBot runningBot(String broker) {
     return findRunningBot(broker).orElseThrow(() -> new LiveBotNotRunningException(broker));
+  }
+
+  /** Cash plus a position restored from an earlier run, at the latest price if there is one. */
+  private static BigDecimal currentValue(Broker broker, LiveTradingAccount account) {
+    return broker
+        .tickerPrices()
+        .get(account.ticker())
+        .map(TickerQuote::lastPrice)
+        .map(account::portfolioValue)
+        .orElseGet(account::cash);
   }
 
   private RunStart nextRunStart(LiveTradingBot bot, RunEnd end, long algorithmId) {

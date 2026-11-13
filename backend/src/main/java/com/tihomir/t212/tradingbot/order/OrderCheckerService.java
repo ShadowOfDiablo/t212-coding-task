@@ -64,17 +64,6 @@ public class OrderCheckerService {
     }
   }
 
-  /**
-   * Turns a BUY or SELL signal into an order, or refuses it.
-   *
-   * <ul>
-   *   <li>BUY spends {@code orderSizePercent} of the cash. With a risk per trade, the amount is
-   *       capped so that a fall to the stop loss costs at most that share of the portfolio.
-   *   <li>SELL sells the whole position.
-   * </ul>
-   *
-   * @param price the price the order is expected to fill at
-   */
   public OrderCheck checkOrder(
       TradingSignal signal, AccountView account, BigDecimal price, AlgorithmSettings settings) {
     return switch (signal) {
@@ -84,10 +73,6 @@ public class OrderCheckerService {
     };
   }
 
-  /**
-   * Whether the position must be sold because the price fell to the stop loss. False when no stop
-   * loss is set or nothing is held.
-   */
   public boolean isStopLossReached(
       AccountView account, BigDecimal lowestPrice, AlgorithmSettings settings) {
     return stopPrice(account, settings).map(stop -> lowestPrice.compareTo(stop) <= 0).orElse(false);

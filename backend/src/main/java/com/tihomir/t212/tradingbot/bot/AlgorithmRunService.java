@@ -1,18 +1,25 @@
 package com.tihomir.t212.tradingbot.bot;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
+import com.tihomir.t212.tradingbot.position.PositionStore;
+import com.tihomir.t212.tradingbot.position.StoredPositionList;
+import com.tihomir.t212.tradingbot.position.TradeList;
 import org.springframework.stereotype.Service;
 
-/** Reads recorded runs, live and training. */
 @Service
 public class AlgorithmRunService {
 
   private final AlgorithmRunStore runStore;
   private final AlgorithmSettingsService settingsService;
+  private final PositionStore positionStore;
 
-  public AlgorithmRunService(AlgorithmRunStore runStore, AlgorithmSettingsService settingsService) {
+  public AlgorithmRunService(
+      AlgorithmRunStore runStore,
+      AlgorithmSettingsService settingsService,
+      PositionStore positionStore) {
     this.runStore = runStore;
     this.settingsService = settingsService;
+    this.positionStore = positionStore;
   }
 
   public RecordedRunList getRuns(String broker) {
@@ -23,12 +30,31 @@ public class AlgorithmRunService {
    * @throws RunNotFoundException if the broker has no run with this id
    */
   public RunDetails getRun(String broker, long runId) {
-    StoredRunDetails stored =
-        runStore
-            .getRun(runId)
-            .filter(details -> details.run().broker().equals(broker))
-            .orElseThrow(() -> new RunNotFoundException(runId));
+    StoredRunDetails stored = storedRun(broker, runId);
     return new RunDetails(
         stored.run(), settingsService.getSettings(stored.run().algorithmId()), stored.points());
+  }
+
+  /**
+   * @throws RunNotFoundException if the broker has no run with this id
+   */
+  public TradeList getTrades(String broker, long runId) {
+    storedRun(broker, runId);
+    return positionStore.getTrades(runId);
+  }
+
+  /**
+   * @throws RunNotFoundException if the broker has no run with this id
+   */
+  public StoredPositionList getWorstPositions(String broker, long runId, int maxPositions) {
+    storedRun(broker, runId);
+    return positionStore.getWorstPositions(runId, maxPositions);
+  }
+
+  private StoredRunDetails storedRun(String broker, long runId) {
+    return runStore
+        .getRun(runId)
+        .filter(details -> details.run().broker().equals(broker))
+        .orElseThrow(() -> new RunNotFoundException(runId));
   }
 }

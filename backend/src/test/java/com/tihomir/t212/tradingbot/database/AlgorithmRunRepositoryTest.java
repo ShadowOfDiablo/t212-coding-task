@@ -17,6 +17,13 @@ import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
+import com.tihomir.t212.tradingbot.position.OpenLot;
+import com.tihomir.t212.tradingbot.position.OpenLotList;
+import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionStatus;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
+import com.tihomir.t212.tradingbot.position.PositionWriteList;
+import com.tihomir.t212.tradingbot.position.TradeList;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -54,6 +61,9 @@ class AlgorithmRunRepositoryTest {
 
   @BeforeEach
   void emptyTablesAndStoreSettings() {
+    jdbcClient.sql("DELETE FROM trade").update();
+    jdbcClient.sql("DELETE FROM open_lot").update();
+    jdbcClient.sql("DELETE FROM position").update();
     jdbcClient.sql("DELETE FROM training_portfolio_point").update();
     jdbcClient.sql("DELETE FROM active_algorithm").update();
     jdbcClient.sql("DELETE FROM algorithm_run").update();
@@ -160,6 +170,46 @@ class AlgorithmRunRepositoryTest {
     assertThat(activeAlgorithmId()).isEqualTo(firstAlgorithmId);
   }
 
+  @Test
+  void storesTheTrainingPositionsWithTheRunEnd() {
+    long runId =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
+    Position position =
+        new Position(
+            runId,
+            "binance",
+            "BTCUSDT",
+            PositionStatus.OPEN,
+            STARTED_AT,
+            Optional.empty(),
+            new BigDecimal("100"),
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO);
+    PositionWrite write =
+        new PositionWrite(
+            position,
+            new OpenLotList(
+                List.of(new OpenLot(runId, 1, STARTED_AT, BigDecimal.ONE, new BigDecimal("100")))),
+            TradeList.NONE);
+
+    runRepository.finishRun(
+        runId,
+        new RunEnd(
+            RunStatus.COMPLETED,
+            FINISHED_AT,
+            Optional.of(new BigDecimal("1010")),
+            RunCounts.NONE,
+            Optional.empty(),
+            PortfolioPointList.NONE,
+            new PositionWriteList(List.of(write))));
+
+    assertThat(jdbcClient.sql("SELECT count(*) FROM open_lot").query(Long.class).single())
+        .isEqualTo(1);
+    assertThat(runRepository.getRun(runId).orElseThrow().run().status())
+        .isEqualTo(RunStatus.COMPLETED);
+  }
+
   private long activeAlgorithmCount() {
     return jdbcClient.sql("SELECT count(*) FROM active_algorithm").query(Long.class).single();
   }
@@ -196,7 +246,8 @@ class AlgorithmRunRepositoryTest {
         Optional.of(new BigDecimal("1010")),
         new RunCounts(3, 2, 1, 4),
         Optional.empty(),
-        points);
+        points,
+        PositionWriteList.NONE);
   }
 
   private static AlgorithmSettings settings(int timePeriod) {

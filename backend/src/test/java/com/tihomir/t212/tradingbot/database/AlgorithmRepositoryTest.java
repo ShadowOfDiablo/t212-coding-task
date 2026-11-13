@@ -43,6 +43,9 @@ class AlgorithmRepositoryTest {
   @BeforeEach
   void emptyTables() {
     jdbcClient.sql("DELETE FROM active_algorithm").update();
+    jdbcClient.sql("DELETE FROM trade").update();
+    jdbcClient.sql("DELETE FROM open_lot").update();
+    jdbcClient.sql("DELETE FROM position").update();
     jdbcClient.sql("DELETE FROM training_portfolio_point").update();
     jdbcClient.sql("DELETE FROM algorithm_run").update();
     jdbcClient.sql("DELETE FROM algorithm").update();

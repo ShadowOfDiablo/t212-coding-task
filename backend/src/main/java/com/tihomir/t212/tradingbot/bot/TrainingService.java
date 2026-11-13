@@ -11,6 +11,8 @@ import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.position.PositionTracker;
+import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
@@ -102,7 +104,7 @@ public class TrainingService {
                 request.startingBalance(),
                 algorithmId));
     try {
-      RunEnd end = replay(request, algorithm, settings);
+      RunEnd end = replay(request, algorithm, settings, runId);
       runStore.finishRun(runId, end);
       log.info(
           "Training run {}: {} {} with {}, final value {}",
@@ -119,7 +121,10 @@ public class TrainingService {
   }
 
   private RunEnd replay(
-      TrainingRunRequest request, TradingAlgorithm algorithm, AlgorithmSettings settings) {
+      TrainingRunRequest request,
+      TradingAlgorithm algorithm,
+      AlgorithmSettings settings,
+      long runId) {
     List<CandleUpdate> candles =
         candleHistory
             .getCandles(
@@ -137,7 +142,11 @@ public class TrainingService {
         new VirtualTradingGateway(request.ticker(), request.startingBalance(), TAKER_FEE_RATE);
     TrainingReplay replay =
         new TrainingReplay(
-            algorithm.createSignalGenerator(settings), account, orderChecker, settings);
+            algorithm.createSignalGenerator(settings),
+            account,
+            orderChecker,
+            settings,
+            positionTracker(request, runId));
     PortfolioPointList points = replay.replay(candles);
     return new RunEnd(
         RunStatus.COMPLETED,
@@ -145,7 +154,14 @@ public class TrainingService {
         Optional.of(replay.finalValue()),
         replay.counts(),
         Optional.empty(),
-        points);
+        points,
+        replay.positionWrites());
+  }
+
+  private static PositionTracker positionTracker(TrainingRunRequest request, long runId) {
+    PositionTracker tracker = new PositionTracker(request.broker(), request.ticker());
+    tracker.startRun(runId);
+    return tracker;
   }
 
   private void recordFailure(long runId, RuntimeException failure) {
@@ -159,7 +175,8 @@ public class TrainingService {
               Optional.empty(),
               RunCounts.NONE,
               Optional.of(String.valueOf(failure.getMessage())),
-              PortfolioPointList.NONE));
+              PortfolioPointList.NONE,
+              PositionWriteList.NONE));
     } catch (RuntimeException recordingFailure) {
       log.error("Recording the failure of training run {} failed", runId, recordingFailure);
       failure.addSuppressed(recordingFailure);

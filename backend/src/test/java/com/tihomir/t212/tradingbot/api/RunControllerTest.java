@@ -28,6 +28,12 @@ import com.tihomir.t212.tradingbot.bot.TrainingRunRequest;
 import com.tihomir.t212.tradingbot.bot.TrainingService;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
+import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionStatus;
+import com.tihomir.t212.tradingbot.position.StoredPosition;
+import com.tihomir.t212.tradingbot.position.StoredPositionList;
+import com.tihomir.t212.tradingbot.position.Trade;
+import com.tihomir.t212.tradingbot.position.TradeList;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -44,6 +50,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class RunControllerTest {
 
   private static final String TRAINING_RUNS = "/api/brokers/binance/training/runs";
+  private static final String RUNS = "/api/brokers/binance/runs";
   private static final Instant FROM = Instant.parse("2020-01-01T00:00:00Z");
   private static final String RUN_BODY =
       """
@@ -120,6 +127,69 @@ class RunControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.running").value(true))
         .andExpect(jsonPath("$.areParametersEditable").value(false));
+  }
+
+  @Test
+  void answersWithTheTradesAndTheWorstPositionsOfARun() throws Exception {
+    when(runService.getTrades("binance", 7)).thenReturn(new TradeList(List.of(trade())));
+    when(runService.getWorstPositions("binance", 7, 3))
+        .thenReturn(new StoredPositionList(List.of(new StoredPosition(11, closedPosition()))));
+
+    mockMvc
+        .perform(get(RUNS + "/7/trades"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.trades[0].realisedPnl").value(-5))
+        .andExpect(jsonPath("$.trades[0].buyOrderId").value(31))
+        .andExpect(jsonPath("$.trades[0].sellOrderId").value(32))
+        .andExpect(jsonPath("$.trades[0].soldAt").value("2020-01-01T01:00:00Z"));
+    mockMvc
+        .perform(get(RUNS + "/7/positions/worst").param("limit", "3"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.positions[0].id").value(11))
+        .andExpect(jsonPath("$.positions[0].durationSeconds").value(3600))
+        .andExpect(jsonPath("$.positions[0].realisedPnlPercent").value(-5))
+        .andExpect(jsonPath("$.positions[0].mae").value(-8));
+  }
+
+  @Test
+  void refusesALimitOutOfRangeAndAnswersNotFoundForAnUnknownRun() throws Exception {
+    when(runService.getTrades("binance", 8)).thenThrow(new RunNotFoundException(8));
+
+    mockMvc
+        .perform(get(RUNS + "/7/positions/worst").param("limit", "0"))
+        .andExpect(status().isBadRequest());
+    mockMvc
+        .perform(get(RUNS + "/7/positions/worst").param("limit", "101"))
+        .andExpect(status().isBadRequest());
+    mockMvc.perform(get(RUNS + "/8/trades")).andExpect(status().isNotFound());
+  }
+
+  private static Trade trade() {
+    return new Trade(
+        7,
+        31,
+        32,
+        FROM,
+        FROM.plusSeconds(3600),
+        BigDecimal.ONE,
+        new BigDecimal("100"),
+        new BigDecimal("95"),
+        BigDecimal.ZERO,
+        new BigDecimal("-5"));
+  }
+
+  private static Position closedPosition() {
+    return new Position(
+        7,
+        "binance",
+        "BTCUSDT",
+        PositionStatus.CLOSED,
+        FROM,
+        Optional.of(FROM.plusSeconds(3600)),
+        new BigDecimal("100"),
+        new BigDecimal("-5"),
+        new BigDecimal("-8"),
+        new BigDecimal("2"));
   }
 
   private void expectBadRequest(String body, String message) throws Exception {

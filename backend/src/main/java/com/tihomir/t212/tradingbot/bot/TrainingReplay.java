@@ -5,9 +5,13 @@ import com.tihomir.t212.tradingbot.algorithm.SignalGenerator;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
+import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.OrderCheck;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.position.PositionTracker;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
+import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -34,6 +38,8 @@ final class TrainingReplay {
   private final VirtualTradingGateway account;
   private final OrderCheckerService orderChecker;
   private final AlgorithmSettings settings;
+  private final PositionTracker positionTracker;
+  private final List<PositionWrite> positionWrites = new ArrayList<>();
   private BigDecimal lastValue = BigDecimal.ZERO;
   private int buyCount;
   private int sellCount;
@@ -44,11 +50,13 @@ final class TrainingReplay {
       SignalGenerator signalGenerator,
       VirtualTradingGateway account,
       OrderCheckerService orderChecker,
-      AlgorithmSettings settings) {
+      AlgorithmSettings settings,
+      PositionTracker positionTracker) {
     this.signalGenerator = signalGenerator;
     this.account = account;
     this.orderChecker = orderChecker;
     this.settings = settings;
+    this.positionTracker = positionTracker;
   }
 
   PortfolioPointList replay(List<CandleUpdate> candles) {
@@ -59,6 +67,8 @@ final class TrainingReplay {
     List<PortfolioPoint> points = new ArrayList<>();
     for (int index = 0; index < candleCount; index++) {
       CandleUpdate candle = candles.get(index);
+      positionTracker.updateExcursions(candle.low());
+      positionTracker.updateExcursions(candle.high());
       sellAtStopLossIfReached(candle);
       TradingSignal signal = signalGenerator.onPrice(candle);
       PortfolioPoint point = portfolioPointAt(candle);
@@ -74,6 +84,13 @@ final class TrainingReplay {
 
   BigDecimal finalValue() {
     return lastValue;
+  }
+
+  /** Every position change in order, then the position still open at the end, if any. */
+  PositionWriteList positionWrites() {
+    List<PositionWrite> writes = new ArrayList<>(positionWrites);
+    positionTracker.currentWrite().ifPresent(writes::add);
+    return new PositionWriteList(writes);
   }
 
   RunCounts counts() {
@@ -120,7 +137,8 @@ final class TrainingReplay {
       return false;
     }
     try {
-      account.placeMarketOrder(check.order().orElseThrow());
+      ExecutedOrder order = account.placeMarketOrder(check.order().orElseThrow());
+      positionTracker.recordExecutedOrder(order).ifPresent(positionWrites::add);
       return true;
     } catch (ExchangeRejectedRequestException e) {
       log.debug("{}: training {} rejected: {}", account.ticker(), signal, e.getMessage());

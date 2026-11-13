@@ -4,35 +4,41 @@ import com.tihomir.t212.tradingbot.order.AccountView;
 import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
-import com.tihomir.t212.tradingbot.order.OrderFill;
-import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.position.PositionStore;
+import com.tihomir.t212.tradingbot.position.PositionTracker;
+import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The live bot's view of the exchange account. Cash is the account's free quote balance; the
- * position is only what this bot bought, so it never sells coins the account held before.
+ * position is only what this bot bought, kept by its {@link PositionTracker}, so it never sells
+ * coins the account held before.
  */
 final class LiveTradingAccount implements AccountView {
 
   private static final String QUOTE_ASSET = VirtualTradingGateway.QUOTE_ASSET;
   private static final int AMOUNT_SCALE = 8;
+  private static final Logger log = LoggerFactory.getLogger(LiveTradingAccount.class);
 
   private final String ticker;
-  private final String baseAsset;
   private final ExchangeTradingGateway gateway;
-  private BigDecimal positionQuantity = BigDecimal.ZERO;
-  private BigDecimal positionCost = BigDecimal.ZERO;
+  private final PositionTracker positionTracker;
+  private final PositionStore positionStore;
 
-  LiveTradingAccount(String ticker, ExchangeTradingGateway gateway) {
-    if (!ticker.endsWith(QUOTE_ASSET) || ticker.equals(QUOTE_ASSET)) {
-      throw new IllegalArgumentException("The live bot trades " + QUOTE_ASSET + " tickers only");
-    }
+  LiveTradingAccount(
+      String ticker,
+      ExchangeTradingGateway gateway,
+      PositionTracker positionTracker,
+      PositionStore positionStore) {
     this.ticker = ticker;
-    this.baseAsset = ticker.substring(0, ticker.length() - QUOTE_ASSET.length());
     this.gateway = gateway;
+    this.positionTracker = positionTracker;
+    this.positionStore = positionStore;
   }
 
   @Override
@@ -42,39 +48,33 @@ final class LiveTradingAccount implements AccountView {
 
   @Override
   public BigDecimal cash() {
-    return gateway.accountBalances().balances().stream()
-        .filter(balance -> balance.asset().equals(QUOTE_ASSET))
-        .map(AssetBalance::free)
-        .findFirst()
-        .orElse(BigDecimal.ZERO);
+    return freeCash(gateway);
   }
 
   @Override
-  public synchronized BigDecimal baseQuantity() {
-    return positionQuantity;
+  public BigDecimal baseQuantity() {
+    return positionTracker.quantity();
   }
 
   @Override
-  public synchronized Optional<BigDecimal> entryPrice() {
-    if (positionQuantity.signum() <= 0) {
-      return Optional.empty();
-    }
-    return Optional.of(positionCost.divide(positionQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN));
+  public Optional<BigDecimal> entryPrice() {
+    return positionTracker.entryPrice();
   }
 
   /**
-   * A sell always sells the whole position, so it closes it. What the exchange's lot step leaves
-   * behind stays in the account but is no longer the bot's position, so it can't trigger the stop
-   * loss again.
+   * Applies the order to the position and stores the change. The order did happen: a failed write
+   * is logged and the position stays in memory.
    */
-  synchronized void recordExecutedOrder(ExecutedOrder order) {
-    if (order.side() == OrderSide.SELL) {
-      positionQuantity = BigDecimal.ZERO;
-      positionCost = BigDecimal.ZERO;
-      return;
-    }
-    positionQuantity = positionQuantity.add(receivedBaseQuantity(order));
-    positionCost = positionCost.add(order.quoteAmount());
+  void recordExecutedOrder(ExecutedOrder order) {
+    positionTracker.recordExecutedOrder(order).ifPresent(write -> savePosition(order, write));
+  }
+
+  void updateExcursions(BigDecimal price) {
+    positionTracker.updateExcursions(price);
+  }
+
+  void startRun(long runId) {
+    positionTracker.startRun(runId);
   }
 
   BigDecimal portfolioValue(BigDecimal price) {
@@ -83,13 +83,23 @@ final class LiveTradingAccount implements AccountView {
         .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
   }
 
-  /** A buy's fee may be taken from the coins bought. */
-  private BigDecimal receivedBaseQuantity(ExecutedOrder order) {
-    BigDecimal baseFees =
-        order.fills().stream()
-            .filter(fill -> baseAsset.equals(fill.commissionAsset()))
-            .map(OrderFill::commission)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-    return order.executedQuantity().subtract(baseFees);
+  private void savePosition(ExecutedOrder order, PositionWrite write) {
+    try {
+      positionStore.savePosition(write);
+    } catch (RuntimeException e) {
+      log.error(
+          "{}: the position change of order {} could not be stored",
+          ticker,
+          order.exchangeOrderId(),
+          e);
+    }
+  }
+
+  static BigDecimal freeCash(ExchangeTradingGateway gateway) {
+    return gateway.accountBalances().balances().stream()
+        .filter(balance -> balance.asset().equals(QUOTE_ASSET))
+        .map(AssetBalance::free)
+        .findFirst()
+        .orElse(BigDecimal.ZERO);
   }
 }

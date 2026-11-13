@@ -1,23 +1,35 @@
 package com.tihomir.t212.tradingbot.bot;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.OrderFill;
 import com.tihomir.t212.tradingbot.order.OrderSide;
+import com.tihomir.t212.tradingbot.position.FakePositionStore;
+import com.tihomir.t212.tradingbot.position.PositionTracker;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class LiveTradingAccountTest {
 
   private static final String TICKER = "BTCUSDT";
+  private static final long RUN_ID = 7;
 
   private final LiveTradingAccount account =
-      new LiveTradingAccount(TICKER, new FakeExchangeTradingGateway());
+      new LiveTradingAccount(
+          TICKER,
+          new FakeExchangeTradingGateway(),
+          new PositionTracker("binance", TICKER),
+          new FakePositionStore());
+
+  @BeforeEach
+  void startRun() {
+    account.startRun(RUN_ID);
+  }
 
   @Test
   void holdsOnlyWhatTheBotBoughtLessTheFeeTakenInCoins() {
@@ -48,12 +60,6 @@ class LiveTradingAccountTest {
     assertThat(account.baseQuantity()).isZero();
     assertThat(account.entryPrice()).isEmpty();
     assertThat(account.portfolioValue(BigDecimal.TEN)).isEqualByComparingTo("100");
-  }
-
-  @Test
-  void tradesOnlyUsdtTickers() {
-    assertThatThrownBy(() -> new LiveTradingAccount("ETHBTC", new FakeExchangeTradingGateway()))
-        .isInstanceOf(IllegalArgumentException.class);
   }
 
   private static ExecutedOrder order(

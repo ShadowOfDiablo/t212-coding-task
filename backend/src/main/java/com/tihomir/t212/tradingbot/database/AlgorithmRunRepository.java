@@ -33,10 +33,13 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
 
   private final JdbcClient jdbcClient;
   private final JdbcTemplate jdbcTemplate;
+  private final PositionRepository positionRepository;
 
-  public AlgorithmRunRepository(JdbcClient jdbcClient, JdbcTemplate jdbcTemplate) {
+  public AlgorithmRunRepository(
+      JdbcClient jdbcClient, JdbcTemplate jdbcTemplate, PositionRepository positionRepository) {
     this.jdbcClient = jdbcClient;
     this.jdbcTemplate = jdbcTemplate;
+    this.positionRepository = positionRepository;
   }
 
   @Override
@@ -104,6 +107,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
         VALUES (?, ?, ?, ?)
         """,
         end.points().points().stream().map(point -> pointRow(runId, point)).toList());
+    end.positionWrites().writes().forEach(positionRepository::savePosition);
   }
 
   @Override

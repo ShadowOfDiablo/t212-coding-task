@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 public class OrderCheckerService {
 
   /** Binance refuses market orders worth less than about 5 USDT. */
-  static final BigDecimal MIN_ORDER_VALUE = new BigDecimal("5");
+  public static final BigDecimal MIN_ORDER_VALUE = new BigDecimal("5");
 
   private static final BigDecimal PERCENT = BigDecimal.valueOf(100);
   private static final int AMOUNT_SCALE = 8;

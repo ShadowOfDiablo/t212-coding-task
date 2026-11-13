@@ -23,7 +23,8 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | In progress |
 | Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
-| Database: restart reconciliation, positions (FIFO lots), trades with PnL | Planned, next |
+| Positions (FIFO lots) and trades with P&L, MAE and MFE (§8) | In progress |
+| Database: restart reconciliation | Planned, next |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
 | Dashboard: live bot, training and runs tabs, settings forms, charts, following tickers (§15.1, §15.2) | In progress |
 | Rest of the REST API (bot controls, runs, charts) | Planned |
@@ -109,7 +110,7 @@ flowchart LR
 | `OrderValidator` | Planned | Turns a signal into a valid `OrderRequest`, or rejects it |
 | `FeeService` | Planned | Provides fee rates (exact Binance rates with an API key, the standard schedule otherwise) and calculates fees |
 | `OrderExecutionService` | Planned | Fills a valid `OrderRequest` and produces an `ExecutedOrder`. No validation or fee logic |
-| `AccountService` | Planned | Applies `ExecutedOrder`s to cash and positions, and calculates P&L and portfolio value |
+| `PositionTracker` | In progress | Applies `ExecutedOrder`s to the bot's FIFO lots and position, and calculates realised P&L, MAE and MFE (§8) |
 | `OrderRepository` | Built | PostgreSQL access for the order tables (`JdbcClient`, raw SQL, no ORM). Implements `OrderStore`, so `OrderService` doesn't depend on the database code |
 | Other repositories | Planned | Lots, trades, candles, runs |
 | REST API | Planned | Controls and read endpoints for the React dashboard |
@@ -621,27 +622,84 @@ stateDiagram-v2
     PENDING --> EXPIRED: time in force
 ```
 
-## 8. Account and positions (planned)
+## 8. Positions and trades (in progress)
 
-- The account has a cash balance in the quote currency (e.g. USDT), plus one position per ticker (quantity and average entry price).
-- `AccountService.apply(ExecutedOrder)` follows these rules:
-  - **Buy, no position:** opens a position. Cash decreases by price × quantity, and the fee is taken from the coin received.
-  - **Buy, existing position:** adds the quantity and recalculates the average entry price.
-  - **Sell, partial:** reduces the quantity. Realised P&L = (price − average entry) × quantity − fee.
-  - **Sell, full:** closes the position, with the same P&L calculation.
+Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. A sell uses only the quantity it sold, so one lot can be shared by several sells: buy 10, sell 3, sell 3, and a lot of 4 stays open. The position closes when nothing is left, or when what is left is worth less than the minimum order value at the sell price: that rest (what the lot step leaves after "sell everything") can never be sold, so it leaves the position and stays in the account.
+
+> **Two meanings of "lot":**
+> - **A lot** (`OpenLot`, `open_lot`) is one buy that still holds coins. Buy twice and the position has two lots.
+> - **The lot step** is Binance's `LOT_SIZE` rule: the smallest amount a coin quantity can change by. For BTCUSDT it is 0.00001 BTC, so an order for 0.123456 BTC is sent as 0.12345 BTC.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> OPEN: buy with no position
-    OPEN --> OPEN: buy more / partial sell
-    OPEN --> CLOSED: full sell
-    CLOSED --> [*]
+flowchart LR
+    Signal["signal"] --> Checker["OrderCheckerService"]
+    Checker --> Gateway["BinanceTradingGateway (live)<br/>VirtualTradingGateway (training)"]
+    Gateway -- "ExecutedOrder" --> Tracker["PositionTracker<br/>one per live bot / training replay"]
+    Price["every evaluated price"] -- "MAE / MFE" --> Tracker
+    Tracker -- "buy: add a lot<br/>sell: use up the oldest lots" --> Store["PositionStore"]
+    Store --> Db[("position, open_lot, trade")]
+    Db --> Api["GET /runs/{id}/trades<br/>GET /runs/{id}/positions/worst"]
 ```
 
-- A new buy after a close opens a new position.
-- While a position is open, its MAE and MFE are updated on every price update. They feed the position review (§9).
-- **Unrealised P&L and portfolio value** (cash + Σ quantity × latest price) use the broker's `TickerPriceReader`.
-- **Money:** all amounts and quantities use `BigDecimal`.
+```mermaid
+erDiagram
+    position {
+        bigserial id PK
+        bigint run_id "FK, the run it opened in"
+        text broker
+        text ticker
+        text status "OPEN or CLOSED"
+        timestamptz opened_at
+        timestamptz closed_at "NULL while open"
+        numeric realised_pnl "sum of its trades"
+        numeric mae "worst unrealised P&L while open"
+        numeric mfe "best unrealised P&L while open"
+    }
+    open_lot {
+        bigserial id PK
+        bigint position_id "FK"
+        bigint run_id "FK, the run of the buy"
+        bigint buy_order_id "exchange order id of the buy"
+        timestamptz bought_at
+        numeric quantity "still held"
+        numeric entry_price "cost per coin, buy fee included"
+    }
+    trade {
+        bigserial id PK
+        bigint position_id "FK"
+        bigint run_id "FK, the run of the sell"
+        bigint buy_order_id "the buy of its lot"
+        bigint sell_order_id "shared by the trades of one sell"
+        timestamptz bought_at
+        timestamptz sold_at
+        numeric quantity
+        numeric entry_price
+        numeric exit_price
+        numeric fee "the sell fee's share, in USDT"
+        numeric realised_pnl
+    }
+    position ||--o{ open_lot : "holds"
+    position ||--o{ trade : "closed by"
+```
+
+- **`position`:** from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps it in memory; the table is its stored state.
+- **`open_lot` is a current table, `trade` a history table** (§11): a lot lives in `open_lot` while it holds coins. A sell matches the oldest lots and writes one `trade` row per lot (or part of a lot) it used. A lot used up completely is deleted.
+- **Order ids link everything:** a lot keeps the exchange order id of its buy. Each trade keeps the buy of its lot and the sell that used it, so the trades of one sell share its `sell_order_id`. Example: 3 buys make 3 lots; one sell of everything writes 3 trades with the same `sell_order_id` and 3 different `buy_order_id`s. Live ids are Binance's `orderId` and join to `order_history`; training ids come from the virtual account.
+- **Fees:**
+  - A buy's fee is taken from the coins bought, on Binance and in the virtual gateway. A lot's quantity is what was received, and its entry price is the USDT spent divided by that quantity, so the fee is in the cost.
+  - A sell's fee is in USDT. It is shared over the matched lots by quantity.
+  - Realised P&L of a trade = (exit price − entry price) × quantity − its share of the sell fee.
+- **MAE and MFE:** the worst and best unrealised P&L of the open position, (price − average entry) × quantity, updated on every evaluated price. Stored with every trade write and when the position closes.
+- **Writes are transactional:**
+  - **Live:** after an order executes, its lot or trades, the deleted lots and the position row are written in one transaction.
+  - **Training:** kept in memory and written with the run's end, in the same transaction.
+  - If the write fails, the order still happened: it is logged with its exchange order id and the tracker keeps the position in memory.
+- **A live settings change** starts a new run (§16.4). The open position carries over: lots keep the run they were bought in, trades get the run they were sold in.
+- **Live bot start** loads the OPEN position and its lots of the broker and ticker, so coins the bot bought before a stop or a restart can still be sold or stopped out.
+- **API:**
+  - `GET /api/brokers/{broker}/runs/{id}/trades`: the trades sold in the run, oldest first.
+  - `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L, with MAE, MFE and duration.
+- **Money:** all amounts and quantities are `BigDecimal` / `numeric`.
 
 ## 9. Bot and run lifecycle (planned)
 
@@ -812,7 +870,7 @@ erDiagram
 
 **Planned next (stacked PRs):**
 - **Reconciliation:** `executionReport` events from the user data stream record any bot order (`tb-` client id) missing from the database, keyed by Binance's `orderId`. A startup check of Binance's recent orders covers the time the app was down.
-- **Positions and trades:** `open_lot` (current, one row per buy that still holds coins) and `trade` (history: FIFO matches of buy and sell lots with entry/exit price, fees and PnL), written in the same settlement transaction. A position is the sum of its open lots.
+- **Positions and trades (§8):** `position` (one per position, with MAE and MFE), `open_lot` (current, one row per buy that still holds coins) and `trade` (history: FIFO matches of buy lots with a sell, with entry and exit price, fee and P&L), written in one transaction per executed order.
 
 **Planned later:**
 
@@ -854,11 +912,11 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
 | POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
 | GET | `/runs`, `/runs/{id}` | Runs and their results |
-| GET | `/runs/{id}/trades` | Trade history: date, action, quantity, price, P&L |
+| GET | `/runs/{id}/trades` | Trades sold in the run: buy and sell time, quantity, entry and exit price, fee, P&L (§8) |
 | GET | `/runs/{id}/portfolio` | Current cash, positions and total value |
 | GET | `/runs/{id}/portfolio/history` | Portfolio value over time |
 | GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
-| GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration |
+| GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration (§8) |
 | GET | `/runs/{id}/positions/{positionId}/chart` | The price path around one position, with the entry, exit, MAE and MFE marked |
 | GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading |
 
@@ -954,9 +1012,9 @@ com.tihomir.t212.tradingbot
 │                    OrderCheckerService, OrderCheck, RejectionReason, AccountView, VirtualTradingGateway
 │                    (planned) OrderExecutionService
 │   └── fee          (planned) FeeService
-├── account          (planned) AccountService, Position, PositionStatus, PortfolioSnapshot
+├── position         PositionTracker, PositionStore, Position, PositionStatus, OpenLot, Trade (§8)
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
-│                    (planned) OpenLotRepository, TradeRepository
+│                    PositionRepository (position, open_lot, trade)
 └── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
                      RejectedOrderListResponse, MarketDataController, TickerPriceListResponse,
                      BotModeController, BotModeSetting, ApiExceptionHandler

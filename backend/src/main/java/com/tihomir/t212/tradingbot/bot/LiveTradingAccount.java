@@ -77,7 +77,6 @@ final class LiveTradingAccount implements AccountView {
     positionCost = positionCost.add(order.quoteAmount());
   }
 
-  /** Free cash plus the bot's position at this price. */
   BigDecimal portfolioValue(BigDecimal price) {
     return cash()
         .add(baseQuantity().multiply(price))

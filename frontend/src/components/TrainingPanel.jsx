@@ -11,7 +11,6 @@ const DEFAULT_BALANCE = '10000'
 
 const toInstant = (localDateTime) => `${localDateTime}:00Z`
 
-/** Runs an algorithm over stored candles on a virtual account and shows the recorded run. */
 export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
   const [ticker, setTicker] = useState('')
   const [from, setFrom] = useState(DEFAULT_FROM)

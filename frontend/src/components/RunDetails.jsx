@@ -23,7 +23,6 @@ function SettingsSummary({ settings }) {
   )
 }
 
-/** A recorded run: result, value chart and the settings of its algorithm. */
 export function RunDetails({ details }) {
   const { run, settings, points } = details
   const result =

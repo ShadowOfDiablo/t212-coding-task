@@ -13,7 +13,6 @@ import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
 import com.tihomir.t212.tradingbot.position.PositionTracker;
 import com.tihomir.t212.tradingbot.position.PositionWriteList;
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -28,8 +27,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class TrainingService {
-
-  static final BigDecimal TAKER_FEE_RATE = new BigDecimal("0.001");
 
   private static final Logger log = LoggerFactory.getLogger(TrainingService.class);
 
@@ -72,13 +69,20 @@ public class TrainingService {
       throw new TrainingModeRequiredException();
     }
     TradingAlgorithm algorithm = algorithms.get(request.settings().algorithmType());
-    AlgorithmSettings settings = algorithm.resolveSettings(request.settings());
-    candleHistory.tradingBroker(request.broker(), request.ticker());
+    TrainingSetup setup =
+        new TrainingSetup(
+            request,
+            algorithm,
+            algorithm.resolveSettings(request.settings()),
+            candleHistory
+                .tradingBroker(request.broker(), request.ticker())
+                .tradingGateway()
+                .tradingRules(request.ticker()));
     if (!trainingRunning.compareAndSet(false, true)) {
       throw new TrainingAlreadyRunningException();
     }
     try {
-      return recordedTraining(request, algorithm, settings);
+      return recordedTraining(setup);
     } finally {
       trainingRunning.set(false);
     }
@@ -89,9 +93,9 @@ public class TrainingService {
     return !trainingRunning.get();
   }
 
-  private long recordedTraining(
-      TrainingRunRequest request, TradingAlgorithm algorithm, AlgorithmSettings settings) {
-    long algorithmId = settingsService.saveSettings(settings);
+  private long recordedTraining(TrainingSetup setup) {
+    TrainingRunRequest request = setup.request();
+    long algorithmId = settingsService.saveSettings(setup.settings());
     long runId =
         runStore.insertStartedRun(
             new RunStart(
@@ -104,14 +108,14 @@ public class TrainingService {
                 request.startingBalance(),
                 algorithmId));
     try {
-      RunEnd end = replay(request, algorithm, settings, runId);
+      RunEnd end = replay(setup, runId);
       runStore.finishRun(runId, end);
       log.info(
           "Training run {}: {} {} with {}, final value {}",
           runId,
           request.ticker(),
-          settings.timeframe(),
-          algorithm.type(),
+          setup.settings().timeframe(),
+          setup.algorithm().type(),
           end.finalValue().orElseThrow());
       return runId;
     } catch (RuntimeException e) {
@@ -120,11 +124,9 @@ public class TrainingService {
     }
   }
 
-  private RunEnd replay(
-      TrainingRunRequest request,
-      TradingAlgorithm algorithm,
-      AlgorithmSettings settings,
-      long runId) {
+  private RunEnd replay(TrainingSetup setup, long runId) {
+    TrainingRunRequest request = setup.request();
+    AlgorithmSettings settings = setup.settings();
     List<CandleUpdate> candles =
         candleHistory
             .getCandles(
@@ -139,10 +141,11 @@ public class TrainingService {
       throw new IllegalArgumentException("There are no closed candles in this range");
     }
     VirtualTradingGateway account =
-        new VirtualTradingGateway(request.ticker(), request.startingBalance(), TAKER_FEE_RATE);
+        new VirtualTradingGateway(
+            request.ticker(), request.startingBalance(), setup.tradingRules());
     TrainingReplay replay =
         new TrainingReplay(
-            algorithm.createSignalGenerator(settings),
+            setup.algorithm().createSignalGenerator(settings),
             account,
             orderChecker,
             settings,

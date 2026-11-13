@@ -8,25 +8,29 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * The account of one training run. It implements the same gateway as the live exchange, so a run
- * places orders exactly like trading does, but fills them here at the price the replay sets and
- * never sends anything to the exchange.
+ * The account of one training run. It implements the same gateway as the live exchange and follows
+ * the same rules: base quantities are rounded down to the ticker's lot step, orders below the
+ * minimum order value are refused with Binance's error codes, and the standard 0.1% taker fee is
+ * taken in the asset received. Orders fill here at the price the replay sets; nothing is sent to
+ * the exchange.
  */
 public final class VirtualTradingGateway implements ExchangeTradingGateway, AccountView {
 
   public static final String QUOTE_ASSET = "USDT";
+  public static final BigDecimal TAKER_FEE_RATE = new BigDecimal("0.001");
 
   private static final int AMOUNT_SCALE = 8;
+  private static final int QUANTITY_DIVISION_SCALE = 16;
   private static final int INSUFFICIENT_BALANCE = -2010;
   private static final int UNSUPPORTED_ORDER = -1106;
-  private static final int AMOUNT_TOO_SMALL = -1013;
+  private static final int FILTER_FAILURE = -1013;
   private static final int UNKNOWN_TICKER = -1121;
   private static final String FILLED = "FILLED";
   private static final String CLIENT_ORDER_ID_PREFIX = "training-";
 
   private final String ticker;
   private final String baseAsset;
-  private final BigDecimal feeRate;
+  private final TickerTradingRules rules;
   private BigDecimal cash;
   private BigDecimal baseQuantity = BigDecimal.ZERO;
   private BigDecimal positionCost = BigDecimal.ZERO;
@@ -34,14 +38,14 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
   private Instant marketTime = Instant.EPOCH;
   private long nextOrderId = 1;
 
-  public VirtualTradingGateway(String ticker, BigDecimal startingCash, BigDecimal feeRate) {
+  public VirtualTradingGateway(String ticker, BigDecimal startingCash, TickerTradingRules rules) {
     if (!ticker.endsWith(QUOTE_ASSET) || ticker.equals(QUOTE_ASSET)) {
       throw new IllegalArgumentException("Training supports " + QUOTE_ASSET + " tickers only");
     }
     this.ticker = ticker;
     this.baseAsset = ticker.substring(0, ticker.length() - QUOTE_ASSET.length());
     this.cash = startingCash;
-    this.feeRate = feeRate;
+    this.rules = rules;
   }
 
   public void updateMarketPrice(BigDecimal price, Instant time) {
@@ -75,6 +79,11 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
   }
 
   @Override
+  public TickerTradingRules tradingRules(String requestedTicker) {
+    return rules;
+  }
+
+  @Override
   public String ticker() {
     return ticker;
   }
@@ -102,14 +111,16 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
       throw new ExchangeRejectedRequestException(
           UNSUPPORTED_ORDER, "Training buys take a quote amount");
     }
-    BigDecimal spent = request.amount();
-    if (spent.compareTo(cash) > 0) {
+    BigDecimal requestedAmount = request.amount();
+    checkMinOrderValue(requestedAmount);
+    BigDecimal unroundedQuantity =
+        requestedAmount.divide(marketPrice, QUANTITY_DIVISION_SCALE, RoundingMode.DOWN);
+    BigDecimal quantity = rules.roundDownToLotStep(unroundedQuantity);
+    checkAtLeastOneLotStep(quantity, unroundedQuantity);
+    if (requestedAmount.compareTo(cash) > 0) {
       throw new ExchangeRejectedRequestException(INSUFFICIENT_BALANCE, "Not enough " + QUOTE_ASSET);
     }
-    BigDecimal quantity = spent.divide(marketPrice, AMOUNT_SCALE, RoundingMode.DOWN);
-    if (quantity.signum() <= 0) {
-      throw new ExchangeRejectedRequestException(AMOUNT_TOO_SMALL, "Amount buys nothing");
-    }
+    BigDecimal spent = quantity.multiply(marketPrice);
     BigDecimal fee = fee(quantity);
     cash = cash.subtract(spent);
     positionCost = positionCost.add(spent);
@@ -123,11 +134,13 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
       throw new ExchangeRejectedRequestException(
           UNSUPPORTED_ORDER, "Training sells take a base quantity");
     }
-    BigDecimal quantity = request.amount();
+    BigDecimal quantity = rules.roundDownToLotStep(request.amount());
+    checkAtLeastOneLotStep(quantity, request.amount());
+    BigDecimal received = quantity.multiply(marketPrice).setScale(AMOUNT_SCALE, RoundingMode.DOWN);
+    checkMinOrderValue(received);
     if (quantity.compareTo(baseQuantity) > 0) {
       throw new ExchangeRejectedRequestException(INSUFFICIENT_BALANCE, "Not enough " + baseAsset);
     }
-    BigDecimal received = quantity.multiply(marketPrice).setScale(AMOUNT_SCALE, RoundingMode.DOWN);
     BigDecimal fee = fee(received);
     positionCost = remainingCost(quantity);
     baseQuantity = baseQuantity.subtract(quantity);
@@ -136,6 +149,24 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
         OrderSide.SELL,
         received,
         new OrderFill(nextOrderId, marketPrice, quantity, fee, QUOTE_ASSET));
+  }
+
+  private void checkMinOrderValue(BigDecimal orderValue) {
+    if (orderValue.compareTo(rules.minOrderValue()) < 0) {
+      throw new ExchangeRejectedRequestException(FILTER_FAILURE, "Filter failure: NOTIONAL");
+    }
+  }
+
+  private void checkAtLeastOneLotStep(BigDecimal quantity, BigDecimal unroundedQuantity) {
+    if (quantity.signum() <= 0) {
+      throw new ExchangeRejectedRequestException(
+          FILTER_FAILURE,
+          unroundedQuantity.stripTrailingZeros().toPlainString()
+              + " "
+              + ticker
+              + " is less than one lot step of "
+              + rules.lotStepSize().toPlainString());
+    }
   }
 
   /** The cost of what is left after selling {@code soldQuantity}, at the average entry price. */
@@ -150,7 +181,7 @@ public final class VirtualTradingGateway implements ExchangeTradingGateway, Acco
   }
 
   private BigDecimal fee(BigDecimal receivedAmount) {
-    return receivedAmount.multiply(feeRate).setScale(AMOUNT_SCALE, RoundingMode.UP);
+    return receivedAmount.multiply(TAKER_FEE_RATE).setScale(AMOUNT_SCALE, RoundingMode.UP);
   }
 
   private ExecutedOrder executedOrder(OrderSide side, BigDecimal quoteAmount, OrderFill fill) {

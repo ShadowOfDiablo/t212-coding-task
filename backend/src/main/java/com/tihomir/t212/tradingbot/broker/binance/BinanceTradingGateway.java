@@ -11,6 +11,7 @@ import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
+import com.tihomir.t212.tradingbot.order.TickerTradingRules;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -39,7 +40,7 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
   private static final int UNREADABLE_ERROR_CODE = 0;
   private static final int LOT_SIZE_ERROR_CODE = -1013;
 
-  private final Map<String, BigDecimal> lotStepSizeByTicker = new ConcurrentHashMap<>();
+  private final Map<String, TickerTradingRules> tradingRulesByTicker = new ConcurrentHashMap<>();
 
   private final RestClient restClient;
   private final BinanceTradingProperties tradingProperties;
@@ -110,14 +111,8 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
     if (request.amountType() != OrderAmountType.BASE_QUANTITY) {
       return request;
     }
-    BigDecimal lotStepSize =
-        lotStepSizeByTicker.computeIfAbsent(request.ticker(), this::readLotStepSize);
-    BigDecimal quantity =
-        request
-            .amount()
-            .divideToIntegralValue(lotStepSize)
-            .multiply(lotStepSize)
-            .stripTrailingZeros();
+    TickerTradingRules rules = tradingRules(request.ticker());
+    BigDecimal quantity = rules.roundDownToLotStep(request.amount());
     if (quantity.signum() <= 0) {
       throw new ExchangeRejectedRequestException(
           LOT_SIZE_ERROR_CODE,
@@ -125,13 +120,19 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
               + " "
               + request.ticker()
               + " is less than one lot step of "
-              + lotStepSize.toPlainString());
+              + rules.lotStepSize().toPlainString());
     }
     return new MarketOrderRequest(
         request.ticker(), request.side(), quantity, OrderAmountType.BASE_QUANTITY);
   }
 
-  private BigDecimal readLotStepSize(String ticker) {
+  /** Read once per ticker from the public exchangeInfo endpoint; no API key is needed. */
+  @Override
+  public TickerTradingRules tradingRules(String ticker) {
+    return tradingRulesByTicker.computeIfAbsent(ticker, this::readTradingRules);
+  }
+
+  private TickerTradingRules readTradingRules(String ticker) {
     try {
       String body =
           restClient
@@ -141,12 +142,13 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
                       tradingProperties.restUrl() + EXCHANGE_INFO_PATH + "?symbol=" + ticker))
               .retrieve()
               .body(String.class);
-      return OrderUtil.lotStepSize(jsonMapper.readTree(body));
+      return OrderUtil.tradingRules(jsonMapper.readTree(body));
     } catch (RestClientException e) {
       throw new ExchangeUnavailableException(
-          "Could not read the lot size of " + ticker + " from Binance: " + e.getMessage(), e);
+          "Could not read the trading rules of " + ticker + " from Binance: " + e.getMessage(), e);
     } catch (JacksonException | IllegalArgumentException e) {
-      throw new ExchangeUnavailableException("Could not read Binance's lot size of " + ticker, e);
+      throw new ExchangeUnavailableException(
+          "Could not read Binance's trading rules of " + ticker, e);
     }
   }
 

@@ -10,6 +10,8 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
 
   public static final long EXCHANGE_ORDER_ID = 28;
   public static final Instant SNAPSHOT_TIME = Instant.ofEpochMilli(1_000);
+  public static final TickerTradingRules TRADING_RULES =
+      new TickerTradingRules(new BigDecimal("0.00000001"), new BigDecimal("5"));
   public static final List<AssetBalance> BALANCES =
       List.of(new AssetBalance("USDT", new BigDecimal("100"), BigDecimal.ZERO));
 
@@ -17,6 +19,7 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
   private AccountBalanceSnapshot snapshot = new AccountBalanceSnapshot(SNAPSHOT_TIME, BALANCES);
   private Optional<RuntimeException> orderFailure = Optional.empty();
   private Optional<RuntimeException> balancesFailure = Optional.empty();
+  private Optional<RuntimeException> tradingRulesFailure = Optional.empty();
   private int remainingBalanceFailures;
   private int balanceRequests;
 
@@ -37,6 +40,18 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
         BigDecimal.ONE,
         List.of(),
         Instant.EPOCH);
+  }
+
+  @Override
+  public synchronized TickerTradingRules tradingRules(String ticker) {
+    if (tradingRulesFailure.isPresent()) {
+      throw tradingRulesFailure.get();
+    }
+    return TRADING_RULES;
+  }
+
+  public synchronized void failTradingRules(RuntimeException failure) {
+    tradingRulesFailure = Optional.of(failure);
   }
 
   @Override

@@ -375,7 +375,7 @@ Live streams come from the **demo** stream host, so the price map shows the pric
 | `wss://demo-stream.binance.com/stream?streams=…` | `<symbol>@kline_<interval>` candles and `<symbol>@bookTicker` best bid/ask, JDK `java.net.http.WebSocket` |
 | `GET /api/v3/klines` on `data-api.binance.vision` | Candle history, 1,000 per request |
 | `GET /api/v3/time` | Exchange clock offset |
-| `GET /api/v3/exchangeInfo` (planned) | Trading rules per symbol: minimum quantity, step size, minimum order value |
+| `GET /api/v3/exchangeInfo` | Trading rules per symbol: the `LOT_SIZE` step and the `NOTIONAL` (or older `MIN_NOTIONAL`) minimum order value, read once per ticker |
 
 ## 5. Ticker price map (built)
 
@@ -625,6 +625,10 @@ stateDiagram-v2
 ## 8. Positions and trades (in progress)
 
 Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. Today a sell always sells the whole position, but the lots already allow partial sells later.
+
+> **Two meanings of "lot":**
+> - **A lot** (`OpenLot`, `open_lot`) is one buy that still holds coins. Buy twice and the position has two lots.
+> - **The lot step** (`TickerTradingRules.lotStepSize`) is Binance's `LOT_SIZE` rule: the smallest amount a coin quantity can change by. For BTCUSDT it is 0.00001 BTC, so an order for 0.123456 BTC is sent as 0.12345 BTC.
 
 ```mermaid
 flowchart LR
@@ -1252,7 +1256,11 @@ flowchart TD
   - **SELL:** sells the whole position. Refused with `NO_POSITION` when nothing is held.
   - **Stop loss:** sits `stopLossPercent` below the buy price. A price at or below it forces a sell.
 - **`AccountView`** provides cash, base quantity and entry price. Training reads the virtual account; trading reads the cached Binance balances (§7.2).
-- **`VirtualTradingGateway`** implements the same `ExchangeTradingGateway` as Binance, with a 0.1% fee and its own order ids. That is the swap: training never sends an order to Binance.
+- **`VirtualTradingGateway`** implements the same `ExchangeTradingGateway` as Binance and follows the same rules. That is the swap: training never sends an order to Binance.
+  - **Same rules:** training reads the ticker's `TickerTradingRules` (lot step, minimum order value) from Binance before the run is recorded, and gives them to the virtual gateway. Both gateways round base quantities down with `TickerTradingRules.roundDownToLotStep`.
+  - **Market buys for a quote amount** buy whole lot steps only, so they spend a little less than asked, like Binance.
+  - **Refusals use Binance's codes:** `-1013` for less than one lot step or below the minimum order value (`Filter failure: NOTIONAL`), `-2010` for an insufficient balance.
+  - **Fees:** Binance's standard 0.1% taker fee, in the asset received: coins on a buy, USDT on a sell. Order ids are its own.
 
 ### 16.4 Recording algorithms and runs
 

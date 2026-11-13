@@ -21,6 +21,7 @@ import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
+import com.tihomir.t212.tradingbot.order.TickerTradingRules;
 import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -127,6 +128,32 @@ class BinanceTradingGatewayTest {
     gateway.placeMarketOrder(sellForBaseQuantity("0.0002"));
 
     server.verify();
+  }
+
+  @Test
+  void readsTheTradingRulesOnceWithTheMinimumOrderValue() throws IOException {
+    expectExchangeInfo()
+        .andRespond(withSuccess(fixture("exchange-info.json"), MediaType.APPLICATION_JSON));
+
+    TickerTradingRules rules = gateway.tradingRules("BTCUSDT");
+
+    assertThat(gateway.tradingRules("BTCUSDT")).isSameAs(rules);
+    assertThat(rules.lotStepSize()).isEqualByComparingTo("0.00001");
+    assertThat(rules.minOrderValue()).isEqualByComparingTo("5");
+    server.verify();
+  }
+
+  @Test
+  void hasNoMinimumOrderValueWithoutANotionalFilter() {
+    expectExchangeInfo()
+        .andRespond(
+            withSuccess(
+                """
+                {"symbols": [{"filters": [{"filterType": "LOT_SIZE", "stepSize": "0.01"}]}]}
+                """,
+                MediaType.APPLICATION_JSON));
+
+    assertThat(gateway.tradingRules("BTCUSDT").minOrderValue()).isZero();
   }
 
   @Test

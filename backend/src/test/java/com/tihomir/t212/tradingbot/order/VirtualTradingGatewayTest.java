@@ -10,11 +10,13 @@ import org.junit.jupiter.api.Test;
 
 class VirtualTradingGatewayTest {
 
-  private static final BigDecimal FEE_RATE = new BigDecimal("0.001");
+  private static final TickerTradingRules BTC_RULES =
+      new TickerTradingRules(new BigDecimal("0.00001"), new BigDecimal("5"));
   private static final Instant FILL_TIME = Instant.parse("2020-01-01T00:05:00Z");
+  private static final int FILTER_FAILURE = -1013;
 
   private final VirtualTradingGateway account =
-      new VirtualTradingGateway("BTCUSDT", new BigDecimal("1000"), FEE_RATE);
+      new VirtualTradingGateway("BTCUSDT", new BigDecimal("1000"), BTC_RULES);
 
   @Test
   void buysWithAQuoteAmountAndPaysTheFeeInTheCoin() {
@@ -91,6 +93,39 @@ class VirtualTradingGatewayTest {
   }
 
   @Test
+  void roundsQuantitiesDownToTheLotStepLikeBinance() {
+    account.updateMarketPrice(new BigDecimal("300"), FILL_TIME);
+
+    ExecutedOrder buy = account.placeMarketOrder(buy("100"));
+    ExecutedOrder sell = account.placeMarketOrder(sell("0.3329999"));
+
+    assertThat(buy.executedQuantity()).isEqualByComparingTo("0.33333");
+    assertThat(buy.quoteAmount()).isEqualByComparingTo("99.999");
+    assertThat(sell.executedQuantity()).isEqualByComparingTo("0.33299");
+    assertThat(account.tradingRules("BTCUSDT")).isEqualTo(BTC_RULES);
+  }
+
+  @Test
+  void refusesOrdersBelowTheMinimumValueOrOneLotStepWithBinanceErrorCodes() {
+    account.updateMarketPrice(new BigDecimal("200"), FILL_TIME);
+    account.placeMarketOrder(buy("100"));
+
+    assertThatThrownBy(() -> account.placeMarketOrder(buy("4.99")))
+        .isInstanceOfSatisfying(
+            ExchangeRejectedRequestException.class,
+            e -> assertThat(e.exchangeErrorCode()).isEqualTo(FILTER_FAILURE))
+        .hasMessageContaining("NOTIONAL");
+    assertThatThrownBy(() -> account.placeMarketOrder(sell("0.02")))
+        .hasMessageContaining("NOTIONAL");
+    assertThatThrownBy(() -> account.placeMarketOrder(sell("0.000009")))
+        .isInstanceOfSatisfying(
+            ExchangeRejectedRequestException.class,
+            e -> assertThat(e.exchangeErrorCode()).isEqualTo(FILTER_FAILURE))
+        .hasMessageContaining("lot step");
+    assertThat(account.baseQuantity()).isEqualByComparingTo("0.4995");
+  }
+
+  @Test
   void refusesOtherTickersAndOrdersBeforeAnyPrice() {
     assertThatThrownBy(() -> account.placeMarketOrder(buy("10")))
         .isInstanceOf(IllegalStateException.class);
@@ -104,7 +139,7 @@ class VirtualTradingGatewayTest {
 
   @Test
   void acceptsOnlyUsdtTickers() {
-    assertThatThrownBy(() -> new VirtualTradingGateway("ETHBTC", BigDecimal.ONE, FEE_RATE))
+    assertThatThrownBy(() -> new VirtualTradingGateway("ETHBTC", BigDecimal.ONE, BTC_RULES))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

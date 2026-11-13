@@ -33,6 +33,11 @@ public final class BalanceCachingTradingGateway implements ExchangeTradingGatewa
     return cache.snapshot().orElseThrow();
   }
 
+  @Override
+  public TickerTradingRules tradingRules(String ticker) {
+    return exchangeGateway.tradingRules(ticker);
+  }
+
   public void synchronizeBalances() {
     cache.replaceAll(exchangeGateway.accountBalances());
   }

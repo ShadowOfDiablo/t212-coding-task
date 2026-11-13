@@ -1,10 +1,16 @@
 package com.tihomir.t212.tradingbot.database;
 
+import static com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues.plainValue;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.ORDER_SIZE_PERCENT;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.RISK_PER_TRADE_PERCENT;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.STOP_LOSS_PERCENT;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.TIME_PERIOD;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.UPDATE_TIME_SECONDS;
+
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmStore;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
-import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
@@ -39,11 +45,11 @@ public class AlgorithmRepository implements AlgorithmStore {
   private static final Set<String> SHARED_NAMES =
       Set.of(
           LIVE_ON_TICK,
-          TradingAlgorithm.TIME_PERIOD,
-          TradingAlgorithm.UPDATE_TIME_SECONDS,
-          TradingAlgorithm.ORDER_SIZE_PERCENT,
-          TradingAlgorithm.RISK_PER_TRADE_PERCENT,
-          TradingAlgorithm.STOP_LOSS_PERCENT);
+          TIME_PERIOD,
+          UPDATE_TIME_SECONDS,
+          ORDER_SIZE_PERCENT,
+          RISK_PER_TRADE_PERCENT,
+          STOP_LOSS_PERCENT);
 
   private static final int SIMPLE_MOVING_AVERAGE_NUMBER = 1;
 
@@ -102,26 +108,20 @@ public class AlgorithmRepository implements AlgorithmStore {
     settings
         .options()
         .values()
-        .forEach((name, value) -> values.put(name, AlgorithmSettingValues.plainValue(value)));
+        .forEach((name, value) -> putNumber(values, name, Optional.of(value)));
     values.put(LIVE_ON_TICK, settings.liveOnTick());
-    values.put(TradingAlgorithm.TIME_PERIOD, settings.timePeriod());
-    settings
-        .updateTimeSeconds()
-        .ifPresent(seconds -> values.put(TradingAlgorithm.UPDATE_TIME_SECONDS, seconds));
-    values.put(
-        TradingAlgorithm.ORDER_SIZE_PERCENT,
-        AlgorithmSettingValues.plainValue(settings.orderSizePercent()));
-    settings
-        .riskPerTradePercent()
-        .ifPresent(risk ->
-            values.put(
-                TradingAlgorithm.RISK_PER_TRADE_PERCENT, AlgorithmSettingValues.plainValue(risk)));
-    settings
-        .stopLossPercent()
-        .ifPresent(stop ->
-            values.put(
-                TradingAlgorithm.STOP_LOSS_PERCENT, AlgorithmSettingValues.plainValue(stop)));
+    values.put(TIME_PERIOD, settings.timePeriod());
+    putNumber(values, UPDATE_TIME_SECONDS, settings.updateTimeSeconds().map(BigDecimal::valueOf));
+    putNumber(values, ORDER_SIZE_PERCENT, Optional.of(settings.orderSizePercent()));
+    putNumber(values, RISK_PER_TRADE_PERCENT, settings.riskPerTradePercent());
+    putNumber(values, STOP_LOSS_PERCENT, settings.stopLossPercent());
     return SETTINGS_MAPPER.writeValueAsString(values);
+  }
+
+  /** Leaves an empty setting out and writes a number without trailing zeros. */
+  private static void putNumber(
+      Map<String, Object> values, String name, Optional<BigDecimal> value) {
+    value.ifPresent(number -> values.put(name, plainValue(number)));
   }
 
   private static AlgorithmSettings algorithmSettings(ResultSet row, int rowNumber)
@@ -142,13 +142,13 @@ public class AlgorithmRepository implements AlgorithmStore {
       AlgorithmType algorithmType, CandleInterval timeframe, JsonNode values) {
     return new AlgorithmSettings(
         algorithmType,
-        values.required(TradingAlgorithm.TIME_PERIOD).decimalValue().intValueExact(),
+        values.required(TIME_PERIOD).decimalValue().intValueExact(),
         timeframe,
         values.required(LIVE_ON_TICK).booleanValue(),
-        optionalNumber(values, TradingAlgorithm.UPDATE_TIME_SECONDS).map(BigDecimal::intValueExact),
-        plainNumber(values.required(TradingAlgorithm.ORDER_SIZE_PERCENT)),
-        optionalNumber(values, TradingAlgorithm.RISK_PER_TRADE_PERCENT),
-        optionalNumber(values, TradingAlgorithm.STOP_LOSS_PERCENT),
+        optionalNumber(values, UPDATE_TIME_SECONDS).map(BigDecimal::intValueExact),
+        plainNumber(values.required(ORDER_SIZE_PERCENT)),
+        optionalNumber(values, RISK_PER_TRADE_PERCENT),
+        optionalNumber(values, STOP_LOSS_PERCENT),
         new AlgorithmSettingValues(
             values.properties().stream()
                 .filter(property -> !SHARED_NAMES.contains(property.getKey()))
@@ -177,6 +177,6 @@ public class AlgorithmRepository implements AlgorithmStore {
   }
 
   private static BigDecimal plainNumber(JsonNode value) {
-    return AlgorithmSettingValues.plainValue(value.decimalValue());
+    return plainValue(value.decimalValue());
   }
 }

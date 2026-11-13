@@ -6,6 +6,8 @@ import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleUpdateListener;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
+import com.tihomir.t212.tradingbot.order.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.OrderCheckerService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -41,7 +43,8 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   private final Broker broker;
   private volatile long runId;
-  private final LiveOrderPlacer orderPlacer;
+  private final LiveTradingAccount account;
+  private final OrderCheckerService orderChecker;
   private final Clock clock;
   private final ThreadFactory threadFactory;
   private final ThreadPoolExecutor worker;
@@ -58,13 +61,15 @@ final class LiveTradingBot implements CandleUpdateListener {
   LiveTradingBot(
       Broker broker,
       long runId,
-      LiveOrderPlacer orderPlacer,
+      LiveTradingAccount account,
+      OrderCheckerService orderChecker,
       LiveSignalSource signalSource,
       long algorithmId,
       Clock clock) {
     this.broker = broker;
     this.runId = runId;
-    this.orderPlacer = orderPlacer;
+    this.account = account;
+    this.orderChecker = orderChecker;
     this.signalSource = signalSource;
     this.algorithmId = algorithmId;
     this.clock = clock;
@@ -89,7 +94,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   BigDecimal cash() {
-    return orderPlacer.account().cash();
+    return account.cash();
   }
 
   String ticker() {
@@ -160,7 +165,7 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   private void evaluatePrice(BigDecimal price, Instant time) {
     AlgorithmSettings settings = signalSource.settings();
-    if (orderPlacer.isStopLossReached(price, settings)) {
+    if (orderChecker.isStopLossReached(account, price, settings)) {
       sellAtStopLoss(price, settings);
       return;
     }
@@ -168,7 +173,7 @@ final class LiveTradingBot implements CandleUpdateListener {
     if (signal == TradingSignal.HOLD) {
       return;
     }
-    if (!orderPlacer.placeCheckedOrder(signal, price, settings)) {
+    if (!placeCheckedOrder(signal, price, settings)) {
       refusedOrderCount++;
       return;
     }
@@ -180,12 +185,21 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   private void sellAtStopLoss(BigDecimal price, AlgorithmSettings settings) {
-    if (!orderPlacer.placeCheckedOrder(TradingSignal.SELL, price, settings)) {
+    if (!placeCheckedOrder(TradingSignal.SELL, price, settings)) {
       refusedOrderCount++;
       return;
     }
     sellCount++;
     stopLossCount++;
+  }
+
+  /** True when the checks approved the order and the exchange executed it. */
+  private boolean placeCheckedOrder(
+      TradingSignal signal, BigDecimal price, AlgorithmSettings settings) {
+    Optional<ExecutedOrder> order =
+        orderChecker.placeCheckedOrder(broker.name(), signal, account, price, settings);
+    order.ifPresent(account::recordExecutedOrder);
+    return order.isPresent();
   }
 
   private void submitEvaluation(BigDecimal price, Instant time) {
@@ -264,7 +278,7 @@ final class LiveTradingBot implements CandleUpdateListener {
           .tickerPrices()
           .get(ticker())
           .map(TickerQuote::lastPrice)
-          .map(orderPlacer.account()::portfolioValue);
+          .map(account::portfolioValue);
     } catch (RuntimeException e) {
       log.error(
           "{} {}: live run {} could not read its final value", broker.name(), ticker(), runId, e);
@@ -277,7 +291,6 @@ final class LiveTradingBot implements CandleUpdateListener {
     if (Duration.between(lastPointTime, time).compareTo(PORTFOLIO_POINT_INTERVAL) < 0) {
       return;
     }
-    LiveTradingAccount account = orderPlacer.account();
     BigDecimal cash = account.cash();
     points.addLast(new PortfolioPoint(time, cash, account.portfolioValue(price)));
     lastPointTime = time;

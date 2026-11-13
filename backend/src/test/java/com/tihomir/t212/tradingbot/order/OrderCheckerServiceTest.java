@@ -7,8 +7,14 @@ import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
+import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
+import com.tihomir.t212.tradingbot.broker.FakeBroker;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +22,42 @@ class OrderCheckerServiceTest {
 
   private static final BigDecimal PRICE = new BigDecimal("100");
 
-  private final OrderCheckerService checker = new OrderCheckerService();
+  private static final String BROKER = "binance";
+  private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+
+  private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
+  private final OrderCheckerService checker =
+      new OrderCheckerService(
+          new OrderService(
+              new BrokerRegistryService(List.of(new FakeBroker(BROKER, gateway))),
+              new FakeOrderStore(),
+              Clock.fixed(NOW, ZoneOffset.UTC)));
+
+  @Test
+  void placesALiveOrderOnlyWhenTheChecksApproveIt() {
+    Optional<ExecutedOrder> placed =
+        checker.placeCheckedOrder(
+            BROKER, TradingSignal.BUY, FakeAccountView.withCash("1000"), PRICE, settings("50"));
+    Optional<ExecutedOrder> refused =
+        checker.placeCheckedOrder(
+            BROKER, TradingSignal.SELL, FakeAccountView.withCash("1000"), PRICE, settings("50"));
+
+    assertThat(placed).isPresent();
+    assertThat(refused).isEmpty();
+    assertThat(gateway.placedOrders())
+        .singleElement()
+        .satisfies(order -> assertThat(order.side()).isEqualTo(OrderSide.BUY));
+  }
+
+  @Test
+  void placesNothingWhenTheExchangeRejectsTheOrder() {
+    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "insufficient balance"));
+
+    assertThat(
+            checker.placeCheckedOrder(
+                BROKER, TradingSignal.BUY, FakeAccountView.withCash("1000"), PRICE, settings("50")))
+        .isEmpty();
+  }
 
   @Test
   void buysWithTheOrderSizeShareOfTheCash() {

@@ -250,8 +250,7 @@ class TradingBotServiceTest {
             List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet))),
         settingsService,
         new CandleHistoryService(brokers, candleStore, CLOCK),
-        new OrderCheckerService(),
-        new OrderService(brokers, new FakeOrderStore(), CLOCK),
+        new OrderCheckerService(new OrderService(brokers, new FakeOrderStore(), CLOCK)),
         runStore,
         CLOCK);
   }

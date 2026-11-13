@@ -20,7 +20,9 @@ import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.FakeOrderStore;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
+import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -215,7 +217,11 @@ class TrainingServiceTest {
                 new ScriptedTestAlgorithm(signals, onEveryPrice))),
         settingsService(),
         candleHistory,
-        new OrderCheckerService(),
+        new OrderCheckerService(
+            new OrderService(
+                new BrokerRegistryService(List.of(new FakeBroker(BROKER, liveGateway))),
+                new FakeOrderStore(),
+                CLOCK)),
         runStore,
         CLOCK);
   }

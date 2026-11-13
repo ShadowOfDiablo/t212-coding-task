@@ -278,7 +278,6 @@ final class LiveTradingBot implements CandleUpdateListener {
     if (Duration.between(lastPointTime, time).compareTo(PORTFOLIO_POINT_INTERVAL) < 0) {
       return;
     }
-    LiveTradingAccount account = orderPlacer.account();
     BigDecimal cash = account.cash();
     points.addLast(new PortfolioPoint(time, cash, account.portfolioValue(price)));
     lastPointTime = time;

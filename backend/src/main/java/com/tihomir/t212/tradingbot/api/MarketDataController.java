@@ -30,7 +30,6 @@ public class MarketDataController {
     return new TickerPriceListResponse(tickerPriceService.getTickerPrices(broker).tickers());
   }
 
-  /** Follows one more ticker and answers with every followed ticker and its price. */
   @PostMapping("/tickers")
   @ResponseStatus(HttpStatus.CREATED)
   public TickerPriceListResponse followTicker(

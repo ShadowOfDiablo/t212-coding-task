@@ -60,12 +60,20 @@ public class CandleHistoryService {
   }
 
   private Broker tradingBroker(CandleHistoryRequest request) {
+    return tradingBroker(request.broker(), request.ticker());
+  }
+
+  /**
+   * The broker, after checking it exists and trades the ticker.
+   *
+   * @throws BrokerNotFoundException if there is no such broker
+   * @throws TickerNotTradedException if the broker doesn't trade the ticker
+   */
+  public Broker tradingBroker(String brokerName, String ticker) {
     Broker broker =
-        brokers
-            .get(request.broker())
-            .orElseThrow(() -> new BrokerNotFoundException(request.broker()));
-    if (!broker.tickers().contains(request.ticker())) {
-      throw new TickerNotTradedException(request.broker(), request.ticker());
+        brokers.get(brokerName).orElseThrow(() -> new BrokerNotFoundException(brokerName));
+    if (!broker.tickers().contains(ticker)) {
+      throw new TickerNotTradedException(brokerName, ticker);
     }
     return broker;
   }

@@ -62,7 +62,7 @@ public final class FakeExchangeTradingGateway implements ExchangeTradingGateway 
     remainingBalanceFailures = times;
   }
 
-  synchronized List<MarketOrderRequest> placedOrders() {
+  public synchronized List<MarketOrderRequest> placedOrders() {
     return List.copyOf(placedOrders);
   }
 

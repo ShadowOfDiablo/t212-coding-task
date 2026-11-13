@@ -19,8 +19,6 @@ public interface ExchangeTradingGateway {
   AccountBalanceSnapshot accountBalances();
 
   /**
-   * The lot step and minimum order value of the ticker.
-   *
    * @throws ExchangeUnavailableException the rules could not be read from the exchange
    */
   TickerTradingRules tradingRules(String ticker);

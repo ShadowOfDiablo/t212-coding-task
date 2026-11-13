@@ -3,8 +3,6 @@ package com.tihomir.t212.tradingbot.order;
 import java.math.BigDecimal;
 
 /**
- * The exchange's rules for market orders on one ticker.
- *
  * @param lotStepSize Binance's LOT_SIZE step: the smallest amount a coin quantity can change by.
  *     For BTCUSDT it is 0.00001 BTC, so 0.123456 BTC is sent as 0.12345 BTC. Not the same as an
  *     {@code OpenLot}, which is one buy that still holds coins.

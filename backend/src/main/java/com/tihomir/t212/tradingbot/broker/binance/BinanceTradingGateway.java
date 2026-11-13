@@ -112,12 +112,7 @@ final class BinanceTradingGateway implements ExchangeTradingGateway {
     }
     BigDecimal lotStepSize =
         lotStepSizeByTicker.computeIfAbsent(request.ticker(), this::readLotStepSize);
-    BigDecimal quantity =
-        request
-            .amount()
-            .divideToIntegralValue(lotStepSize)
-            .multiply(lotStepSize)
-            .stripTrailingZeros();
+    BigDecimal quantity = OrderUtil.roundDownToLotStep(request.amount(), lotStepSize);
     if (quantity.signum() <= 0) {
       throw new ExchangeRejectedRequestException(
           LOT_SIZE_ERROR_CODE,

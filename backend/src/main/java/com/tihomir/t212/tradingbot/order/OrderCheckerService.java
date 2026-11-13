@@ -5,11 +5,13 @@ import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Checks every order before it is placed, in training and in trading. An optional setting that is
- * empty skips its check.
+ * Checks every order before it is placed, in training and in trading, and places the live bot's
+ * approved orders on the exchange. An optional setting that is empty skips its check.
  */
 @Service
 public class OrderCheckerService {
@@ -19,6 +21,48 @@ public class OrderCheckerService {
 
   private static final BigDecimal PERCENT = BigDecimal.valueOf(100);
   private static final int AMOUNT_SCALE = 8;
+
+  private static final Logger log = LoggerFactory.getLogger(OrderCheckerService.class);
+
+  private final OrderService orderService;
+
+  public OrderCheckerService(OrderService orderService) {
+    this.orderService = orderService;
+  }
+
+  /**
+   * Checks a live signal and places the order on the exchange only when the checks approve it.
+   *
+   * @return the executed order; empty when the checks refused it or the exchange rejected it
+   */
+  public Optional<ExecutedOrder> placeCheckedOrder(
+      String brokerName,
+      TradingSignal signal,
+      AccountView account,
+      BigDecimal price,
+      AlgorithmSettings settings) {
+    OrderCheck check = checkOrder(signal, account, price, settings);
+    if (!check.isApproved()) {
+      log.info(
+          "{} {}: live {} refused: {}",
+          brokerName,
+          account.ticker(),
+          signal,
+          check.refusal().orElseThrow());
+      return Optional.empty();
+    }
+    try {
+      return Optional.of(orderService.placeMarketOrder(brokerName, check.order().orElseThrow()));
+    } catch (ExchangeRejectedRequestException e) {
+      log.warn(
+          "{} {}: live {} rejected by the exchange: {}",
+          brokerName,
+          account.ticker(),
+          signal,
+          e.getMessage());
+      return Optional.empty();
+    }
+  }
 
   public OrderCheck checkOrder(
       TradingSignal signal, AccountView account, BigDecimal price, AlgorithmSettings settings) {

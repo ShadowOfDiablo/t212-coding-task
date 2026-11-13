@@ -6,6 +6,7 @@ import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.OrderFill;
 import com.tihomir.t212.tradingbot.order.OrderSide;
+import com.tihomir.t212.tradingbot.position.FakePositionStore;
 import com.tihomir.t212.tradingbot.position.PositionTracker;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -20,7 +21,10 @@ class LiveTradingAccountTest {
 
   private final LiveTradingAccount account =
       new LiveTradingAccount(
-          TICKER, new FakeExchangeTradingGateway(), new PositionTracker("binance", TICKER));
+          TICKER,
+          new FakeExchangeTradingGateway(),
+          new PositionTracker("binance", TICKER),
+          new FakePositionStore());
 
   @BeforeEach
   void startRun() {

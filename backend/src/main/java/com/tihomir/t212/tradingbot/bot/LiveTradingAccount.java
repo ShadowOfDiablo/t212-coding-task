@@ -5,11 +5,14 @@ import com.tihomir.t212.tradingbot.order.AssetBalance;
 import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.position.PositionStore;
 import com.tihomir.t212.tradingbot.position.PositionTracker;
 import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The live bot's view of the exchange account. Cash is the account's free quote balance; the
@@ -20,16 +23,22 @@ final class LiveTradingAccount implements AccountView {
 
   private static final String QUOTE_ASSET = VirtualTradingGateway.QUOTE_ASSET;
   private static final int AMOUNT_SCALE = 8;
+  private static final Logger log = LoggerFactory.getLogger(LiveTradingAccount.class);
 
   private final String ticker;
   private final ExchangeTradingGateway gateway;
   private final PositionTracker positionTracker;
+  private final PositionStore positionStore;
 
   LiveTradingAccount(
-      String ticker, ExchangeTradingGateway gateway, PositionTracker positionTracker) {
+      String ticker,
+      ExchangeTradingGateway gateway,
+      PositionTracker positionTracker,
+      PositionStore positionStore) {
     this.ticker = ticker;
     this.gateway = gateway;
     this.positionTracker = positionTracker;
+    this.positionStore = positionStore;
   }
 
   @Override
@@ -52,9 +61,12 @@ final class LiveTradingAccount implements AccountView {
     return positionTracker.entryPrice();
   }
 
-  /** What changed in the position, to be stored; empty when nothing changed. */
-  Optional<PositionWrite> recordExecutedOrder(ExecutedOrder order) {
-    return positionTracker.recordExecutedOrder(order);
+  /**
+   * Applies the order to the position and stores the change. The order did happen: a failed write
+   * is logged and the position stays in memory.
+   */
+  void recordExecutedOrder(ExecutedOrder order) {
+    positionTracker.recordExecutedOrder(order).ifPresent(write -> savePosition(order, write));
   }
 
   void updateExcursions(BigDecimal price) {
@@ -70,6 +82,18 @@ final class LiveTradingAccount implements AccountView {
     return cash()
         .add(baseQuantity().multiply(price))
         .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
+  }
+
+  private void savePosition(ExecutedOrder order, PositionWrite write) {
+    try {
+      positionStore.savePosition(write);
+    } catch (RuntimeException e) {
+      log.error(
+          "{}: the position change of order {} could not be stored",
+          ticker,
+          order.exchangeOrderId(),
+          e);
+    }
   }
 
   static BigDecimal freeCash(ExchangeTradingGateway gateway) {

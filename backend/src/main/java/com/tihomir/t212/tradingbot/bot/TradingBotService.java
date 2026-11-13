@@ -11,7 +11,6 @@ import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
-import com.tihomir.t212.tradingbot.order.OrderService;
 import com.tihomir.t212.tradingbot.position.PositionStore;
 import com.tihomir.t212.tradingbot.position.PositionTracker;
 import jakarta.annotation.PreDestroy;
@@ -27,7 +26,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Starts, changes and stops the live bots, one per broker, and records their runs. A live bot
- * trades on the exchange's demo account through {@link OrderService}.
+ * trades on the exchange's demo account; every order goes through {@link OrderCheckerService}.
  */
 @Service
 public class TradingBotService {
@@ -39,7 +38,6 @@ public class TradingBotService {
   private final AlgorithmSettingsService settingsService;
   private final CandleHistoryService candleHistory;
   private final OrderCheckerService orderChecker;
-  private final OrderService orderService;
   private final AlgorithmRunStore runStore;
   private final PositionStore positionStore;
   private final Clock clock;
@@ -51,7 +49,6 @@ public class TradingBotService {
       AlgorithmSettingsService settingsService,
       CandleHistoryService candleHistory,
       OrderCheckerService orderChecker,
-      OrderService orderService,
       AlgorithmRunStore runStore,
       PositionStore positionStore,
       Clock clock) {
@@ -60,7 +57,6 @@ public class TradingBotService {
     this.settingsService = settingsService;
     this.candleHistory = candleHistory;
     this.orderChecker = orderChecker;
-    this.orderService = orderService;
     this.runStore = runStore;
     this.positionStore = positionStore;
     this.clock = clock;
@@ -87,7 +83,8 @@ public class TradingBotService {
         .findOpenLivePosition(broker.name(), request.ticker())
         .ifPresent(positionTracker::restorePosition);
     LiveTradingAccount account =
-        new LiveTradingAccount(request.ticker(), broker.tradingGateway(), positionTracker);
+        new LiveTradingAccount(
+            request.ticker(), broker.tradingGateway(), positionTracker, positionStore);
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
     BigDecimal startingValue = currentValue(broker, account);
@@ -105,13 +102,7 @@ public class TradingBotService {
                 algorithmId));
     account.startRun(runId);
     LiveTradingBot bot =
-        new LiveTradingBot(
-            broker,
-            runId,
-            new LiveOrderPlacer(broker.name(), account, orderChecker, orderService, positionStore),
-            signalSource,
-            algorithmId,
-            clock);
+        new LiveTradingBot(broker, runId, account, orderChecker, signalSource, algorithmId, clock);
     runningBots.put(broker.name(), bot);
     bot.startListening();
     log.info(

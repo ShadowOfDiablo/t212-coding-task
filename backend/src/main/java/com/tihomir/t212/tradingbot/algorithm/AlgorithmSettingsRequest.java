@@ -13,7 +13,10 @@ import java.util.Map;
  *     null}, which means "not set"
  */
 public record AlgorithmSettingsRequest(
-    int algorithmId, CandleInterval timeframe, boolean liveOnTick, Map<String, BigDecimal> values) {
+    AlgorithmType algorithmType,
+    CandleInterval timeframe,
+    boolean liveOnTick,
+    Map<String, BigDecimal> values) {
 
   public AlgorithmSettingsRequest {
     values = Collections.unmodifiableMap(new HashMap<>(values));

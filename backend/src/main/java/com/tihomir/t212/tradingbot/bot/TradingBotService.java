@@ -76,7 +76,7 @@ public class TradingBotService {
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
     BigDecimal startingValue = account.cash();
-    long settingsId = settingsService.saveSettings(signalSource.settings());
+    long algorithmId = settingsService.saveSettings(signalSource.settings());
     long runId =
         runStore.insertStartedRun(
             new RunStart(
@@ -87,9 +87,9 @@ public class TradingBotService {
                 Optional.empty(),
                 Optional.empty(),
                 startingValue,
-                settingsId));
+                algorithmId));
     LiveTradingBot bot =
-        new LiveTradingBot(broker, runId, account, orderChecker, signalSource, settingsId, clock);
+        new LiveTradingBot(broker, runId, account, orderChecker, signalSource, algorithmId, clock);
     runningBots.put(broker.name(), bot);
     bot.startListening();
     log.info(
@@ -117,8 +117,9 @@ public class TradingBotService {
   }
 
   /**
-   * Saves new settings for the running bot: checks them, warms a new generator up, records the
-   * change and swaps the settings in. On any failure the bot keeps its settings.
+   * Saves new settings for the running bot: checks them and warms a new generator up, then ends the
+   * current run and starts a new one with the new algorithm variant, in one transaction. On any
+   * failure the bot keeps its run and settings.
    *
    * @throws LiveBotNotRunningException if the broker's bot doesn't run
    */
@@ -126,14 +127,18 @@ public class TradingBotService {
       String broker, AlgorithmSettingsRequest request) {
     LiveTradingBot bot = runningBot(broker);
     LiveSignalSource signalSource = warmedUpSignalSource(broker, bot.ticker(), request);
-    long settingsId = settingsService.saveSettings(signalSource.settings());
-    runStore.insertSettingsChange(
-        bot.runId(), new RunSettingsChange(RunEvent.CHANGED, clock.instant(), settingsId));
-    bot.replaceSignalSource(signalSource, settingsId);
+    long algorithmId = settingsService.saveSettings(signalSource.settings());
+    long previousRunId = bot.runId();
+    synchronized (bot) {
+      RunEnd end = bot.runEnd(RunStatus.COMPLETED);
+      long nextRunId = runStore.replaceRun(previousRunId, end, nextRunStart(bot, end, algorithmId));
+      bot.startNextRun(nextRunId, signalSource, algorithmId);
+    }
     log.info(
-        "{} {}: live run {} now uses {}",
+        "{} {}: live run {} replaced by run {} with {}",
         broker,
         bot.ticker(),
+        previousRunId,
         bot.runId(),
         signalSource.settings());
     return bot.status();
@@ -176,9 +181,21 @@ public class TradingBotService {
     return findRunningBot(broker).orElseThrow(() -> new LiveBotNotRunningException(broker));
   }
 
+  private RunStart nextRunStart(LiveTradingBot bot, RunEnd end, long algorithmId) {
+    return new RunStart(
+        BotMode.TRADING,
+        bot.brokerName(),
+        bot.ticker(),
+        end.finishedAt(),
+        Optional.empty(),
+        Optional.empty(),
+        end.finalValue().orElseGet(bot::cash),
+        algorithmId);
+  }
+
   private LiveSignalSource warmedUpSignalSource(
       String broker, String ticker, AlgorithmSettingsRequest request) {
-    TradingAlgorithm algorithm = algorithms.get(request.algorithmId());
+    TradingAlgorithm algorithm = algorithms.get(request.algorithmType());
     AlgorithmSettings settings = algorithm.resolveSettings(request);
     LiveSignalSource signalSource =
         new LiveSignalSource(candleHistory, broker, ticker, algorithm, settings);

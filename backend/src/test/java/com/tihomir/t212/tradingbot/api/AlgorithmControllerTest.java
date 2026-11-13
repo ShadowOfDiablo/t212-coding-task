@@ -30,7 +30,7 @@ class AlgorithmControllerTest {
     mockMvc
         .perform(get("/api/algorithms"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.algorithms[0].id").value(1))
+        .andExpect(jsonPath("$.algorithms[0].type").value("SIMPLE_MOVING_AVERAGE"))
         .andExpect(jsonPath("$.algorithms[0].name").value("example-strategy-SMA"))
         .andExpect(jsonPath("$.algorithms[0].settings[0].name").value("timePeriod"))
         .andExpect(jsonPath("$.algorithms[0].settings[0].required").value(true))

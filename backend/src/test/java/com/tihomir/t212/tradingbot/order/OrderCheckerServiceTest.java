@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
@@ -149,7 +149,7 @@ class OrderCheckerServiceTest {
 
   private static AlgorithmSettings settings(String orderSizePercent) {
     return new AlgorithmSettings(
-        SimpleMovingAverageAlgorithm.ID,
+        AlgorithmType.SIMPLE_MOVING_AVERAGE,
         20,
         CandleInterval.ONE_MINUTE,
         true,
@@ -162,7 +162,7 @@ class OrderCheckerServiceTest {
 
   private static AlgorithmSettings settingsWithRisk(BigDecimal risk, BigDecimal stopLoss) {
     return new AlgorithmSettings(
-        SimpleMovingAverageAlgorithm.ID,
+        AlgorithmType.SIMPLE_MOVING_AVERAGE,
         20,
         CandleInterval.ONE_MINUTE,
         true,

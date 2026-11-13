@@ -32,10 +32,10 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
   if (!algorithms || !value) {
     return [0, 1, 2].map((row) => <p key={row} className="skeleton skeleton-line" />)
   }
-  const algorithm = algorithms.find((candidate) => candidate.id === value.algorithmId)
+  const algorithm = algorithms.find((candidate) => candidate.type === value.algorithmType)
   const setValue = (name, text) => onChange({ ...value, values: { ...value.values, [name]: text } })
-  const selectAlgorithm = (id) =>
-    onChange(defaultSettings(algorithms.find((candidate) => candidate.id === id)))
+  const selectAlgorithm = (type) =>
+    onChange(defaultSettings(algorithms.find((candidate) => candidate.type === type)))
   const definitions = (algorithm?.settings ?? []).filter(
     (definition) => definition.name !== UPDATE_TIME_SECONDS || !value.liveOnTick,
   )
@@ -44,14 +44,14 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
     <fieldset className="settings-form" disabled={disabled}>
       <label className="field field-wide">
         <span className="field-label">Algorithm</span>
-        <select value={value.algorithmId} onChange={(event) => selectAlgorithm(event.target.value)}>
+        <select value={value.algorithmType} onChange={(event) => selectAlgorithm(event.target.value)}>
           {algorithms.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
+            <option key={candidate.type} value={candidate.type}>
               {candidate.displayName}
             </option>
           ))}
         </select>
-        <span className="field-hint">{value.algorithmId}</span>
+        <span className="field-hint">{algorithm?.name}</span>
       </label>
       <label className="field">
         <span className="field-label">Timeframe</span>

@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * How a run ended, with the id of the settings in force at the end.
+ * How a run ended.
  *
  * @param points the portfolio values of a training run; none for a live run
  */
@@ -15,5 +15,4 @@ public record RunEnd(
     Optional<BigDecimal> finalValue,
     RunCounts counts,
     Optional<String> failureReason,
-    long settingsId,
     PortfolioPointList points) {}

@@ -938,10 +938,10 @@ com.tihomir.t212.tradingbot
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
 ├── mode             BotMode, BotModeService, BrokerStartupRunner
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
-├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmOptionStore,
+├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmType, AlgorithmStore,
 │   │                AlgorithmRegistryService, SignalGenerator, TradingSignal, SimpleMovingAverageAlgorithm
 │   └── indicator    SimpleMovingAverage
-├── bot              TradingBotService, TrainingService, AlgorithmRunStore, RunStatus, RunEvent
+├── bot              TradingBotService, TrainingService, AlgorithmRunStore, RunStatus
 ├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
 │                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
@@ -1028,7 +1028,7 @@ A trading algorithm turns prices into signals. The same algorithm runs in both m
 - **Training:** over stored candles, on a virtual account, as fast as possible.
 - **Trading:** live, on the Binance demo account.
 
-Every order goes through one checker first. The settings a run uses are kept in memory while it runs and recorded in the database when it starts, when they change and when it ends.
+Every order goes through one checker first. A run uses one algorithm variant. Its settings are kept in memory while it runs; the run is recorded when it starts and when it ends. A live settings change ends the run and starts a new one.
 
 ```mermaid
 flowchart LR
@@ -1044,7 +1044,7 @@ flowchart LR
     Bot --> Checker
     Checker -- "training" --> Virtual["VirtualTradingGateway"]
     Checker -- "trading" --> Orders["OrderService<br/>Binance demo account"]
-    Train --> RunDb[("algorithm_settings, sma_settings,<br/>algorithm_run, algorithm_run_settings,<br/>training_portfolio_point")]
+    Train --> RunDb[("algorithm, algorithm_run,<br/>active_algorithm,<br/>training_portfolio_point")]
     Bot --> RunDb
 ```
 
@@ -1061,7 +1061,7 @@ erDiagram
     }
     candle {
         bigint ticker_id PK
-        text candle_interval PK "e.g. FIVE_MINUTES"
+        text candle_interval PK "code, e.g. 5m"
         timestamptz open_time PK
         timestamptz close_time
         numeric open
@@ -1118,7 +1118,7 @@ flowchart TD
 classDiagram
     class TradingAlgorithm {
         <<abstract>>
-        id() int
+        type() AlgorithmType
         name() String
         displayName() String
         settingDefinitions() AlgorithmSettingDefinitionList
@@ -1133,24 +1133,24 @@ classDiagram
         onPrice(CandleUpdate) TradingSignal
     }
     class AlgorithmSettings {
-        algorithmId, timePeriod, timeframe
+        algorithmType, timePeriod, timeframe
         liveOnTick, updateTimeSeconds (optional)
         orderSizePercent
         riskPerTradePercent, stopLossPercent (optional)
         options (the algorithm's own, optional)
     }
-    class AlgorithmOptionStore {
+    class AlgorithmStore {
         <<interface>>
-        findOrInsertSettings(AlgorithmSettings) long
-        getSettings(long) AlgorithmSettings
+        findOrInsertAlgorithm(AlgorithmSettings, Instant) long
+        getAlgorithm(long) AlgorithmSettings
     }
     class SimpleMovingAverageAlgorithm {
-        id 1, name example-strategy-SMA
+        type SIMPLE_MOVING_AVERAGE, name example-strategy-SMA
     }
     TradingAlgorithm <|-- SimpleMovingAverageAlgorithm
     TradingAlgorithm ..> SignalGenerator : creates one per run
     TradingAlgorithm ..> AlgorithmSettings : resolves
-    SimpleMovingAverageAlgorithm ..> AlgorithmOptionStore : its own store
+    AlgorithmStore ..> AlgorithmSettings : stores as variants
 ```
 
 - **The algorithm only produces signals** (`BUY`, `SELL`, `HOLD`). It never sees the account. Whether a signal becomes an order is decided by `OrderCheckerService` (§16.3).
@@ -1163,22 +1163,21 @@ classDiagram
 | Setting | Required | Meaning |
 |---|---|---|
 | `timePeriod` | yes | Candles the algorithm looks back over |
-| `timeframe` | yes | The candle interval (`ONE_MINUTE` … `ONE_DAY`) |
+| `timeframe` | yes | The candle interval as a code: `1m`, `5m`, `15m`, `1h`, `4h`, `1d` |
 | `liveOnTick` | yes | Live: run on every price update |
 | `updateTimeSeconds` | only when `liveOnTick` is false | Live: run every this many seconds. `null` when `liveOnTick` is true |
 | `orderSizePercent` | yes | Share of the cash a buy spends |
 | `riskPerTradePercent`, `stopLossPercent` | optional, together | Cap each buy so the stop loses at most this share of the portfolio, and sell at the stop |
 
-- **Adding an algorithm** takes three things:
-  1. a class extending `TradingAlgorithm` (a Spring bean)
-  2. its own `…_settings` table in a new migration
-  3. its `AlgorithmOptionStore`
+- **Adding an algorithm** takes two things:
+  1. a value in `AlgorithmType`, and its number in the exhaustive `switch` of `AlgorithmRepository`
+  2. a class extending `TradingAlgorithm` (a Spring bean)
 
-  `AlgorithmRegistryService` finds it and rejects duplicate ids, and `GET /api/algorithms` lists it.
-- **`example-strategy-SMA` (id 1):** one simple moving average over `timePeriod` candles of the timeframe.
+  No migration is needed: its own settings go into the same JSON. `AlgorithmRegistryService` finds it and rejects duplicate types, and `GET /api/algorithms` lists it.
+- **`example-strategy-SMA` (`SIMPLE_MOVING_AVERAGE`, number 1 in the database):** one simple moving average over `timePeriod` candles of the timeframe.
   - **BUY** when the price **moves below** the average. **SELL** when it **moves above** it.
   - Signals only fire when the price crosses to the other side, so it doesn't buy on every candle below the average.
-  - It has no optional settings yet. Its `sma_settings` table is ready for them.
+  - It has no optional settings yet.
 
 ### 16.3 Order checks
 
@@ -1201,29 +1200,23 @@ flowchart TD
 - **`AccountView`** provides cash, base quantity and entry price. Training reads the virtual account; trading reads the cached Binance balances (§7.2).
 - **`VirtualTradingGateway`** implements the same `ExchangeTradingGateway` as Binance, with a 0.1% fee and its own order ids. That is the swap: training never sends an order to Binance.
 
-### 16.4 Recording settings and runs
+### 16.4 Recording algorithms and runs
 
 ```mermaid
 erDiagram
-    algorithm_settings {
+    algorithm {
         bigserial id PK
-        smallint algorithm_id "1 = example-strategy-SMA"
-        int time_period
-        text timeframe
-        boolean live_on_tick
-        int update_time_seconds "NULL when live_on_tick"
-        numeric order_size_percent
-        numeric risk_per_trade_percent "NULL = off"
-        numeric stop_loss_percent "NULL = off"
-    }
-    sma_settings {
-        bigint settings_id PK "FK to algorithm_settings.id"
+        smallint algorithm_type "1 = example-strategy-SMA"
+        text timeframe "code, e.g. 15m"
+        text settings "JSON, every other setting"
+        timestamptz created_at
     }
     algorithm_run {
         bigserial id PK
         text mode "TRAINING or TRADING"
         text broker
         text ticker
+        bigint algorithm_id "FK to algorithm.id"
         text status "STARTED, COMPLETED, STOPPED, FAILED"
         timestamptz started_at
         timestamptz finished_at "NULL while running"
@@ -1237,11 +1230,11 @@ erDiagram
         int refused_order_count
         text failure_reason
     }
-    algorithm_run_settings {
-        bigint run_id PK
-        timestamptz recorded_at PK
-        text event PK "STARTED, CHANGED, COMPLETED"
-        bigint settings_id
+    active_algorithm {
+        text broker PK
+        text ticker PK
+        bigint algorithm_id "FK to algorithm.id"
+        timestamptz activated_at
     }
     training_portfolio_point {
         bigint run_id PK
@@ -1249,26 +1242,24 @@ erDiagram
         numeric cash
         numeric value
     }
-    algorithm_settings ||--o| sma_settings : "1:1, same id"
-    algorithm_run ||--o{ algorithm_run_settings : "settings over time"
-    algorithm_settings ||--o{ algorithm_run_settings : "used by"
-    algorithm_run ||--o{ training_portfolio_point : "training chart"
+    algorithm ||--o{ algorithm_run : "used by"
+    algorithm ||--o{ active_algorithm : "active on"
+    algorithm_run ||--o{ training_portfolio_point : "chart"
 ```
 
-- **One shared table, plus one table per algorithm:**
-  - `algorithm_settings` holds the shared settings.
-  - Each algorithm type has its own table of typed optional columns. Its key is also a foreign key back to `algorithm_settings.id` (1:1).
-  - The shared table has no column pointing at the algorithm tables, because one column can't point at several tables. Instead, `algorithm_id` picks the algorithm and its store, which joins its table on the id.
-  - **Algorithm ids are numbers** (`SMALLINT`), in the code, the API (`algorithmId: 1`) and the database, so matching settings compares numbers. Each algorithm also has a text name (`example-strategy-SMA`) and a display name. An id is never reused.
-  - The timeframe stays `text` (`FIFTEEN_MINUTES`), the name of the `CandleInterval`, which holds its `Duration` in Java.
-- **Identical settings are stored once:**
-  - Saving settings looks for a row with the same values, with `NULL` matching `NULL`, in plain SQL: `(col = ? OR (col IS NULL AND ? IS NULL))`.
-  - A match is reused; otherwise the rows are inserted, in one transaction.
-  - Runs only point at `settings_id`.
-- **Cache, then record:** while a run is going, its settings live in memory (`currentParameters`). The database is written three times:
-  - **Start:** the run row (`STARTED`) and a `STARTED` settings record, in one transaction.
-  - **Saved change (live only):** a `CHANGED` settings record, with its time.
-  - **End:** status, counts, final value and a `COMPLETED` settings record, in one transaction. The status is `COMPLETED`, `STOPPED` (stopped on request, or interrupted by a restart) or `FAILED` (with its reason).
+- **One row per algorithm variant** in `algorithm`: a type with one set of settings.
+  - **Type:** `AlgorithmType` in the code and the API (`SIMPLE_MOVING_AVERAGE`), a `SMALLINT` in the database. `AlgorithmRepository` maps the two with an exhaustive `switch`. A number is never reused.
+  - **Timeframe:** its code (`5m`), in the API and the database. `CandleInterval` keeps only its `Duration`; the code is derived from it.
+  - **Settings:** every other setting, shared and the algorithm's own, as JSON text, parsed with Jackson. No JSON column type is used, so any database can hold it.
+  - **Rows never change.** New settings are a new row, so a run always points at exactly the settings it used.
+- **Identical variants are stored once:**
+  - The JSON is written in one fixed form: keys sorted, numbers plain without trailing zeros (`1.00` is `1`), empty optional settings left out.
+  - So identical settings give identical text, and saving looks for a row with the same type, timeframe and text. A match is reused; otherwise a row is inserted. `UNIQUE (algorithm_type, timeframe, settings)` backs this up.
+- **A run uses one variant** (`algorithm_run.algorithm_id`). The database is written twice:
+  - **Start:** the run row (`STARTED`). A live run also sets its ticker's `active_algorithm`, in the same transaction.
+  - **End:** status, counts, final value and points, in one transaction. The status is `COMPLETED`, `STOPPED` (stopped on request, or interrupted by a restart) or `FAILED` (with its reason).
+- **Live settings change:** the running run ends as `COMPLETED` and a new run starts with the new variant, in one transaction. The new run starts at the old run's final value.
+- **Active algorithm:** `active_algorithm` holds, per broker and ticker, the variant the live bot last traded it with. It stays after the bot stops. Variants themselves don't belong to a ticker, so one variant can be active on several tickers.
 - **Restart:** at startup, runs still marked `STARTED` are set to `STOPPED`, "interrupted by restart". A live bot does not resume by itself.
 
 ### 16.5 When the algorithm runs
@@ -1330,11 +1321,12 @@ stateDiagram-v2
   - Live bot: `true` while it runs.
 - **A saved live change:**
   1. Checks the values (`@Valid`, then `resolveSettings`).
-  2. Finds or inserts the settings row and records `CHANGED`.
-  3. Swaps `currentParameters`.
-  4. Rebuilds the signal generator, warmed up from the recent candles.
+  2. Rebuilds the signal generator, warmed up from the recent candles.
+  3. Finds or inserts the algorithm variant.
+  4. Ends the current run and starts a new one with the variant, in one transaction (§16.4).
+  5. Swaps `currentParameters`. Counts and live chart points start again with the new run.
 
-  It takes effect from the next evaluation.
+  It takes effect from the next evaluation. If any step before 5 fails, the bot keeps its run and settings.
 - **Request bodies use nested `@Valid`:**
   - `AlgorithmSettingsBody`: `updateTimeSeconds` must be `null` exactly when `liveOnTick` is true, and risk and stop must be set together.
   - `TrainingRunRequestBody(@Valid CandleRangeBody candles, @Valid AlgorithmSettingsBody settings, startingBalance)`.

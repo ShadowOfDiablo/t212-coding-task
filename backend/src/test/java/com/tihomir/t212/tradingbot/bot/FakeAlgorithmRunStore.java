@@ -1,7 +1,7 @@
 package com.tihomir.t212.tradingbot.bot;
 
+import com.tihomir.t212.tradingbot.mode.BotMode;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,9 +11,8 @@ import java.util.Optional;
 public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
 
   private final Map<Long, RecordedRun> runs = new HashMap<>();
-  private final Map<Long, List<RunSettingsChange>> changes = new HashMap<>();
   private final Map<Long, PortfolioPointList> points = new HashMap<>();
-  private final Map<Long, Long> lastSettingsIds = new HashMap<>();
+  private final Map<String, Long> activeAlgorithmIds = new HashMap<>();
 
   @Override
   public synchronized long insertStartedRun(RunStart start) {
@@ -25,6 +24,7 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
             start.mode(),
             start.broker(),
             start.ticker(),
+            start.algorithmId(),
             RunStatus.STARTED,
             start.startedAt(),
             Optional.empty(),
@@ -35,15 +35,10 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
             RunCounts.NONE,
             Optional.empty()));
     points.put(runId, PortfolioPointList.NONE);
-    insertSettingsChange(
-        runId, new RunSettingsChange(RunEvent.STARTED, start.startedAt(), start.settingsId()));
+    if (start.mode() == BotMode.TRADING) {
+      activeAlgorithmIds.put(start.ticker(), start.algorithmId());
+    }
     return runId;
-  }
-
-  @Override
-  public synchronized void insertSettingsChange(long runId, RunSettingsChange change) {
-    changes.computeIfAbsent(runId, id -> new ArrayList<>()).add(change);
-    lastSettingsIds.put(runId, change.settingsId());
   }
 
   @Override
@@ -54,8 +49,12 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
     }
     runs.put(runId, finished(run, end));
     points.put(runId, end.points());
-    insertSettingsChange(
-        runId, new RunSettingsChange(RunEvent.COMPLETED, end.finishedAt(), end.settingsId()));
+  }
+
+  @Override
+  public synchronized long replaceRun(long runId, RunEnd end, RunStart next) {
+    finishRun(runId, end);
+    return insertStartedRun(next);
   }
 
   @Override
@@ -74,15 +73,19 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
     return Optional.ofNullable(runs.get(runId)).map(this::details);
   }
 
-  private StoredRunDetails details(RecordedRun run) {
-    return new StoredRunDetails(
-        run, new RunSettingsChangeList(changes.get(run.id())), points.get(run.id()));
-  }
-
   @Override
   public synchronized RecordedRunList getRuns(String broker) {
     return new RecordedRunList(
         runs.values().stream().filter(run -> run.broker().equals(broker)).toList());
+  }
+
+  /** The variant the last live run of the ticker started with. */
+  public synchronized Optional<Long> activeAlgorithmId(String ticker) {
+    return Optional.ofNullable(activeAlgorithmIds.get(ticker));
+  }
+
+  private StoredRunDetails details(RecordedRun run) {
+    return new StoredRunDetails(run, points.get(run.id()));
   }
 
   private void stopRun(long runId, Instant stoppedAt, String reason) {
@@ -94,7 +97,6 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
             Optional.empty(),
             RunCounts.NONE,
             Optional.of(reason),
-            lastSettingsIds.get(runId),
             PortfolioPointList.NONE));
   }
 
@@ -104,6 +106,7 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
         run.mode(),
         run.broker(),
         run.ticker(),
+        run.algorithmId(),
         end.status(),
         run.startedAt(),
         Optional.of(end.finishedAt()),

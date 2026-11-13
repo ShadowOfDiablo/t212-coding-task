@@ -29,17 +29,6 @@ public class AlgorithmRunService {
             .filter(details -> details.run().broker().equals(broker))
             .orElseThrow(() -> new RunNotFoundException(runId));
     return new RunDetails(
-        stored.run(),
-        new RunSettingsHistory(
-            stored.settingsChanges().changes().stream().map(this::settingsRecord).toList()),
-        stored.points());
-  }
-
-  private RunSettingsRecord settingsRecord(RunSettingsChange change) {
-    return new RunSettingsRecord(
-        change.event(),
-        change.recordedAt(),
-        change.settingsId(),
-        settingsService.getSettings(change.settingsId()));
+        stored.run(), settingsService.getSettings(stored.run().algorithmId()), stored.points());
   }
 }

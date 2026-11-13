@@ -11,6 +11,7 @@ public record RecordedRun(
     BotMode mode,
     String broker,
     String ticker,
+    long algorithmId,
     RunStatus status,
     Instant startedAt,
     Optional<Instant> finishedAt,

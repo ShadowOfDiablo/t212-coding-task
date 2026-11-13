@@ -42,14 +42,14 @@ final class LiveTradingBot implements CandleUpdateListener {
   private static final long NO_KEEP_ALIVE = 0;
 
   private final Broker broker;
-  private final long runId;
+  private volatile long runId;
   private final LiveTradingAccount account;
   private final OrderCheckerService orderChecker;
   private final Clock clock;
   private final ThreadFactory threadFactory;
   private final ThreadPoolExecutor worker;
   private volatile LiveSignalSource signalSource;
-  private long settingsId;
+  private long algorithmId;
   private Optional<ScheduledExecutorService> timer = Optional.empty();
   private int buyCount;
   private int sellCount;
@@ -64,14 +64,14 @@ final class LiveTradingBot implements CandleUpdateListener {
       LiveTradingAccount account,
       OrderCheckerService orderChecker,
       LiveSignalSource signalSource,
-      long settingsId,
+      long algorithmId,
       Clock clock) {
     this.broker = broker;
     this.runId = runId;
     this.account = account;
     this.orderChecker = orderChecker;
     this.signalSource = signalSource;
-    this.settingsId = settingsId;
+    this.algorithmId = algorithmId;
     this.clock = clock;
     this.threadFactory =
         Thread.ofPlatform().daemon().name(broker.name() + "-live-bot-", 0).factory();
@@ -87,6 +87,14 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   long runId() {
     return runId;
+  }
+
+  String brokerName() {
+    return broker.name();
+  }
+
+  BigDecimal cash() {
+    return account.cash();
   }
 
   String ticker() {
@@ -122,9 +130,21 @@ final class LiveTradingBot implements CandleUpdateListener {
     }
   }
 
-  synchronized void replaceSignalSource(LiveSignalSource newSignalSource, long newSettingsId) {
+  /**
+   * Goes on as a new run with another algorithm variant, from the next evaluation. Counts and
+   * portfolio points start again.
+   */
+  synchronized void startNextRun(
+      long nextRunId, LiveSignalSource newSignalSource, long newAlgorithmId) {
+    runId = nextRunId;
     signalSource = newSignalSource;
-    settingsId = newSettingsId;
+    algorithmId = newAlgorithmId;
+    buyCount = 0;
+    sellCount = 0;
+    stopLossCount = 0;
+    refusedOrderCount = 0;
+    points.clear();
+    lastPointTime = Instant.EPOCH;
     timer.ifPresent(ScheduledExecutorService::shutdownNow);
     timer = Optional.empty();
     scheduleTimedEvaluations(newSignalSource.settings());
@@ -132,7 +152,7 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   synchronized LiveBotStatus status() {
     return new LiveBotStatus(
-        runId, ticker(), signalSource.settings(), settingsId, counts(), portfolioPoints());
+        runId, ticker(), signalSource.settings(), algorithmId, counts(), portfolioPoints());
   }
 
   /** Stops listening, lets the queued prices finish and tells how the run ended. */
@@ -140,7 +160,7 @@ final class LiveTradingBot implements CandleUpdateListener {
     broker.candleFeeder().removeListener(this);
     stopTimer();
     stopWorker();
-    return runEnd();
+    return runEnd(RunStatus.STOPPED);
   }
 
   private void evaluatePrice(BigDecimal price, Instant time) {
@@ -245,15 +265,9 @@ final class LiveTradingBot implements CandleUpdateListener {
     }
   }
 
-  private synchronized RunEnd runEnd() {
+  synchronized RunEnd runEnd(RunStatus status) {
     return new RunEnd(
-        RunStatus.STOPPED,
-        clock.instant(),
-        finalValue(),
-        counts(),
-        Optional.empty(),
-        settingsId,
-        portfolioPoints());
+        status, clock.instant(), finalValue(), counts(), Optional.empty(), portfolioPoints());
   }
 
   /** Empty when there is no live price or the balances can't be read. */

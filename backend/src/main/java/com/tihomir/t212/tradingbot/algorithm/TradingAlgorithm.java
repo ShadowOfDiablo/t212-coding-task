@@ -7,7 +7,7 @@ import java.util.List;
  * order is decided by the order checks.
  *
  * <p>Every algorithm shares the settings below. An algorithm adds its own optional settings through
- * {@code optionDefinitions}, and stores them in its own table (see {@link AlgorithmOptionStore}).
+ * {@code optionDefinitions}; they are stored with the shared ones.
  */
 public abstract class TradingAlgorithm {
 
@@ -44,25 +44,27 @@ public abstract class TradingAlgorithm {
               AlgorithmSettingDefinition.optionalNumber(
                   STOP_LOSS_PERCENT, "Stop loss (% below the buy)", "0.01", "99")));
 
-  private final int id;
+  private final AlgorithmType type;
   private final String name;
   private final String displayName;
   private final AlgorithmSettingDefinitionList optionDefinitions;
 
   /**
-   * @param id the number that identifies the algorithm in the API and the database; never reused
    * @param name the algorithm's text name, e.g. {@code example-strategy-SMA}
    */
   protected TradingAlgorithm(
-      int id, String name, String displayName, AlgorithmSettingDefinitionList optionDefinitions) {
-    this.id = id;
+      AlgorithmType type,
+      String name,
+      String displayName,
+      AlgorithmSettingDefinitionList optionDefinitions) {
+    this.type = type;
     this.name = name;
     this.displayName = displayName;
     this.optionDefinitions = optionDefinitions;
   }
 
-  public final int id() {
-    return id;
+  public final AlgorithmType type() {
+    return type;
   }
 
   public final String name() {
@@ -89,14 +91,14 @@ public abstract class TradingAlgorithm {
    * @throws InvalidAlgorithmSettingsException if a value or a combination isn't allowed
    */
   public final AlgorithmSettings resolveSettings(AlgorithmSettingsRequest request) {
-    if (id != request.algorithmId()) {
+    if (type != request.algorithmType()) {
       throw new InvalidAlgorithmSettingsException(
-          "Settings for algorithm " + request.algorithmId() + " can't be used with " + id);
+          "Settings for algorithm " + request.algorithmType() + " can't be used with " + type);
     }
     AlgorithmSettingValues values = settingDefinitions().resolveValues(request.values());
     AlgorithmSettings settings =
         new AlgorithmSettings(
-            id,
+            type,
             values.wholeNumber(TIME_PERIOD),
             request.timeframe(),
             request.liveOnTick(),

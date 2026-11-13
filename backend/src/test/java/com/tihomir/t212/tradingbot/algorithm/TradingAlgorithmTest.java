@@ -115,15 +115,6 @@ class TradingAlgorithmTest {
   }
 
   @Test
-  void refusesSettingsMeantForAnotherAlgorithm() {
-    assertThatThrownBy(() ->
-            algorithm.resolveSettings(
-                new AlgorithmSettingsRequest(
-                    SimpleMovingAverageAlgorithm.ID, CandleInterval.ONE_MINUTE, true, Map.of())))
-        .isInstanceOf(InvalidAlgorithmSettingsException.class);
-  }
-
-  @Test
   void listsTheSharedSettingsBeforeItsOwn() {
     assertThat(algorithm.settingDefinitions().definitions())
         .extracting(AlgorithmSettingDefinition::name)
@@ -140,6 +131,6 @@ class TradingAlgorithmTest {
   private static AlgorithmSettingsRequest request(
       boolean liveOnTick, Map<String, BigDecimal> values) {
     return new AlgorithmSettingsRequest(
-        ThresholdTestAlgorithm.ID, CandleInterval.FIVE_MINUTES, liveOnTick, values);
+        AlgorithmType.SIMPLE_MOVING_AVERAGE, CandleInterval.FIVE_MINUTES, liveOnTick, values);
   }
 }

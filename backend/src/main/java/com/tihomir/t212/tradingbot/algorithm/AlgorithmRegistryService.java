@@ -7,32 +7,32 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
-/** Every {@link TradingAlgorithm} bean, by id. Adding an algorithm needs no change here. */
+/** Every {@link TradingAlgorithm} bean, by type. Adding an algorithm needs no change here. */
 @Service
 public final class AlgorithmRegistryService {
 
-  private final Map<Integer, TradingAlgorithm> algorithmsById;
+  private final Map<AlgorithmType, TradingAlgorithm> algorithmsByType;
   private final TradingAlgorithmList algorithms;
 
   public AlgorithmRegistryService(List<TradingAlgorithm> algorithms) {
     algorithms.forEach(AlgorithmRegistryService::checkOptionNames);
-    this.algorithmsById =
+    this.algorithmsByType =
         algorithms.stream()
             .collect(
                 Collectors.toMap(
-                    TradingAlgorithm::id,
+                    TradingAlgorithm::type,
                     Function.identity(),
-                    AlgorithmRegistryService::refuseDuplicateId));
+                    AlgorithmRegistryService::refuseDuplicateType));
     this.algorithms = new TradingAlgorithmList(algorithms);
   }
 
   /**
-   * @throws UnknownAlgorithmException if no algorithm has this id
+   * @throws UnknownAlgorithmException if no algorithm has this type
    */
-  public TradingAlgorithm get(int algorithmId) {
-    TradingAlgorithm algorithm = algorithmsById.get(algorithmId);
+  public TradingAlgorithm get(AlgorithmType algorithmType) {
+    TradingAlgorithm algorithm = algorithmsByType.get(algorithmType);
     if (algorithm == null) {
-      throw new UnknownAlgorithmException(algorithmId);
+      throw new UnknownAlgorithmException(algorithmType);
     }
     return algorithm;
   }
@@ -49,8 +49,14 @@ public final class AlgorithmRegistryService {
     }
   }
 
-  private static TradingAlgorithm refuseDuplicateId(TradingAlgorithm first, TradingAlgorithm next) {
+  private static TradingAlgorithm refuseDuplicateType(
+      TradingAlgorithm first, TradingAlgorithm next) {
     throw new IllegalStateException(
-        "Two algorithms share the id " + first.id() + ": " + first.name() + " and " + next.name());
+        "Two algorithms share the type "
+            + first.type()
+            + ": "
+            + first.name()
+            + " and "
+            + next.name());
   }
 }

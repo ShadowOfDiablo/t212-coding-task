@@ -7,7 +7,7 @@ final class SharedNameTestAlgorithm extends TradingAlgorithm {
 
   SharedNameTestAlgorithm() {
     super(
-        102,
+        AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-shared-name",
         "Shared name test",
         new AlgorithmSettingDefinitionList(

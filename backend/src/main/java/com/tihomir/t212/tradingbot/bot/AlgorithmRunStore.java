@@ -5,21 +5,25 @@ import java.util.Optional;
 
 public interface AlgorithmRunStore {
 
-  /** Inserts the run as STARTED together with its STARTED settings record, in one transaction. */
+  /**
+   * Inserts the run as STARTED. A live run also becomes the active algorithm of its ticker, in the
+   * same transaction.
+   */
   long insertStartedRun(RunStart start);
 
-  /** Records settings saved while a live run goes on. */
-  void insertSettingsChange(long runId, RunSettingsChange change);
-
-  /**
-   * Stores how the run ended: status, counts, final value, points and a COMPLETED settings record,
-   * in one transaction.
-   */
+  /** Stores how the run ended: status, counts, final value and points, in one transaction. */
   void finishRun(long runId, RunEnd end);
 
   /**
-   * Marks runs still STARTED as STOPPED with this reason, recording their last settings as
-   * COMPLETED. Used at startup, when no run can still be going.
+   * Finishes a live run and starts the next one with another algorithm variant, in one transaction.
+   *
+   * @return the id of the new run
+   */
+  long replaceRun(long runId, RunEnd end, RunStart next);
+
+  /**
+   * Marks runs still STARTED as STOPPED with this reason. Used at startup, when no run can still be
+   * going.
    *
    * @return how many runs were stopped
    */

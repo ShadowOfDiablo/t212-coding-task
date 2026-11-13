@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * A run about to start, with the id of the settings it starts with.
+ * A run about to start, with the id of the algorithm variant it uses.
  *
  * @param from the start of the replayed range, training only
  * @param to the end of the replayed range, training only
@@ -19,4 +19,4 @@ public record RunStart(
     Optional<Instant> from,
     Optional<Instant> to,
     BigDecimal startingValue,
-    long settingsId) {}
+    long algorithmId) {}

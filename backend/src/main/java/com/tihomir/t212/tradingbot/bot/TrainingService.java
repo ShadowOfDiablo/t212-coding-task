@@ -69,7 +69,7 @@ public class TrainingService {
     if (botModeService.botMode() != BotMode.TRAINING) {
       throw new TrainingModeRequiredException();
     }
-    TradingAlgorithm algorithm = algorithms.get(request.settings().algorithmId());
+    TradingAlgorithm algorithm = algorithms.get(request.settings().algorithmType());
     AlgorithmSettings settings = algorithm.resolveSettings(request.settings());
     candleHistory.tradingBroker(request.broker(), request.ticker());
     if (!trainingRunning.compareAndSet(false, true)) {
@@ -89,7 +89,7 @@ public class TrainingService {
 
   private long recordedTraining(
       TrainingRunRequest request, TradingAlgorithm algorithm, AlgorithmSettings settings) {
-    long settingsId = settingsService.saveSettings(settings);
+    long algorithmId = settingsService.saveSettings(settings);
     long runId =
         runStore.insertStartedRun(
             new RunStart(
@@ -100,29 +100,26 @@ public class TrainingService {
                 Optional.of(request.from()),
                 Optional.of(request.to()),
                 request.startingBalance(),
-                settingsId));
+                algorithmId));
     try {
-      RunEnd end = replay(request, algorithm, settings, settingsId);
+      RunEnd end = replay(request, algorithm, settings);
       runStore.finishRun(runId, end);
       log.info(
           "Training run {}: {} {} with {}, final value {}",
           runId,
           request.ticker(),
           settings.timeframe(),
-          algorithm.id(),
+          algorithm.type(),
           end.finalValue().orElseThrow());
       return runId;
     } catch (RuntimeException e) {
-      recordFailure(runId, settingsId, e);
+      recordFailure(runId, e);
       throw e;
     }
   }
 
   private RunEnd replay(
-      TrainingRunRequest request,
-      TradingAlgorithm algorithm,
-      AlgorithmSettings settings,
-      long settingsId) {
+      TrainingRunRequest request, TradingAlgorithm algorithm, AlgorithmSettings settings) {
     List<CandleUpdate> candles =
         candleHistory
             .getCandles(
@@ -148,11 +145,10 @@ public class TrainingService {
         Optional.of(replay.finalValue()),
         replay.counts(),
         Optional.empty(),
-        settingsId,
         points);
   }
 
-  private void recordFailure(long runId, long settingsId, RuntimeException failure) {
+  private void recordFailure(long runId, RuntimeException failure) {
     log.error("Training run {} failed: {}", runId, failure.getMessage(), failure);
     try {
       runStore.finishRun(
@@ -163,7 +159,6 @@ public class TrainingService {
               Optional.empty(),
               RunCounts.NONE,
               Optional.of(String.valueOf(failure.getMessage())),
-              settingsId,
               PortfolioPointList.NONE));
     } catch (RuntimeException recordingFailure) {
       log.error("Recording the failure of training run {} failed", runId, recordingFailure);

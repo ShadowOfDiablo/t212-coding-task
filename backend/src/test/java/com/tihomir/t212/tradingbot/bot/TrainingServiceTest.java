@@ -6,9 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
-import com.tihomir.t212.tradingbot.algorithm.FakeAlgorithmOptionStore;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
+import com.tihomir.t212.tradingbot.algorithm.FakeAlgorithmStore;
 import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
@@ -75,17 +75,13 @@ class TrainingServiceTest {
   }
 
   @Test
-  void recordsTheSettingsAtStartAndAtTheEnd() {
+  void recordsTheRunWithTheSettingsOfItsAlgorithmVariant() {
     storeCandles(candle(0, 100, 100), candle(1, 100, 100));
 
     RunDetails details = runDetails(service(List.of(), () -> {}).runTraining(request(2, Map.of())));
 
-    assertThat(details.settingsHistory().records())
-        .extracting(RunSettingsRecord::event)
-        .containsExactly(RunEvent.STARTED, RunEvent.COMPLETED);
-    assertThat(details.settingsHistory().records())
-        .extracting(RunSettingsRecord::settingsId)
-        .containsOnly(details.settingsHistory().records().getFirst().settingsId());
+    assertThat(details.settings().timeframe()).isEqualTo(TIMEFRAME);
+    assertThat(runStore.activeAlgorithmId(TICKER)).isEmpty();
     assertThat(details.run().from()).contains(openTime(0));
   }
 
@@ -211,10 +207,7 @@ class TrainingServiceTest {
             CLOCK);
     return new TrainingService(
         botModeService,
-        new AlgorithmRegistryService(
-            List.of(
-                new SimpleMovingAverageAlgorithm(),
-                new ScriptedTestAlgorithm(signals, onEveryPrice))),
+        new AlgorithmRegistryService(List.of(new ScriptedTestAlgorithm(signals, onEveryPrice))),
         settingsService(),
         candleHistory,
         new OrderCheckerService(
@@ -227,10 +220,7 @@ class TrainingServiceTest {
   }
 
   private final AlgorithmSettingsService sharedSettingsService =
-      new AlgorithmSettingsService(
-          List.of(
-              new FakeAlgorithmOptionStore(SimpleMovingAverageAlgorithm.ID, 1),
-              new FakeAlgorithmOptionStore(ScriptedTestAlgorithm.ID, 100)));
+      new AlgorithmSettingsService(new FakeAlgorithmStore(1), CLOCK);
 
   private AlgorithmSettingsService settingsService() {
     return sharedSettingsService;
@@ -247,7 +237,7 @@ class TrainingServiceTest {
 
   private static AlgorithmSettingsRequest settings(Map<String, BigDecimal> values) {
     return new AlgorithmSettingsRequest(
-        ScriptedTestAlgorithm.ID, TIMEFRAME, true, new HashMap<>(values));
+        AlgorithmType.SIMPLE_MOVING_AVERAGE, TIMEFRAME, true, new HashMap<>(values));
   }
 
   private static CandleUpdate candle(int index, int open, int close) {

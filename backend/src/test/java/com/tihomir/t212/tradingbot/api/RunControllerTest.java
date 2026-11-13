@@ -13,7 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.PortfolioPoint;
@@ -21,10 +21,7 @@ import com.tihomir.t212.tradingbot.bot.PortfolioPointList;
 import com.tihomir.t212.tradingbot.bot.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunDetails;
-import com.tihomir.t212.tradingbot.bot.RunEvent;
 import com.tihomir.t212.tradingbot.bot.RunNotFoundException;
-import com.tihomir.t212.tradingbot.bot.RunSettingsHistory;
-import com.tihomir.t212.tradingbot.bot.RunSettingsRecord;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
 import com.tihomir.t212.tradingbot.bot.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.TrainingRunRequest;
@@ -52,7 +49,7 @@ class RunControllerTest {
       """
       {"candles": {"ticker": "BTCUSDT", "from": "2020-01-01T00:00:00Z",
                    "to": "2020-02-01T00:00:00Z"},
-       "settings": {"algorithmId": 1, "timeframe": "FIVE_MINUTES",
+       "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "5m",
                     "liveOnTick": true, "timePeriod": 20,
                     "riskPerTradePercent": 3, "stopLossPercent": 2},
        "startingBalance": 1000}
@@ -74,9 +71,10 @@ class RunControllerTest {
         .andExpect(jsonPath("$.run.id").value(7))
         .andExpect(jsonPath("$.run.status").value("COMPLETED"))
         .andExpect(jsonPath("$.run.finishedAt").isEmpty())
-        .andExpect(jsonPath("$.settingsHistory[0].event").value("STARTED"))
-        .andExpect(jsonPath("$.settingsHistory[0].settings.timePeriod").value(20))
-        .andExpect(jsonPath("$.settingsHistory[0].settings.riskPerTradePercent").isEmpty())
+        .andExpect(jsonPath("$.run.algorithmId").value(1))
+        .andExpect(jsonPath("$.settings.algorithmType").value("SIMPLE_MOVING_AVERAGE"))
+        .andExpect(jsonPath("$.settings.timePeriod").value(20))
+        .andExpect(jsonPath("$.settings.riskPerTradePercent").isEmpty())
         .andExpect(jsonPath("$.points[0].value").value(1000));
 
     ArgumentCaptor<TrainingRunRequest> request = ArgumentCaptor.forClass(TrainingRunRequest.class);
@@ -138,6 +136,7 @@ class RunControllerTest {
             BotMode.TRAINING,
             "binance",
             "BTCUSDT",
+            1,
             RunStatus.COMPLETED,
             FROM,
             Optional.empty(),
@@ -149,7 +148,7 @@ class RunControllerTest {
             Optional.empty());
     AlgorithmSettings settings =
         new AlgorithmSettings(
-            SimpleMovingAverageAlgorithm.ID,
+            AlgorithmType.SIMPLE_MOVING_AVERAGE,
             20,
             CandleInterval.FIVE_MINUTES,
             true,
@@ -160,7 +159,7 @@ class RunControllerTest {
             AlgorithmSettingValues.NONE);
     return new RunDetails(
         run,
-        new RunSettingsHistory(List.of(new RunSettingsRecord(RunEvent.STARTED, FROM, 1, settings))),
+        settings,
         new PortfolioPointList(
             List.of(new PortfolioPoint(FROM, new BigDecimal("1000"), new BigDecimal("1000")))));
   }

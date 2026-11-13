@@ -1,5 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
+import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.UnknownAlgorithmException;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleDownloadFailedException;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleRangeTooLargeException;
@@ -29,6 +31,8 @@ public class ApiExceptionHandler {
   @ExceptionHandler({
     TickerNotTradedException.class,
     CandleRangeTooLargeException.class,
+    UnknownAlgorithmException.class,
+    InvalidAlgorithmSettingsException.class,
     IllegalArgumentException.class
   })
   ProblemDetail invalidRequest(RuntimeException e) {

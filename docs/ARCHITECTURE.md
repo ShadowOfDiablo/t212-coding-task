@@ -1090,7 +1090,8 @@ flowchart TD
 classDiagram
     class TradingAlgorithm {
         <<abstract>>
-        id() String
+        id() int
+        name() String
         displayName() String
         settingDefinitions() AlgorithmSettingDefinitionList
         resolveSettings(AlgorithmSettingsRequest) AlgorithmSettings
@@ -1116,7 +1117,7 @@ classDiagram
         getSettings(long) AlgorithmSettings
     }
     class SimpleMovingAverageAlgorithm {
-        id example-strategy-SMA
+        id 1, name example-strategy-SMA
     }
     TradingAlgorithm <|-- SimpleMovingAverageAlgorithm
     TradingAlgorithm ..> SignalGenerator : creates one per run
@@ -1146,7 +1147,7 @@ classDiagram
   3. its `AlgorithmOptionStore`
 
   `AlgorithmRegistryService` finds it and rejects duplicate ids, and `GET /api/algorithms` lists it.
-- **`example-strategy-SMA`:** one simple moving average over `timePeriod` candles of the timeframe.
+- **`example-strategy-SMA` (id 1):** one simple moving average over `timePeriod` candles of the timeframe.
   - **BUY** when the price **moves below** the average. **SELL** when it **moves above** it.
   - Signals only fire when the price crosses to the other side, so it doesn't buy on every candle below the average.
   - It has no optional settings yet. Its `sma_settings` table is ready for them.
@@ -1178,7 +1179,7 @@ flowchart TD
 erDiagram
     algorithm_settings {
         bigserial id PK
-        text algorithm_id
+        smallint algorithm_id "1 = example-strategy-SMA"
         int time_period
         text timeframe
         boolean live_on_tick
@@ -1230,6 +1231,8 @@ erDiagram
   - `algorithm_settings` holds the shared settings.
   - Each algorithm type has its own table of typed optional columns. Its key is also a foreign key back to `algorithm_settings.id` (1:1).
   - The shared table has no column pointing at the algorithm tables, because one column can't point at several tables. Instead, `algorithm_id` picks the algorithm and its store, which joins its table on the id.
+  - **Algorithm ids are numbers** (`SMALLINT`), in the code, the API (`algorithmId: 1`) and the database, so matching settings compares numbers. Each algorithm also has a text name (`example-strategy-SMA`) and a display name. An id is never reused.
+  - The timeframe stays `text` (`FIFTEEN_MINUTES`), the name of the `CandleInterval`, which holds its `Duration` in Java.
 - **Identical settings are stored once:**
   - Saving settings looks for a row with the same values, with `NULL` matching `NULL`, in plain SQL: `(col = ? OR (col IS NULL AND ? IS NULL))`.
   - A match is reused; otherwise the rows are inserted, in one transaction.

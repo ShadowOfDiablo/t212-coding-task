@@ -11,7 +11,7 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Market data: Binance WebSocket streams, REST candle history, ticker price map | Built |
 | Demo account orders: market buy and sell, balances, over a REST API | Built |
 | Virtual account, order validation and fees (Training) | Planned |
-| Signal generators | Planned |
+| Trading algorithms: required and optional settings, stored once and reused (`GET /api/algorithms`), SMA example | Built |
 | Trading bot loop: Training and Trading modes | Planned |
 | Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
 | Database: restart reconciliation, positions and trades with PnL | Planned, next |

@@ -17,5 +17,7 @@ public interface Broker {
 
   ExchangeTradingGateway tradingGateway();
 
+  void addTicker(String ticker);
+
   void startAccountUpdates();
 }

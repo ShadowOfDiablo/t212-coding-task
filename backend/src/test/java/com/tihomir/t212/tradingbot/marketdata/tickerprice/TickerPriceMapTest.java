@@ -16,6 +16,15 @@ class TickerPriceMapTest {
   private final TickerPriceMap prices = new TickerPriceMap(List.of("BTCUSDT", "ETHUSDT"));
 
   @Test
+  void addsAFollowedTickerOnceAtTheEndWithoutAPrice() {
+    prices.addTicker("SOLUSDT");
+    prices.addTicker("SOLUSDT");
+
+    assertThat(prices.tickers()).containsExactly("BTCUSDT", "ETHUSDT", "SOLUSDT");
+    assertThat(prices.get("SOLUSDT")).isEmpty();
+  }
+
+  @Test
   void startsWithoutPrices() {
     assertThat(prices.tickers()).containsExactly("BTCUSDT", "ETHUSDT");
     assertThat(prices.get("BTCUSDT")).isEmpty();

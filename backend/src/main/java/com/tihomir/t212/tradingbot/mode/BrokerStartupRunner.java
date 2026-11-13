@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.mode;
 
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.FollowedTickerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -15,15 +16,21 @@ public class BrokerStartupRunner implements ApplicationRunner {
 
   private final BrokerRegistryService brokers;
   private final BotModeService botModeService;
+  private final FollowedTickerService followedTickers;
 
-  public BrokerStartupRunner(BrokerRegistryService brokers, BotModeService botModeService) {
+  public BrokerStartupRunner(
+      BrokerRegistryService brokers,
+      BotModeService botModeService,
+      FollowedTickerService followedTickers) {
     this.brokers = brokers;
     this.botModeService = botModeService;
+    this.followedTickers = followedTickers;
   }
 
   @Override
   public void run(ApplicationArguments args) {
     for (Broker broker : brokers.all()) {
+      followedTickers.restoreFollowedTickers(broker);
       log.info(
           "{}: {} mode, streaming {} live",
           broker.name(),

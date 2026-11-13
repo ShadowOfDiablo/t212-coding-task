@@ -87,6 +87,26 @@ class CandleFeederTest {
   }
 
   @Test
+  void addingATickerWhileRunningReopensTheConnectionsWithItsStreams() {
+    List<String> tickers = tickers(1);
+    feeder = feeder(tickers, new TickerPriceMap(tickers));
+    expectServerTime(Instant.now());
+    feeder.start();
+
+    feeder.addTicker("new");
+    feeder.addTicker("new");
+
+    assertThat(connections.opened()).hasSize(2);
+    assertThat(connections.opened().getFirst().isOpen()).isFalse();
+    assertThat(connections.opened().getLast().isOpen()).isTrue();
+    assertThat(feeder.connectionUris()).singleElement().satisfies(this::streamsNewTicker);
+  }
+
+  private void streamsNewTicker(URI uri) {
+    assertThat(streamsOf(uri)).contains("new@candle", "new@book");
+  }
+
+  @Test
   void startIsAllOrNothingWhenAConnectionFails() {
     List<String> tickers = tickers(2 * TICKERS_PER_CONNECTION + 1);
     feeder = feeder(tickers, new TickerPriceMap(tickers));

@@ -20,14 +20,25 @@ async function request(path, options = {}) {
   return response.json()
 }
 
+const send = (method, path, body) => request(path, { method, body: JSON.stringify(body) })
+
 export const api = {
   broker: BROKER,
   getTickers: () => request(`${BROKER_PATH}/tickers`),
+  followTicker: (ticker) => send('POST', `${BROKER_PATH}/tickers`, { ticker }),
   getBalances: () => request(`${BROKER_PATH}/balance`),
   getOrderHistory: () => request(`${BROKER_PATH}/orders/history`),
   getRejectedOrders: () => request(`${BROKER_PATH}/orders/rejected`),
   getOpenOrders: () => request(`${BROKER_PATH}/orders/open`),
   getBotMode: () => request('/api/bot/mode'),
-  setBotMode: (mode) =>
-    request('/api/bot/mode', { method: 'PUT', body: JSON.stringify({ mode }) }),
+  setBotMode: (mode) => send('PUT', '/api/bot/mode', { mode }),
+  getAlgorithms: () => request('/api/algorithms'),
+  getBot: () => request(`${BROKER_PATH}/bot`),
+  startBot: (ticker, settings) => send('POST', `${BROKER_PATH}/bot/start`, { ticker, settings }),
+  stopBot: () => request(`${BROKER_PATH}/bot/stop`, { method: 'POST' }),
+  updateBotParameters: (settings) => send('PUT', `${BROKER_PATH}/bot/current-parameters`, settings),
+  getTraining: () => request(`${BROKER_PATH}/training`),
+  runTraining: (body) => send('POST', `${BROKER_PATH}/training/runs`, body),
+  getRuns: () => request(`${BROKER_PATH}/runs`),
+  getRun: (id) => request(`${BROKER_PATH}/runs/${id}`),
 }

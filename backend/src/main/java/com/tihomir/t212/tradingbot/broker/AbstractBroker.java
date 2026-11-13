@@ -13,7 +13,6 @@ import org.springframework.web.client.RestClient;
 public abstract class AbstractBroker implements Broker, AutoCloseable {
 
   private final String name;
-  private final TickerList tickers;
   private final CandleInterval interval;
   private final TickerPriceMap prices;
   private final MarketDataStreamConnectionFactory connectionFactory;
@@ -27,9 +26,8 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
       MarketDataStreamConnectionFactory connectionFactory,
       RestClient restClient) {
     this.name = name;
-    this.tickers = new TickerList(tickers);
     this.interval = interval;
-    this.prices = new TickerPriceMap(this.tickers.tickers());
+    this.prices = new TickerPriceMap(tickers);
     this.connectionFactory = connectionFactory;
     this.restClient = restClient;
   }
@@ -43,7 +41,20 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
 
   @Override
   public final TickerList tickers() {
-    return tickers;
+    return prices.tickers();
+  }
+
+  /**
+   * Starts following a ticker: its prices are kept and its streams are opened. Following a ticker
+   * that is already followed changes nothing.
+   */
+  @Override
+  public final synchronized void addTicker(String ticker) {
+    if (prices.tickers().contains(ticker)) {
+      return;
+    }
+    prices.addTicker(ticker);
+    candleFeeder().addTicker(ticker);
   }
 
   @Override
@@ -53,7 +64,7 @@ public abstract class AbstractBroker implements Broker, AutoCloseable {
           new CandleFeeder(
               name,
               createMarketDataProtocol(),
-              tickers.tickers(),
+              prices.tickers().tickers(),
               interval,
               prices,
               connectionFactory,

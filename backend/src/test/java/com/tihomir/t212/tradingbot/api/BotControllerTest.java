@@ -22,6 +22,7 @@ import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.LiveBotStatus;
 import com.tihomir.t212.tradingbot.bot.LiveRunRequest;
+import com.tihomir.t212.tradingbot.bot.PortfolioPointList;
 import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.TradingBotService;
 import com.tihomir.t212.tradingbot.bot.TradingModeRequiredException;
@@ -136,6 +137,7 @@ class BotControllerTest {
             Optional.empty(),
             AlgorithmSettingValues.NONE),
         3,
-        new RunCounts(1, 0, 0, 0));
+        new RunCounts(1, 0, 0, 0),
+        PortfolioPointList.NONE);
   }
 }

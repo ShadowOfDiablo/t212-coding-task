@@ -12,6 +12,9 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
@@ -31,6 +34,8 @@ final class LiveTradingBot implements CandleUpdateListener {
 
   static final int EVALUATION_QUEUE_CAPACITY = 100;
   static final Duration STOP_TIMEOUT = Duration.ofSeconds(10);
+  static final Duration PORTFOLIO_POINT_INTERVAL = Duration.ofSeconds(15);
+  static final int MAX_PORTFOLIO_POINTS = 1000;
 
   private static final Logger log = LoggerFactory.getLogger(LiveTradingBot.class);
   private static final int SINGLE_THREAD = 1;
@@ -50,6 +55,8 @@ final class LiveTradingBot implements CandleUpdateListener {
   private int sellCount;
   private int stopLossCount;
   private int refusedOrderCount;
+  private final Deque<PortfolioPoint> points = new ArrayDeque<>();
+  private Instant lastPointTime = Instant.EPOCH;
 
   LiveTradingBot(
       Broker broker,
@@ -103,6 +110,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   synchronized void evaluate(BigDecimal price, Instant time) {
     try {
       evaluatePrice(price, time);
+      recordPortfolioPoint(price, time);
     } catch (RuntimeException e) {
       log.error(
           "{} {}: live run {} could not evaluate the price {}",
@@ -123,7 +131,8 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   synchronized LiveBotStatus status() {
-    return new LiveBotStatus(runId, ticker(), signalSource.settings(), settingsId, counts());
+    return new LiveBotStatus(
+        runId, ticker(), signalSource.settings(), settingsId, counts(), portfolioPoints());
   }
 
   /** Stops listening, lets the queued prices finish and tells how the run ended. */
@@ -244,7 +253,7 @@ final class LiveTradingBot implements CandleUpdateListener {
         counts(),
         Optional.empty(),
         settingsId,
-        PortfolioPointList.NONE);
+        portfolioPoints());
   }
 
   /** Empty when there is no live price or the balances can't be read. */
@@ -260,6 +269,23 @@ final class LiveTradingBot implements CandleUpdateListener {
           "{} {}: live run {} could not read its final value", broker.name(), ticker(), runId, e);
       return Optional.empty();
     }
+  }
+
+  /** At most one point per interval; the oldest go once there are too many. */
+  private void recordPortfolioPoint(BigDecimal price, Instant time) {
+    if (Duration.between(lastPointTime, time).compareTo(PORTFOLIO_POINT_INTERVAL) < 0) {
+      return;
+    }
+    BigDecimal cash = account.cash();
+    points.addLast(new PortfolioPoint(time, cash, account.portfolioValue(price)));
+    lastPointTime = time;
+    if (points.size() > MAX_PORTFOLIO_POINTS) {
+      points.removeFirst();
+    }
+  }
+
+  private PortfolioPointList portfolioPoints() {
+    return new PortfolioPointList(List.copyOf(points));
   }
 
   private RunCounts counts() {

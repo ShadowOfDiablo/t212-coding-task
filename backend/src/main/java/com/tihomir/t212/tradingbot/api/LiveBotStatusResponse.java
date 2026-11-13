@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.bot.LiveBotStatus;
+import java.util.List;
 import java.util.Optional;
 
 /** The live bot of a broker; the run fields are JSON {@code null} while it doesn't run. */
@@ -14,7 +15,8 @@ public record LiveBotStatusResponse(
     int buyCount,
     int sellCount,
     int stopLossCount,
-    int refusedOrderCount) {
+    int refusedOrderCount,
+    List<PortfolioPointResponse> points) {
 
   private static final LiveBotStatusResponse NOT_RUNNING =
       new LiveBotStatusResponse(
@@ -27,7 +29,8 @@ public record LiveBotStatusResponse(
           0,
           0,
           0,
-          0);
+          0,
+          List.of());
 
   static LiveBotStatusResponse of(Optional<LiveBotStatus> status) {
     return status.map(LiveBotStatusResponse::running).orElse(NOT_RUNNING);
@@ -44,6 +47,7 @@ public record LiveBotStatusResponse(
         status.counts().buyCount(),
         status.counts().sellCount(),
         status.counts().stopLossCount(),
-        status.counts().refusedOrderCount());
+        status.counts().refusedOrderCount(),
+        status.points().points().stream().map(PortfolioPointResponse::of).toList());
   }
 }

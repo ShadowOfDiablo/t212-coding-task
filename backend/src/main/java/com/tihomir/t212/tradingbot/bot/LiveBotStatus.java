@@ -7,4 +7,5 @@ public record LiveBotStatus(
     String ticker,
     AlgorithmSettings currentParameters,
     long settingsId,
-    RunCounts counts) {}
+    RunCounts counts,
+    PortfolioPointList points) {}

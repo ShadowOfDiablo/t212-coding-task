@@ -102,3 +102,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+
+.follow-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.follow-card input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  text-transform: uppercase;
+}
+
+.follow-card input:focus {
+  outline: none;
+  border-color: var(--brand);
+}

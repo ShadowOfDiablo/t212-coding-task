@@ -7,14 +7,15 @@ import com.tihomir.t212.tradingbot.marketdata.update.MarketDataEvent;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
 /**
  * Text protocol for tests: "C|ticker|close|eventMillis" is a candle, "B|ticker|bid|ask" a bid/ask
- * update, "ack" carries no data, anything else is malformed.
+ * update, "ack" carries no data, anything else is malformed. A candle history body lists open
+ * seconds, "0,1,2", and every price of a candle equals its open second.
  */
 public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataProtocol {
 
@@ -63,13 +64,17 @@ public final class FakeExchangeMarketDataProtocol implements ExchangeMarketDataP
   }
 
   @Override
-  public List<CandleUpdate> parseCandles(String body, String ticker, CandleInterval interval) {
-    List<CandleUpdate> candles = new ArrayList<>();
-    for (String second : body.split(",")) {
-      long open = Long.parseLong(second);
-      candles.add(candle(ticker, open, BigDecimal.ONE, (open + 1) * 1000, true));
+  public CandleList parseCandles(String body, String ticker, CandleInterval interval) {
+    if (body == null || body.isEmpty()) {
+      return new CandleList(List.of());
     }
-    return candles;
+    return new CandleList(
+        Arrays.stream(body.split(",")).map(second -> historicalCandle(ticker, second)).toList());
+  }
+
+  private static CandleUpdate historicalCandle(String ticker, String second) {
+    long open = Long.parseLong(second);
+    return candle(ticker, open, BigDecimal.valueOf(open), (open + 1) * 1000, true);
   }
 
   @Override

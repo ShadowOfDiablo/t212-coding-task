@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
+import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleList;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.ExchangeMarketDataProtocol;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.StreamNameList;
 import com.tihomir.t212.tradingbot.marketdata.update.BidAskUpdate;
@@ -10,7 +11,6 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -116,25 +116,36 @@ final class BinanceMarketDataProtocol implements ExchangeMarketDataProtocol {
   }
 
   @Override
-  public List<CandleUpdate> parseCandles(String body, String ticker, CandleInterval interval) {
-    List<CandleUpdate> candles = new ArrayList<>();
-    for (JsonNode row : jsonMapper.readTree(body)) {
-      Instant closeTime = Instant.ofEpochMilli(row.get(CLOSE_TIME_COLUMN).asLong());
-      candles.add(
-          new CandleUpdate(
-              ticker,
-              interval,
-              Instant.ofEpochMilli(row.get(OPEN_TIME_COLUMN).asLong()),
-              closeTime,
-              new BigDecimal(row.get(OPEN_COLUMN).asString()),
-              new BigDecimal(row.get(HIGH_COLUMN).asString()),
-              new BigDecimal(row.get(LOW_COLUMN).asString()),
-              new BigDecimal(row.get(CLOSE_COLUMN).asString()),
-              new BigDecimal(row.get(VOLUME_COLUMN).asString()),
-              true,
-              closeTime));
+  public CandleList parseCandles(String body, String ticker, CandleInterval interval) {
+    if (body == null) {
+      throw new IllegalArgumentException("Empty candle history response for " + ticker);
     }
-    return candles;
+    JsonNode rows = jsonMapper.readTree(body);
+    if (!rows.isArray()) {
+      throw new IllegalArgumentException("Candle history for " + ticker + " is not a list");
+    }
+    return new CandleList(
+        rows.valueStream().map(row -> historicalCandle(row, ticker, interval)).toList());
+  }
+
+  private static CandleUpdate historicalCandle(
+      JsonNode row, String ticker, CandleInterval interval) {
+    if (row.size() <= CLOSE_TIME_COLUMN) {
+      throw new IllegalArgumentException("Candle row for " + ticker + " has too few columns");
+    }
+    Instant closeTime = Instant.ofEpochMilli(row.get(CLOSE_TIME_COLUMN).asLong());
+    return new CandleUpdate(
+        ticker,
+        interval,
+        Instant.ofEpochMilli(row.get(OPEN_TIME_COLUMN).asLong()),
+        closeTime,
+        new BigDecimal(row.get(OPEN_COLUMN).asString()),
+        new BigDecimal(row.get(HIGH_COLUMN).asString()),
+        new BigDecimal(row.get(LOW_COLUMN).asString()),
+        new BigDecimal(row.get(CLOSE_COLUMN).asString()),
+        new BigDecimal(row.get(VOLUME_COLUMN).asString()),
+        true,
+        closeTime);
   }
 
   @Override

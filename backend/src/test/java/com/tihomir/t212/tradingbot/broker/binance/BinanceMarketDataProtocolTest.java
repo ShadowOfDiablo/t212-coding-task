@@ -99,12 +99,26 @@ class BinanceMarketDataProtocolTest {
   @Test
   void parsesHistoricalCandlesAsClosed() throws IOException {
     List<CandleUpdate> candles =
-        protocol.parseCandles(fixture("candles.json"), "BTCUSDT", CandleInterval.ONE_MINUTE);
+        protocol
+            .parseCandles(fixture("candles.json"), "BTCUSDT", CandleInterval.ONE_MINUTE)
+            .candles();
 
     assertThat(candles).hasSize(2);
     assertThat(candles).allMatch(CandleUpdate::closed);
     assertThat(candles.get(1).close()).isEqualByComparingTo("101520.55");
     assertThat(candles.get(1).eventTime()).isEqualTo(candles.get(1).closeTime());
+  }
+
+  @Test
+  void rejectsUnreadableCandleHistory() {
+    assertThatThrownBy(() -> protocol.parseCandles(null, "BTCUSDT", CandleInterval.ONE_MINUTE))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () -> protocol.parseCandles("{\"code\":-1121}", "BTCUSDT", CandleInterval.ONE_MINUTE))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () -> protocol.parseCandles("[[1, \"2\"]]", "BTCUSDT", CandleInterval.ONE_MINUTE))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

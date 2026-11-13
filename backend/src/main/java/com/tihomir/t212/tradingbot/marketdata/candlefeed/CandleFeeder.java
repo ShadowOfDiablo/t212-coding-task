@@ -11,7 +11,6 @@ import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnecti
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -123,26 +122,26 @@ public final class CandleFeeder implements AutoCloseable {
     stop();
   }
 
-  public List<CandleUpdate> history(
+  /**
+   * Reads one page of closed candles starting at {@code from}, at most {@link
+   * #maxCandlesPerHistoryPage()} of them.
+   *
+   * @throws org.springframework.web.client.RestClientException if the request fails
+   * @throws IllegalArgumentException if the answer is unreadable
+   */
+  public CandleList historyPage(
       String ticker, CandleInterval historyInterval, Instant from, Instant to) {
-    List<CandleUpdate> candles = new ArrayList<>();
-    int maxCandlesPerRequest = protocol.maxCandlesPerRestHistoryRequest();
-    Instant cursor = from;
-    while (cursor.isBefore(to)) {
-      String body =
-          restClient
-              .get()
-              .uri(protocol.candlesUri(ticker, historyInterval, cursor, to, maxCandlesPerRequest))
-              .retrieve()
-              .body(String.class);
-      List<CandleUpdate> page = protocol.parseCandles(body, ticker, historyInterval);
-      candles.addAll(page);
-      if (page.size() < maxCandlesPerRequest) {
-        break;
-      }
-      cursor = page.getLast().openTime().plus(historyInterval.duration());
-    }
-    return candles;
+    String body =
+        restClient
+            .get()
+            .uri(protocol.candlesUri(ticker, historyInterval, from, to, maxCandlesPerHistoryPage()))
+            .retrieve()
+            .body(String.class);
+    return protocol.parseCandles(body, ticker, historyInterval);
+  }
+
+  public int maxCandlesPerHistoryPage() {
+    return protocol.maxCandlesPerRestHistoryRequest();
   }
 
   List<URI> connectionUris() {

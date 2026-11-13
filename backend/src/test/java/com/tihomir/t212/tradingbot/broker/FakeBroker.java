@@ -17,17 +17,25 @@ public final class FakeBroker extends AbstractBroker {
 
   private final ExchangeTradingGateway tradingGateway;
 
+  public FakeBroker(String name, RestClient restClient) {
+    this(name, new FakeExchangeTradingGateway(), restClient);
+  }
+
   FakeBroker(String name) {
     this(name, new FakeExchangeTradingGateway());
   }
 
   public FakeBroker(String name, ExchangeTradingGateway tradingGateway) {
+    this(name, tradingGateway, RestClient.create());
+  }
+
+  private FakeBroker(String name, ExchangeTradingGateway tradingGateway, RestClient restClient) {
     super(
         name,
         List.of(TRADED_TICKER),
         CandleInterval.ONE_MINUTE,
         FakeBroker::refuseConnection,
-        RestClient.create());
+        restClient);
     this.tradingGateway = tradingGateway;
   }
 

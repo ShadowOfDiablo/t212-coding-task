@@ -1,7 +1,6 @@
 package com.tihomir.t212.tradingbot.marketdata.candlefeed;
 
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
-import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import com.tihomir.t212.tradingbot.marketdata.update.MarketDataEvent;
 import java.net.URI;
 import java.time.Instant;
@@ -29,7 +28,10 @@ public interface ExchangeMarketDataProtocol {
 
   URI candlesUri(String ticker, CandleInterval interval, Instant from, Instant to, int maxCandles);
 
-  List<CandleUpdate> parseCandles(String body, String ticker, CandleInterval interval);
+  /**
+   * @throws IllegalArgumentException if the body is missing or malformed
+   */
+  CandleList parseCandles(String body, String ticker, CandleInterval interval);
 
   URI serverTimeUri();
 

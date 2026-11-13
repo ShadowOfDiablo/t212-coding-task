@@ -26,7 +26,7 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
 
   private static final Logger log = LoggerFactory.getLogger(MarketDataSmokeRunner.class);
   private static final Duration REPORT_EVERY = Duration.ofSeconds(5);
-  private static final Duration HISTORY_WINDOW = Duration.ofMinutes(20);
+  private static final Duration HISTORY_WINDOW = Duration.ofMinutes(15);
 
   private final BrokerRegistryService brokers;
   private final Duration duration;
@@ -70,7 +70,7 @@ public class MarketDataSmokeRunner implements ApplicationRunner {
     Instant from = to.minus(HISTORY_WINDOW);
     try {
       List<CandleUpdate> candles =
-          broker.candleFeeder().history(ticker, CandleInterval.ONE_SECOND, from, to);
+          broker.candleFeeder().historyPage(ticker, CandleInterval.ONE_SECOND, from, to).candles();
       if (candles.isEmpty()) {
         log.warn(
             "{} {} REST history: no candles between {} and {}", broker.name(), ticker, from, to);

@@ -28,8 +28,8 @@ class VirtualTradingGatewayTest {
     assertThat(order.quoteAmount()).isEqualByComparingTo("1000");
     assertThat(order.averagePrice()).isEqualByComparingTo("200");
     assertThat(order.transactTime()).isEqualTo(FILL_TIME);
-    assertThat(order.fills().getFirst().commission()).isEqualByComparingTo("0.005");
-    assertThat(order.fills().getFirst().commissionAsset()).isEqualTo("BTC");
+    assertThat(order.fills().getFirst().feeAmount()).isEqualByComparingTo("0.005");
+    assertThat(order.fills().getFirst().feeCurrency()).isEqualTo("BTC");
     assertThat(account.cash()).isEqualByComparingTo("0");
     assertThat(account.baseQuantity()).isEqualByComparingTo("4.995");
   }
@@ -43,7 +43,7 @@ class VirtualTradingGatewayTest {
     ExecutedOrder order = account.placeMarketOrder(sell("4.995"));
 
     assertThat(order.quoteAmount()).isEqualByComparingTo("1998");
-    assertThat(order.fills().getFirst().commission()).isEqualByComparingTo("1.998");
+    assertThat(order.fills().getFirst().feeAmount()).isEqualByComparingTo("1.998");
     assertThat(account.cash()).isEqualByComparingTo("1996.002");
     assertThat(account.baseQuantity()).isEqualByComparingTo("0");
   }

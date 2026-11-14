@@ -50,12 +50,19 @@ public class FollowedTickerService {
     return broker.tickers();
   }
 
-  /** Called at startup, before the streams open. A failure is logged and startup goes on. */
+  /**
+   * Called at startup, before the streams open. Stores the configured tickers as followed first, so
+   * the database lists every followed ticker; one already stored keeps its time. A failure is
+   * logged and startup goes on.
+   */
   public void restoreFollowedTickers(Broker broker) {
+    Instant now = clock.instant();
     try {
+      broker.tickers().forEach(ticker -> store.insertFollowedTicker(broker.name(), ticker, now));
       store.getFollowedTickers(broker.name()).forEach(broker::addTicker);
     } catch (DataAccessException e) {
-      log.error("{}: could not read the followed tickers: {}", broker.name(), e.getMessage(), e);
+      log.error(
+          "{}: could not store or read the followed tickers: {}", broker.name(), e.getMessage(), e);
     }
   }
 

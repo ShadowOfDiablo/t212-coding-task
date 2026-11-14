@@ -143,8 +143,8 @@ public final class PositionTracker {
 
   private static BigDecimal fees(ExecutedOrder order, String asset) {
     return order.fills().stream()
-        .filter(fill -> asset.equals(fill.commissionAsset()))
-        .map(OrderFill::commission)
+        .filter(fill -> asset.equals(fill.feeCurrency()))
+        .map(OrderFill::feeAmount)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 

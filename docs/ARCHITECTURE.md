@@ -857,8 +857,8 @@ erDiagram
         bigint trade_id PK
         numeric price
         numeric quantity
-        numeric commission
-        text commission_asset
+        numeric fee_amount
+        text fee_currency "BTC, USDT, BNB, ..."
     }
     brokers ||--o{ ticker : "lists"
     ticker ||--o{ candle : "has"
@@ -1090,7 +1090,7 @@ flowchart TB
 3. The ticker row gets a `followed_at` once (§11); a ticker stored only for its candles has none.
 4. The broker adds it to its ticker price map, and the candle feeder reopens its connections with the new streams.
 
-At startup, `BrokerStartupRunner` adds the stored tickers before the streams open. If the database can't be read, startup goes on with the configured tickers only.
+At startup, `BrokerStartupRunner` first stores the configured tickers as followed (a ticker already stored keeps its time), then adds the stored tickers before the streams open. If the database can't be read, startup goes on with the configured tickers only.
 
 ### 15.2 Live bot chart
 

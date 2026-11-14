@@ -218,16 +218,16 @@ public class OrderRepository implements OrderStore {
     jdbcClient
         .sql(
             """
-            INSERT INTO order_fill (order_id, trade_id, price, quantity, commission,
-                                    commission_asset)
+            INSERT INTO order_fill (order_id, trade_id, price, quantity, fee_amount,
+                                    fee_currency)
             VALUES (?, ?, ?, ?, ?, ?)
             """)
         .param(orderId)
         .param(fill.tradeId())
         .param(fill.price())
         .param(fill.quantity())
-        .param(fill.commission())
-        .param(fill.commissionAsset())
+        .param(fill.feeAmount())
+        .param(fill.feeCurrency())
         .update();
   }
 
@@ -303,8 +303,8 @@ public class OrderRepository implements OrderStore {
             row.getLong("trade_id"),
             row.getBigDecimal("price"),
             row.getBigDecimal("quantity"),
-            row.getBigDecimal("commission"),
-            row.getString("commission_asset")));
+            row.getBigDecimal("fee_amount"),
+            row.getString("fee_currency")));
   }
 
   private static OffsetDateTime timestamp(Instant instant) {

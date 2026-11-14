@@ -165,9 +165,9 @@ class PositionTrackerTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
-  private static OrderFill fill(String commission, String commissionAsset) {
+  private static OrderFill fill(String feeAmount, String feeCurrency) {
     return new OrderFill(
-        FILL_TRADE_ID, BigDecimal.ONE, BigDecimal.ONE, new BigDecimal(commission), commissionAsset);
+        FILL_TRADE_ID, BigDecimal.ONE, BigDecimal.ONE, new BigDecimal(feeAmount), feeCurrency);
   }
 
   /** Each test order gets the second of its time as its exchange order id. */

@@ -38,7 +38,7 @@ CREATE TABLE order_fill (
     trade_id         BIGINT  NOT NULL,
     price            NUMERIC NOT NULL,
     quantity         NUMERIC NOT NULL,
-    commission       NUMERIC NOT NULL,
-    commission_asset TEXT    NOT NULL,
+    fee_amount       NUMERIC NOT NULL,
+    fee_currency     TEXT    NOT NULL,
     PRIMARY KEY (order_id, trade_id)
 );

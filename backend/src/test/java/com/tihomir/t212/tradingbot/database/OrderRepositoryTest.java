@@ -8,14 +8,14 @@ import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
 import com.tihomir.t212.tradingbot.order.OpenOrder;
 import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.OrderFee;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.RejectedOrder;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,20 +43,7 @@ class OrderRepositoryTest {
   private static final BigDecimal OPEN_ORDER_AMOUNT = new BigDecimal("0.0001");
   private static final Instant CREATED_AT = Instant.parse("2026-11-11T10:00:00Z");
   private static final Instant EXECUTED_AT = Instant.parse("2026-11-11T10:00:01Z");
-  private static final OrderFill FIRST_FILL =
-      new OrderFill(
-          7,
-          new BigDecimal("100000.00000000"),
-          new BigDecimal("0.00006000"),
-          new BigDecimal("0.00000006"),
-          "BTC");
-  private static final OrderFill SECOND_FILL =
-      new OrderFill(
-          8,
-          new BigDecimal("100001.00000000"),
-          new BigDecimal("0.00004000"),
-          new BigDecimal("0.00000004"),
-          "BTC");
+  private static final OrderFee FEE = new OrderFee(new BigDecimal("0.00000010"), "BTC");
 
   @MockitoBean BrokerStartupRunner brokerStartupRunner;
 
@@ -66,41 +53,42 @@ class OrderRepositoryTest {
 
   @BeforeEach
   void emptyTables() {
-    jdbcClient.sql("DELETE FROM order_fill").update();
     jdbcClient.sql("DELETE FROM orders").update();
   }
 
   @Test
-  void executedOrderIsStoredWithItsFillsUnderTheExchangeOrderId() {
-    orderRepository.insertExecutedOrder(executedBuy(List.of(FIRST_FILL, SECOND_FILL)));
+  void executedOrderIsStoredWithItsFee() {
+    orderRepository.insertExecutedOrder(executedBuy(Optional.of(FEE)));
 
     OrderHistoryEntry entry = orderRepository.getOrderHistory(BROKER).orders().getFirst();
-    assertThat(entry).isEqualTo(executedBuy(List.of(FIRST_FILL, SECOND_FILL)));
+    assertThat(entry).isEqualTo(executedBuy(Optional.of(FEE)));
     assertThat(orderRepository.getOrderHistory("other").orders()).isEmpty();
   }
 
   @Test
-  void insertingTheSameExecutedOrderTwiceChangesNothing() {
-    orderRepository.insertExecutedOrder(executedBuy(List.of(FIRST_FILL)));
-    orderRepository.insertExecutedOrder(executedBuy(List.of(FIRST_FILL)));
+  void executedOrderWithoutAFeeIsStoredWithoutOne() {
+    orderRepository.insertExecutedOrder(executedBuy(Optional.empty()));
 
-    assertThat(orderRepository.getOrderHistory(BROKER).orders()).hasSize(1);
-    assertThat(orderRepository.getOrderHistory(BROKER).orders().getFirst().fills()).hasSize(1);
+    assertThat(orderRepository.getOrderHistory(BROKER).orders().getFirst().fee()).isEmpty();
+  }
+
+  @Test
+  void insertingTheSameExecutedOrderTwiceChangesNothing() {
+    orderRepository.insertExecutedOrder(executedBuy(Optional.of(FEE)));
+    orderRepository.insertExecutedOrder(executedBuy(Optional.of(FEE)));
+
+    assertThat(orderRepository.getOrderHistory(BROKER).orders()).singleElement();
   }
 
   @Test
   void failedInsertLeavesNothingBehind() {
-    OrderFill fillWithoutFeeAsset =
-        new OrderFill(9, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, null);
+    OrderFee feeWithoutCurrency = new OrderFee(FEE.amount(), null);
 
-    assertThatThrownBy(() ->
-            orderRepository.insertExecutedOrder(
-                executedBuy(List.of(FIRST_FILL, fillWithoutFeeAsset))))
+    assertThatThrownBy(
+            () -> orderRepository.insertExecutedOrder(executedBuy(Optional.of(feeWithoutCurrency))))
         .isInstanceOf(DataAccessException.class);
 
     assertThat(orderRepository.getOrderHistory(BROKER).orders()).isEmpty();
-    assertThat(jdbcClient.sql("SELECT count(*) FROM order_fill").query(Long.class).single())
-        .isZero();
   }
 
   @Test
@@ -127,8 +115,8 @@ class OrderRepositoryTest {
 
   @Test
   void refusesAnOrderWithAnUnknownStatus() {
-    assertThatThrownBy(
-            () -> orderRepository.insertExecutedOrder(executedBuy(UNKNOWN_STATUS, List.of())))
+    assertThatThrownBy(() ->
+            orderRepository.insertExecutedOrder(executedBuy(UNKNOWN_STATUS, Optional.empty())))
         .isInstanceOf(DataAccessException.class);
 
     assertThat(orderRepository.getOrderHistory(BROKER).orders()).isEmpty();
@@ -156,11 +144,11 @@ class OrderRepositoryTest {
     assertThat(order.createdAt()).isEqualTo(CREATED_AT);
   }
 
-  private static OrderHistoryEntry executedBuy(List<OrderFill> fills) {
-    return executedBuy(FILLED, fills);
+  private static OrderHistoryEntry executedBuy(Optional<OrderFee> fee) {
+    return executedBuy(FILLED, fee);
   }
 
-  private static OrderHistoryEntry executedBuy(String finalStatus, List<OrderFill> fills) {
+  private static OrderHistoryEntry executedBuy(String finalStatus, Optional<OrderFee> fee) {
     return new OrderHistoryEntry(
         EXCHANGE_ORDER_ID,
         BROKER,
@@ -175,6 +163,6 @@ class OrderRepositoryTest {
         new BigDecimal("100000"),
         CREATED_AT,
         EXECUTED_AT,
-        fills);
+        fee);
   }
 }

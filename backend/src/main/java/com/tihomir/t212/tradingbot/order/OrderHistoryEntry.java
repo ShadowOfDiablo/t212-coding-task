@@ -2,7 +2,7 @@ package com.tihomir.t212.tradingbot.order;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
+import java.util.Optional;
 
 public record OrderHistoryEntry(
     long exchangeOrderId,
@@ -18,11 +18,7 @@ public record OrderHistoryEntry(
     BigDecimal averagePrice,
     Instant createdAt,
     Instant closedAt,
-    List<OrderFill> fills) {
-
-  public OrderHistoryEntry {
-    fills = List.copyOf(fills);
-  }
+    Optional<OrderFee> fee) {
 
   static OrderHistoryEntry of(
       String broker, MarketOrderRequest request, ExecutedOrder order, Instant createdAt) {
@@ -40,6 +36,6 @@ public record OrderHistoryEntry(
         order.averagePrice(),
         createdAt,
         order.transactTime(),
-        order.fills());
+        OrderFee.of(order.fills()));
   }
 }

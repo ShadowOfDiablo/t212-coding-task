@@ -38,7 +38,14 @@ public class OrderService {
       recordRejectedOrder(RejectedOrder.of(brokerName, request, e, clock.instant()));
       throw e;
     }
-    recordExecutedOrder(OrderHistoryEntry.of(brokerName, request, order, createdAt));
+    OrderHistoryEntry entry = OrderHistoryEntry.of(brokerName, request, order, createdAt);
+    if (!order.fills().isEmpty() && entry.fee().isEmpty()) {
+      log.warn(
+          "{}: order {} paid its fee in more than one currency; the fee is not stored",
+          brokerName,
+          order.exchangeOrderId());
+    }
+    recordExecutedOrder(entry);
     log.info(
         "{}: {} {} {} executed {} for {} ({}), exchange order id {}",
         brokerName,

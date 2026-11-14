@@ -4,28 +4,24 @@ import com.tihomir.t212.tradingbot.order.OpenOrder;
 import com.tihomir.t212.tradingbot.order.OpenOrderList;
 import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.OrderFee;
 import com.tihomir.t212.tradingbot.order.OrderHistory;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStore;
 import com.tihomir.t212.tradingbot.order.RejectedOrder;
 import com.tihomir.t212.tradingbot.order.RejectedOrderList;
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Optional;
 import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -43,6 +39,9 @@ public class OrderRepository implements OrderStore {
   private static final SqlParameterValue NO_ERROR_CODE = new SqlParameterValue(Types.INTEGER, null);
   private static final SqlParameterValue NO_ERROR_MESSAGE =
       new SqlParameterValue(Types.VARCHAR, null);
+  private static final SqlParameterValue NO_FEE_AMOUNT = new SqlParameterValue(Types.NUMERIC, null);
+  private static final SqlParameterValue NO_FEE_CURRENCY =
+      new SqlParameterValue(Types.VARCHAR, null);
 
   private static final String SELECT_ORDERS =
       """
@@ -52,21 +51,13 @@ public class OrderRepository implements OrderStore {
       JOIN brokers b ON b.broker_id = t.broker_id
       """;
 
-  /** Executed orders: no error and no longer open. */
-  private static final String HISTORY_FILTER =
-      """
-      WHERE b.name = ? AND o.error_code IS NULL
-        AND o.status NOT IN (CAST(? AS order_status), CAST(? AS order_status))
-      ORDER BY o.updated_at DESC, o.id DESC LIMIT ?
-      """;
-
   private static final String INSERT_ORDER =
       """
       INSERT INTO orders (ticker_id, exchange_order_id, side, order_type, amount_type, status,
                           amount, executed_quantity, quote_amount, average_price, error_code,
-                          error_message, created_at, updated_at)
+                          error_message, fee_amount, fee_currency, created_at, updated_at)
       VALUES (?, ?, CAST(? AS order_side), CAST(? AS order_type), CAST(? AS order_amount_type),
-              CAST(? AS order_status), ?, ?, ?, ?, ?, ?, ?, ?)
+              CAST(? AS order_status), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   private final JdbcClient jdbcClient;
@@ -92,7 +83,6 @@ public class OrderRepository implements OrderStore {
     if (alreadyStored > 0) {
       return;
     }
-    KeyHolder keyHolder = new GeneratedKeyHolder();
     jdbcClient
         .sql(INSERT_ORDER)
         .param(tickerId)
@@ -107,14 +97,11 @@ public class OrderRepository implements OrderStore {
         .param(order.averagePrice())
         .param(NO_ERROR_CODE)
         .param(NO_ERROR_MESSAGE)
+        .param(feeAmount(order.fee()))
+        .param(feeCurrency(order.fee()))
         .param(timestamp(order.createdAt()))
         .param(timestamp(order.closedAt()))
-        .update(keyHolder, "id");
-    Long orderId = keyHolder.getKeyAs(Long.class);
-    if (orderId == null) {
-      throw new IllegalStateException("The database returned no id for an order");
-    }
-    order.fills().forEach(fill -> insertFill(orderId, fill));
+        .update();
   }
 
   @Override
@@ -135,6 +122,8 @@ public class OrderRepository implements OrderStore {
         .param(NOT_EXECUTED)
         .param(order.errorCode())
         .param(order.errorMessage())
+        .param(NO_FEE_AMOUNT)
+        .param(NO_FEE_CURRENCY)
         .param(rejectedAt)
         .param(rejectedAt)
         .update();
@@ -156,21 +145,22 @@ public class OrderRepository implements OrderStore {
             .list());
   }
 
-  /** Reads the orders and their fills from one snapshot, so both see the same orders. */
+  /** Executed orders: no error and no longer open, newest first. */
   @Override
-  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public OrderHistory getOrderHistory(String broker) {
-    List<OrderHistoryRow> rows =
-        jdbcClient
-            .sql(SELECT_ORDERS + HISTORY_FILTER)
-            .params(historyParams(broker))
-            .query(OrderRepository::orderHistoryRow)
-            .list();
-    Map<Long, List<OrderFill>> fillsByOrder = historyFills(broker);
     return new OrderHistory(
-        rows.stream()
-            .map(row -> withFills(row.order(), fillsByOrder.getOrDefault(row.orderId(), List.of())))
-            .toList());
+        jdbcClient
+            .sql(
+                SELECT_ORDERS
+                    + "WHERE b.name = ? AND o.error_code IS NULL"
+                    + " AND o.status NOT IN (CAST(? AS order_status), CAST(? AS order_status))"
+                    + " ORDER BY o.updated_at DESC, o.id DESC LIMIT ?")
+            .param(broker)
+            .param(OpenOrderStatus.NEW.name())
+            .param(OpenOrderStatus.PARTIALLY_FILLED.name())
+            .param(MAX_ORDERS_PER_HISTORY_REQUEST)
+            .query(OrderRepository::orderHistoryEntry)
+            .list());
   }
 
   @Override
@@ -188,49 +178,6 @@ public class OrderRepository implements OrderStore {
             .list());
   }
 
-  /** The fills of the orders the history shows, read with the same filter. */
-  private Map<Long, List<OrderFill>> historyFills(String broker) {
-    return jdbcClient
-        .sql(
-            "SELECT f.* FROM order_fill f WHERE f.order_id IN (SELECT id FROM ("
-                + SELECT_ORDERS
-                + HISTORY_FILTER
-                + ") history) ORDER BY f.trade_id")
-        .params(historyParams(broker))
-        .query(OrderRepository::orderFillRow)
-        .list()
-        .stream()
-        .collect(
-            Collectors.groupingBy(
-                OrderFillRow::orderId,
-                Collectors.mapping(OrderFillRow::fill, Collectors.toList())));
-  }
-
-  private static List<Object> historyParams(String broker) {
-    return List.of(
-        broker,
-        OpenOrderStatus.NEW.name(),
-        OpenOrderStatus.PARTIALLY_FILLED.name(),
-        MAX_ORDERS_PER_HISTORY_REQUEST);
-  }
-
-  private void insertFill(long orderId, OrderFill fill) {
-    jdbcClient
-        .sql(
-            """
-            INSERT INTO order_fill (order_id, trade_id, price, quantity, fee_amount,
-                                    fee_currency)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """)
-        .param(orderId)
-        .param(fill.tradeId())
-        .param(fill.price())
-        .param(fill.quantity())
-        .param(fill.feeAmount())
-        .param(fill.feeCurrency())
-        .update();
-  }
-
   private static OpenOrder openOrder(ResultSet row, int rowNumber) throws SQLException {
     return new OpenOrder(
         row.getLong("exchange_order_id"),
@@ -245,42 +192,31 @@ public class OrderRepository implements OrderStore {
         instant(row, "updated_at"));
   }
 
-  private static OrderHistoryRow orderHistoryRow(ResultSet row, int rowNumber) throws SQLException {
-    return new OrderHistoryRow(
-        row.getLong("id"),
-        new OrderHistoryEntry(
-            row.getLong("exchange_order_id"),
-            row.getString("broker"),
-            row.getString("ticker"),
-            OrderSide.valueOf(row.getString("side")),
-            row.getString("order_type"),
-            row.getBigDecimal("amount"),
-            OrderAmountType.valueOf(row.getString("amount_type")),
-            row.getString("status"),
-            row.getBigDecimal("executed_quantity"),
-            row.getBigDecimal("quote_amount"),
-            row.getBigDecimal("average_price"),
-            instant(row, "created_at"),
-            instant(row, "updated_at"),
-            List.of()));
+  private static OrderHistoryEntry orderHistoryEntry(ResultSet row, int rowNumber)
+      throws SQLException {
+    return new OrderHistoryEntry(
+        row.getLong("exchange_order_id"),
+        row.getString("broker"),
+        row.getString("ticker"),
+        OrderSide.valueOf(row.getString("side")),
+        row.getString("order_type"),
+        row.getBigDecimal("amount"),
+        OrderAmountType.valueOf(row.getString("amount_type")),
+        row.getString("status"),
+        row.getBigDecimal("executed_quantity"),
+        row.getBigDecimal("quote_amount"),
+        row.getBigDecimal("average_price"),
+        instant(row, "created_at"),
+        instant(row, "updated_at"),
+        fee(row));
   }
 
-  private static OrderHistoryEntry withFills(OrderHistoryEntry order, List<OrderFill> fills) {
-    return new OrderHistoryEntry(
-        order.exchangeOrderId(),
-        order.broker(),
-        order.ticker(),
-        order.side(),
-        order.orderType(),
-        order.amount(),
-        order.amountType(),
-        order.finalStatus(),
-        order.executedQuantity(),
-        order.quoteAmount(),
-        order.averagePrice(),
-        order.createdAt(),
-        order.closedAt(),
-        fills);
+  private static Optional<OrderFee> fee(ResultSet row) throws SQLException {
+    BigDecimal amount = row.getBigDecimal("fee_amount");
+    if (amount == null) {
+      return Optional.empty();
+    }
+    return Optional.of(new OrderFee(amount, row.getString("fee_currency")));
   }
 
   private static RejectedOrder rejectedOrder(ResultSet row, int rowNumber) throws SQLException {
@@ -296,15 +232,12 @@ public class OrderRepository implements OrderStore {
         instant(row, "updated_at"));
   }
 
-  private static OrderFillRow orderFillRow(ResultSet row, int rowNumber) throws SQLException {
-    return new OrderFillRow(
-        row.getLong("order_id"),
-        new OrderFill(
-            row.getLong("trade_id"),
-            row.getBigDecimal("price"),
-            row.getBigDecimal("quantity"),
-            row.getBigDecimal("fee_amount"),
-            row.getString("fee_currency")));
+  private static SqlParameterValue feeAmount(Optional<OrderFee> fee) {
+    return new SqlParameterValue(Types.NUMERIC, fee.map(OrderFee::amount).orElse(null));
+  }
+
+  private static SqlParameterValue feeCurrency(Optional<OrderFee> fee) {
+    return new SqlParameterValue(Types.VARCHAR, fee.map(OrderFee::currency).orElse(null));
   }
 
   private static OffsetDateTime timestamp(Instant instant) {

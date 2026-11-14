@@ -22,7 +22,7 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Order checks, virtual account for training (§16.3) | In progress |
 | Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | In progress |
 | Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
-| Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
+| Database: PostgreSQL + Flyway, raw SQL. Orders: open, executed and refused, in one table | **Built** |
 | Positions at average cost with P&L, MAE and MFE (§8) | In progress |
 | Database: restart reconciliation | Planned, next |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
@@ -53,7 +53,7 @@ flowchart LR
         Signal["SignalGenerator"]
         Orders["OrderValidator<br/>FeeService<br/>OrderExecutionService"]
         Account["AccountService"]
-        Db[("PostgreSQL<br/>orders, order_fill")]
+        Db[("PostgreSQL<br/>orders")]
         Api["REST API"]
     end
 
@@ -443,7 +443,7 @@ sequenceDiagram
     G->>B: POST /api/v3/order (X-MBX-APIKEY)
     B-->>G: FULL response: status, executed qty, fills with commission
     G-->>S: ExecutedOrder (average price = quote amount / quantity)
-    S->>D: one transaction: INSERT orders + order_fill rows (unique: ticker + Binance orderId)
+    S->>D: INSERT orders with the total fee (unique: ticker + Binance orderId)
     S-->>API: ExecutedOrder
     API-->>C: 201 Created
 ```
@@ -470,7 +470,7 @@ stateDiagram-v2
     SENT --> EXECUTED: 2xx, response read
     SENT --> REJECTED: 4xx, nothing executed
     SENT --> UNKNOWN: 5xx, timeout, unreadable 2xx
-    EXECUTED --> [*]: INSERT orders with fills, 201
+    EXECUTED --> [*]: INSERT orders with the fee, 201
     REJECTED --> [*]: INSERT orders as REJECTED with code and message, 422
     UNKNOWN --> [*]: not stored yet, 502 + tb- client order id
 ```
@@ -481,7 +481,7 @@ stateDiagram-v2
 | Where the order is | Status |
 |---|---|
 | `orders` with status `NEW` or `PARTIALLY_FILLED` | Orders Binance acknowledged that still rest on the book (`NEW`, `PARTIALLY_FILLED`). Market orders never stay open; this fills up once take-profit and stop-loss orders exist |
-| `orders` with any other status, no error | Executed: Binance's final status (`FILLED`, `EXPIRED`, …), with fills |
+| `orders` with any other status, no error | Executed: Binance's final status (`FILLED`, `EXPIRED`, …), with the total fee |
 | `orders` with status `REJECTED` | Refused by Binance: its error code and message |
 
 | Failure | Example | HTTP |
@@ -849,16 +849,10 @@ erDiagram
         numeric average_price
         int error_code "only when refused"
         text error_message
+        numeric fee_amount "total fee, NULL when none or in mixed coins"
+        text fee_currency "BTC, USDT, BNB, ..."
         timestamptz created_at
         timestamptz updated_at
-    }
-    order_fill {
-        bigint order_id PK
-        bigint trade_id PK
-        numeric price
-        numeric quantity
-        numeric fee_amount
-        text fee_currency "BTC, USDT, BNB, ..."
     }
     brokers ||--o{ ticker : "lists"
     ticker ||--o{ candle : "has"
@@ -868,23 +862,22 @@ erDiagram
     algorithm ||--o{ algorithm_run : "used by"
     algorithm_run ||--o{ training_portfolio_point : "charts"
     algorithm_run ||--o{ position : "opens"
-    orders ||--o{ order_fill : "filled in"
 ```
 
 Enum types: `algorithm_type`, `bot_mode`, `run_status`, `position_status`, `order_side`, `order_type`, `order_amount_type`, `order_status` (Binance's status names).
 
 - **One `orders` table** holds open, executed and refused live orders, told apart by status: open = `NEW` or `PARTIALLY_FILLED`, refused = `REJECTED`. A refused order has an error code and no exchange order id; a `CHECK` keeps the two together. The bot's `tb-…` client order id is not stored: every stored order is the bot's.
-- **Keys:** Binance's `orderId` is unique per symbol only, so an order is unique by `(ticker_id, exchange_order_id)`. Fills point at `orders.id`.
+- **Keys:** Binance's `orderId` is unique per symbol only, so an order is unique by `(ticker_id, exchange_order_id)`. An executed order keeps its total fee (`fee_amount`, `fee_currency`): the sum of its fills when they all paid in one coin. Fills paid in mixed coins (possible with the BNB fee discount) leave the fee empty, with a warning in the log. The fills themselves are not stored.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (order row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records. The history and its fills are read from one snapshot (`REPEATABLE READ`), so both see the same orders.
+- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (one order row), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records.
 - **Idempotent:** inserting the same executed order twice changes nothing: `insertExecutedOrder` first counts the rows with its ticker and exchange order id and skips an order that is already stored, in the same transaction as the inserts.
 - **Plain SQL only:** queries use standard `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `WHERE`, `ORDER BY` and `LIMIT`, with `?` placeholders. No named parameters and no PostgreSQL-only clauses such as `ON CONFLICT`.
 - **Failures:**
   - Database fails after Binance executed the order: the answer is still 201 and the error is logged. Reconciliation will fill the gap.
-  - A failed insert rolls back completely: no order row and no fills.
+  - A failed insert stores nothing.
   - An unknown broker, or a name its enum type doesn't have, is refused and nothing is written.
   - Database down on a read: 503.
-- **Endpoints:** `GET /api/brokers/{broker}/orders/open`, `GET /api/brokers/{broker}/orders/history` (the latest 100 executed orders, with fills) and `GET /api/brokers/{broker}/orders/rejected` (the latest 100 rejected orders).
+- **Endpoints:** `GET /api/brokers/{broker}/orders/open`, `GET /api/brokers/{broker}/orders/history` (the latest 100 executed orders, with their fee) and `GET /api/brokers/{broker}/orders/rejected` (the latest 100 rejected orders).
 
 **Planned next (stacked PRs):**
 - **Reconciliation:** `executionReport` events from the user data stream record any bot order (`tb-` client id) missing from the database, keyed by Binance's `orderId`. A startup check of Binance's recent orders covers the time the app was down.
@@ -919,7 +912,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | POST | `/brokers/{broker}/orders` | **Built.** Market order on the demo account (§7.1) |
 | GET | `/brokers/{broker}/balance` | **Built.** `{"balances": […]}`, the non-zero balances of the demo account |
 | GET | `/brokers/{broker}/orders/open` | **Built.** `{"openOrders": […]}`, orders resting on Binance (empty until take-profit and stop-loss orders exist) |
-| GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 executed orders with their fills |
+| GET | `/brokers/{broker}/orders/history` | **Built.** `{"orders": […]}`, the latest 100 executed orders with their fee |
 | GET | `/brokers/{broker}/orders/rejected` | **Built.** `{"rejectedOrders": […]}`, the latest 100 orders Binance refused, with its error |
 | GET | `/brokers/{broker}/tickers` | **Built.** `{"tickers": [{"ticker", "quote": {"bid", "ask", "lastPrice", "updatedAt", "source"}}, …]}`, every followed ticker with its latest quote from the ticker price map (`quote` is `null` until market data arrives) |
 | POST | `/brokers/{broker}/tickers` | `{"ticker": "SOLUSDT"}`: follow one more ticker (§15.1). 400 when the exchange doesn't list it |

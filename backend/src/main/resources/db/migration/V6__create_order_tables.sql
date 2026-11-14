@@ -24,21 +24,15 @@ CREATE TABLE orders (
     average_price     NUMERIC,
     error_code        INTEGER,
     error_message     TEXT,
+    -- the order's total fee; NULL when refused, open, or paid in more than one coin
+    fee_amount        NUMERIC,
+    fee_currency      TEXT,
     created_at        TIMESTAMPTZ       NOT NULL,
     updated_at        TIMESTAMPTZ       NOT NULL,
     UNIQUE (ticker_id, exchange_order_id),
-    CHECK ((exchange_order_id IS NULL) = (error_code IS NOT NULL))
+    CHECK ((exchange_order_id IS NULL) = (error_code IS NOT NULL)),
+    CHECK ((fee_amount IS NULL) = (fee_currency IS NULL))
 );
 
 CREATE INDEX orders_ticker_updated_at_idx ON orders (ticker_id, updated_at DESC);
 
--- Each piece an order was filled in, with its own price and fee.
-CREATE TABLE order_fill (
-    order_id         BIGINT  NOT NULL REFERENCES orders (id),
-    trade_id         BIGINT  NOT NULL,
-    price            NUMERIC NOT NULL,
-    quantity         NUMERIC NOT NULL,
-    fee_amount       NUMERIC NOT NULL,
-    fee_currency     TEXT    NOT NULL,
-    PRIMARY KEY (order_id, trade_id)
-);

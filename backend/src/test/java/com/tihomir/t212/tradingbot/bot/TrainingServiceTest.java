@@ -100,9 +100,7 @@ class TrainingServiceTest {
     PositionWrite closing = runStore.positionWrites(runId).writes().get(1);
     assertThat(closing.position().realisedPnl()).isEqualByComparingTo("996.002");
     assertThat(closing.position().mfe()).isPositive();
-    assertThat(closing.newTrades().trades())
-        .singleElement()
-        .satisfies(trade -> assertThat(trade.runId()).isEqualTo(runId));
+    assertThat(closing.position().runId()).isEqualTo(runId);
   }
 
   @Test

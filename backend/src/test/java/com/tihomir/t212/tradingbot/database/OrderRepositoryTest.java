@@ -37,6 +37,10 @@ class OrderRepositoryTest {
 
   private static final String BROKER = "binance";
   private static final long EXCHANGE_ORDER_ID = 28;
+  private static final long OPEN_ORDER_ID = 30;
+  private static final String FILLED = "FILLED";
+  private static final String UNKNOWN_STATUS = "PENDING_NEW";
+  private static final BigDecimal OPEN_ORDER_AMOUNT = new BigDecimal("0.0001");
   private static final Instant CREATED_AT = Instant.parse("2026-11-11T10:00:00Z");
   private static final Instant EXECUTED_AT = Instant.parse("2026-11-11T10:00:01Z");
   private static final OrderFill FIRST_FILL =
@@ -57,14 +61,13 @@ class OrderRepositoryTest {
   @MockitoBean BrokerStartupRunner brokerStartupRunner;
 
   @Autowired OrderRepository orderRepository;
+  @Autowired CandleRepository candleRepository;
   @Autowired JdbcClient jdbcClient;
 
   @BeforeEach
   void emptyTables() {
     jdbcClient.sql("DELETE FROM order_fill").update();
-    jdbcClient.sql("DELETE FROM rejected_order").update();
-    jdbcClient.sql("DELETE FROM order_history").update();
-    jdbcClient.sql("DELETE FROM open_order").update();
+    jdbcClient.sql("DELETE FROM orders").update();
   }
 
   @Test
@@ -123,38 +126,50 @@ class OrderRepositoryTest {
   }
 
   @Test
+  void refusesAnOrderWithAnUnknownStatus() {
+    assertThatThrownBy(
+            () -> orderRepository.insertExecutedOrder(executedBuy(UNKNOWN_STATUS, List.of())))
+        .isInstanceOf(DataAccessException.class);
+
+    assertThat(orderRepository.getOrderHistory(BROKER).orders()).isEmpty();
+  }
+
+  @Test
   void openOrdersAreKeyedByTheExchangeOrderId() {
     jdbcClient
         .sql(
             """
-            INSERT INTO open_order (exchange_order_id, client_order_id, broker, ticker, side,
-                                    order_type, amount, amount_type, status, created_at,
-                                    updated_at)
-            VALUES (30, 'tb-3', ?, 'BTCUSDT', 'SELL', 'TAKE_PROFIT_LIMIT', 0.0001,
-                    'BASE_QUANTITY', 'NEW', ?, ?)
+            INSERT INTO orders (ticker_id, exchange_order_id, side, order_type, amount_type, status,
+                                amount, created_at, updated_at)
+            VALUES (?, ?, 'SELL', 'MARKET', 'BASE_QUANTITY', 'NEW', ?, ?, ?)
             """)
-        .param(BROKER)
+        .param(candleRepository.insertTicker(BROKER, "BTCUSDT"))
+        .param(OPEN_ORDER_ID)
+        .param(OPEN_ORDER_AMOUNT)
         .param(CREATED_AT.atOffset(ZoneOffset.UTC))
         .param(CREATED_AT.atOffset(ZoneOffset.UTC))
         .update();
 
     OpenOrder order = orderRepository.getOpenOrders(BROKER).openOrders().getFirst();
-    assertThat(order.exchangeOrderId()).isEqualTo(30);
+    assertThat(order.exchangeOrderId()).isEqualTo(OPEN_ORDER_ID);
     assertThat(order.status()).isEqualTo(OpenOrderStatus.NEW);
     assertThat(order.createdAt()).isEqualTo(CREATED_AT);
   }
 
   private static OrderHistoryEntry executedBuy(List<OrderFill> fills) {
+    return executedBuy(FILLED, fills);
+  }
+
+  private static OrderHistoryEntry executedBuy(String finalStatus, List<OrderFill> fills) {
     return new OrderHistoryEntry(
         EXCHANGE_ORDER_ID,
-        "tb-1",
         BROKER,
         "BTCUSDT",
         OrderSide.BUY,
         MarketOrderRequest.ORDER_TYPE,
         new BigDecimal("10"),
         OrderAmountType.QUOTE_AMOUNT,
-        "FILLED",
+        finalStatus,
         new BigDecimal("0.0001"),
         new BigDecimal("10"),
         new BigDecimal("100000"),

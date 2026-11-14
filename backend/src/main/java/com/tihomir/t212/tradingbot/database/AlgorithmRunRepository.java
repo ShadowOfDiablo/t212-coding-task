@@ -31,45 +31,63 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
 
   private static final int MAX_RUNS_PER_LIST = 50;
 
+  private static final String SELECT_RUNS =
+      """
+      SELECT r.*, b.name AS broker, t.symbol AS ticker
+      FROM algorithm_run r
+      JOIN ticker t ON t.id = r.ticker_id
+      JOIN brokers b ON b.broker_id = t.broker_id
+      """;
+
   private final JdbcClient jdbcClient;
   private final JdbcTemplate jdbcTemplate;
+  private final CandleRepository candleRepository;
   private final PositionRepository positionRepository;
 
   public AlgorithmRunRepository(
-      JdbcClient jdbcClient, JdbcTemplate jdbcTemplate, PositionRepository positionRepository) {
+      JdbcClient jdbcClient,
+      JdbcTemplate jdbcTemplate,
+      CandleRepository candleRepository,
+      PositionRepository positionRepository) {
     this.jdbcClient = jdbcClient;
     this.jdbcTemplate = jdbcTemplate;
+    this.candleRepository = candleRepository;
     this.positionRepository = positionRepository;
   }
 
   @Override
   @Transactional
   public long insertStartedRun(RunStart start) {
+    long tickerId = candleRepository.insertTicker(start.broker(), start.ticker());
     KeyHolder keyHolder = new GeneratedKeyHolder();
     jdbcClient
         .sql(
             """
-            INSERT INTO algorithm_run (mode, broker, ticker, algorithm_id, status, started_at,
-                                       from_time, to_time, starting_value, buy_count, sell_count,
-                                       stop_loss_count, refused_order_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)
+            INSERT INTO algorithm_run (ticker_id, algorithm_id, mode, status,
+                                       started_at, from_time, to_time, starting_value, buy_count,
+                                       sell_count, stop_loss_count, refused_order_count)
+            VALUES (?, ?, CAST(? AS bot_mode),
+                    CAST(? AS run_status), ?, ?, ?, ?, ?, ?, ?, ?)
             """)
-        .param(start.mode().name())
-        .param(start.broker())
-        .param(start.ticker())
+        .param(tickerId)
         .param(start.algorithmId())
+        .param(start.mode().name())
         .param(RunStatus.STARTED.name())
         .param(timestamp(start.startedAt()))
         .param(optionalTimestamp(start.from()))
         .param(optionalTimestamp(start.to()))
         .param(start.startingValue())
+        .param(RunCounts.NONE.buyCount())
+        .param(RunCounts.NONE.sellCount())
+        .param(RunCounts.NONE.stopLossCount())
+        .param(RunCounts.NONE.refusedOrderCount())
         .update(keyHolder, "id");
     Long runId = keyHolder.getKeyAs(Long.class);
     if (runId == null) {
       throw new IllegalStateException("The database returned no id for the run");
     }
     if (start.mode() == BotMode.TRADING) {
-      updateActiveAlgorithm(start);
+      updateActiveAlgorithm(tickerId, start);
     }
     return runId;
   }
@@ -83,9 +101,10 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             .sql(
                 """
                 UPDATE algorithm_run
-                SET status = ?, finished_at = ?, final_value = ?, buy_count = ?, sell_count = ?,
-                    stop_loss_count = ?, refused_order_count = ?, failure_reason = ?
-                WHERE id = ? AND status = ?
+                SET status = CAST(? AS run_status), finished_at = ?,
+                    final_value = ?, buy_count = ?, sell_count = ?, stop_loss_count = ?,
+                    refused_order_count = ?, failure_reason = ?
+                WHERE id = ? AND status = CAST(? AS run_status)
                 """)
             .param(end.status().name())
             .param(timestamp(end.finishedAt()))
@@ -122,8 +141,10 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     return jdbcClient
         .sql(
             """
-            UPDATE algorithm_run SET status = ?, finished_at = ?, failure_reason = ?
-            WHERE status = ?
+            UPDATE algorithm_run
+            SET status = CAST(? AS run_status), finished_at = ?,
+                failure_reason = ?
+            WHERE status = CAST(? AS run_status)
             """)
         .param(RunStatus.STOPPED.name())
         .param(timestamp(stoppedAt))
@@ -135,7 +156,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
   @Override
   public Optional<StoredRunDetails> getRun(long runId) {
     return jdbcClient
-        .sql("SELECT * FROM algorithm_run WHERE id = ?")
+        .sql(SELECT_RUNS + "WHERE r.id = ?")
         .param(runId)
         .query(AlgorithmRunRepository::recordedRun)
         .optional()
@@ -146,26 +167,25 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
   public RecordedRunList getRuns(String broker) {
     return new RecordedRunList(
         jdbcClient
-            .sql("SELECT * FROM algorithm_run WHERE broker = ? ORDER BY id DESC LIMIT ?")
+            .sql(SELECT_RUNS + "WHERE b.name = ? ORDER BY r.id DESC LIMIT ?")
             .param(broker)
             .param(MAX_RUNS_PER_LIST)
             .query(AlgorithmRunRepository::recordedRun)
             .list());
   }
 
-  private void updateActiveAlgorithm(RunStart start) {
+  private void updateActiveAlgorithm(long tickerId, RunStart start) {
     OffsetDateTime activatedAt = timestamp(start.startedAt());
     int updated =
         jdbcClient
             .sql(
                 """
                 UPDATE active_algorithm SET algorithm_id = ?, activated_at = ?
-                WHERE broker = ? AND ticker = ?
+                WHERE ticker_id = ?
                 """)
             .param(start.algorithmId())
             .param(activatedAt)
-            .param(start.broker())
-            .param(start.ticker())
+            .param(tickerId)
             .update();
     if (updated > 0) {
       return;
@@ -173,11 +193,10 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     jdbcClient
         .sql(
             """
-            INSERT INTO active_algorithm (broker, ticker, algorithm_id, activated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO active_algorithm (ticker_id, algorithm_id, activated_at)
+            VALUES (?, ?, ?)
             """)
-        .param(start.broker())
-        .param(start.ticker())
+        .param(tickerId)
         .param(start.algorithmId())
         .param(activatedAt)
         .update();

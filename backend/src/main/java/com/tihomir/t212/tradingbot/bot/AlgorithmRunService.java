@@ -3,7 +3,6 @@ package com.tihomir.t212.tradingbot.bot;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsService;
 import com.tihomir.t212.tradingbot.position.PositionStore;
 import com.tihomir.t212.tradingbot.position.StoredPositionList;
-import com.tihomir.t212.tradingbot.position.TradeList;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -33,14 +32,6 @@ public class AlgorithmRunService {
     StoredRunDetails stored = storedRun(broker, runId);
     return new RunDetails(
         stored.run(), settingsService.getSettings(stored.run().algorithmId()), stored.points());
-  }
-
-  /**
-   * @throws RunNotFoundException if the broker has no run with this id
-   */
-  public TradeList getTrades(String broker, long runId) {
-    storedRun(broker, runId);
-    return positionStore.getTrades(runId);
   }
 
   /**

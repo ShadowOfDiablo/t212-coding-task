@@ -5,7 +5,6 @@ import java.time.Instant;
 
 public record OpenOrder(
     long exchangeOrderId,
-    String clientOrderId,
     String broker,
     String ticker,
     OrderSide side,

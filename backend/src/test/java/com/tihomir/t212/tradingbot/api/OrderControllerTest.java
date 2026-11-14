@@ -176,7 +176,6 @@ class OrderControllerTest {
                 List.of(
                     new OpenOrder(
                         30,
-                        "tb-3",
                         "binance",
                         "BTCUSDT",
                         OrderSide.SELL,
@@ -202,7 +201,6 @@ class OrderControllerTest {
                 List.of(
                     new OrderHistoryEntry(
                         28L,
-                        "tb-1",
                         "binance",
                         "BTCUSDT",
                         OrderSide.BUY,

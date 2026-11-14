@@ -23,11 +23,10 @@ public class CandleRepository implements CandleStore {
 
   private static final String INSERT_MISSING_CANDLE =
       """
-      INSERT INTO candle (ticker_id, candle_interval, open_time, close_time, open, high, low, close,
-                          volume)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      INSERT INTO candle (ticker_id, interval_seconds, open_time, open, high, low, close, volume)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?
       WHERE NOT EXISTS (
-          SELECT 1 FROM candle WHERE ticker_id = ? AND candle_interval = ? AND open_time = ?)
+          SELECT 1 FROM candle WHERE ticker_id = ? AND interval_seconds = ? AND open_time = ?)
       """;
 
   private final JdbcClient jdbcClient;
@@ -41,29 +40,40 @@ public class CandleRepository implements CandleStore {
   @Override
   public Optional<Long> getTickerId(String broker, String ticker) {
     return jdbcClient
-        .sql("SELECT id FROM ticker WHERE broker = ? AND symbol = ?")
+        .sql(
+            """
+            SELECT t.id FROM ticker t
+            JOIN brokers b ON b.broker_id = t.broker_id
+            WHERE b.name = ? AND t.symbol = ?
+            """)
         .param(broker)
         .param(ticker)
         .query(Long.class)
         .optional();
   }
 
+  /**
+   * Finds the ticker, inserting it when it is new.
+   *
+   * @throws IllegalStateException if the broker is not in the brokers table
+   */
   @Override
   public long insertTicker(String broker, String ticker) {
     jdbcClient
         .sql(
             """
-            INSERT INTO ticker (broker, symbol)
-            SELECT ?, ?
-            WHERE NOT EXISTS (SELECT 1 FROM ticker WHERE broker = ? AND symbol = ?)
+            INSERT INTO ticker (broker_id, symbol)
+            SELECT b.broker_id, ? FROM brokers b
+            WHERE b.name = ?
+              AND NOT EXISTS (SELECT 1 FROM ticker t
+                              WHERE t.broker_id = b.broker_id AND t.symbol = ?)
             """)
-        .param(broker)
         .param(ticker)
         .param(broker)
         .param(ticker)
         .update();
     return getTickerId(broker, ticker)
-        .orElseThrow(() -> new IllegalStateException("No id stored for ticker " + ticker));
+        .orElseThrow(() -> new IllegalStateException("Unknown broker " + broker));
   }
 
   @Override
@@ -73,11 +83,11 @@ public class CandleRepository implements CandleStore {
             """
             SELECT MIN(open_time) AS first_open_time, MAX(open_time) AS last_open_time
             FROM candle
-            WHERE ticker_id = ? AND candle_interval = ?
+            WHERE ticker_id = ? AND interval_seconds = ?
             HAVING COUNT(*) > 0
             """)
         .param(tickerId)
-        .param(interval.code())
+        .param(interval.duration().toSeconds())
         .query((row, rowNumber) -> storedCandleRange(row, interval))
         .optional();
   }
@@ -99,13 +109,14 @@ public class CandleRepository implements CandleStore {
                 SELECT t.symbol, c.*
                 FROM candle c
                 JOIN ticker t ON t.id = c.ticker_id
-                WHERE t.broker = ? AND t.symbol = ? AND c.candle_interval = ?
+                JOIN brokers b ON b.broker_id = t.broker_id
+                WHERE b.name = ? AND t.symbol = ? AND c.interval_seconds = ?
                   AND c.open_time >= ? AND c.open_time < ?
                 ORDER BY c.open_time
                 """)
             .param(request.broker())
             .param(request.ticker())
-            .param(request.interval().code())
+            .param(request.interval().duration().toSeconds())
             .param(timestamp(request.from()))
             .param(timestamp(request.to()))
             .query(CandleRepository::candle)
@@ -113,20 +124,19 @@ public class CandleRepository implements CandleStore {
   }
 
   private static Object[] candleRow(long tickerId, CandleUpdate candle) {
-    String interval = candle.interval().code();
+    long intervalSeconds = candle.interval().duration().toSeconds();
     OffsetDateTime openTime = timestamp(candle.openTime());
     return new Object[] {
       tickerId,
-      interval,
+      intervalSeconds,
       openTime,
-      timestamp(candle.closeTime()),
       candle.open(),
       candle.high(),
       candle.low(),
       candle.close(),
       candle.volume(),
       tickerId,
-      interval,
+      intervalSeconds,
       openTime
     };
   }
@@ -138,11 +148,13 @@ public class CandleRepository implements CandleStore {
   }
 
   private static CandleUpdate candle(ResultSet row, int rowNumber) throws SQLException {
-    Instant closeTime = instant(row, "close_time");
+    CandleInterval interval = CandleInterval.fromSeconds(row.getLong("interval_seconds"));
+    Instant openTime = instant(row, "open_time");
+    Instant closeTime = interval.closeTime(openTime);
     return new CandleUpdate(
         row.getString("symbol"),
-        CandleInterval.fromCode(row.getString("candle_interval")),
-        instant(row, "open_time"),
+        interval,
+        openTime,
         closeTime,
         row.getBigDecimal("open"),
         row.getBigDecimal("high"),

@@ -55,11 +55,6 @@ public class RunController {
     return RunDetailsResponse.of(runService.getRun(broker, runId));
   }
 
-  @GetMapping("/runs/{runId}/trades")
-  public TradeListResponse getTrades(@PathVariable String broker, @PathVariable long runId) {
-    return TradeListResponse.of(runService.getTrades(broker, runId));
-  }
-
   @GetMapping("/runs/{runId}/positions/worst")
   public PositionListResponse getWorstPositions(
       @PathVariable String broker,

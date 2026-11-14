@@ -3,9 +3,10 @@ package com.tihomir.t212.tradingbot.marketdata.update;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 
-/** A candle length. In the API and the database it is written as a short code such as "5m". */
+/** A candle length. The API writes it as a short code such as "5m", the database in seconds. */
 public enum CandleInterval {
   ONE_SECOND(Duration.ofSeconds(1)),
   ONE_MINUTE(Duration.ofMinutes(1)),
@@ -18,6 +19,7 @@ public enum CandleInterval {
   private static final long SECONDS_PER_MINUTE = 60;
   private static final long MINUTES_PER_HOUR = 60;
   private static final long HOURS_PER_DAY = 24;
+  private static final Duration CLOSE_TIME_OFFSET = Duration.ofMillis(1);
 
   private final Duration duration;
 
@@ -53,5 +55,21 @@ public enum CandleInterval {
         .filter(interval -> interval.code().equals(code))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("Unknown candle interval: " + code));
+  }
+
+  /**
+   * @throws IllegalArgumentException if no interval is this many seconds long
+   */
+  public static CandleInterval fromSeconds(long seconds) {
+    return Arrays.stream(values())
+        .filter(interval -> interval.duration.toSeconds() == seconds)
+        .findFirst()
+        .orElseThrow(
+            () -> new IllegalArgumentException("Unknown candle interval: " + seconds + "s"));
+  }
+
+  /** A candle closes at its last millisecond: open time + length - 1 ms. */
+  public Instant closeTime(Instant openTime) {
+    return openTime.plus(duration).minus(CLOSE_TIME_OFFSET);
   }
 }

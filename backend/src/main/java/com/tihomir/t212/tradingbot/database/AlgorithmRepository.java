@@ -33,9 +33,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The {@code algorithm} table. The type is stored as a number and the timeframe as its code. Every
- * other setting is one JSON text, written with sorted keys and plain numbers, so identical settings
- * give identical text.
+ * The {@code algorithm} table. The type is the {@code algorithm_type} enum and the timeframe is
+ * stored in seconds. Every other setting is one JSON text, written with sorted keys and plain
+ * numbers, so identical settings give identical text.
  */
 @Repository
 public class AlgorithmRepository implements AlgorithmStore {
@@ -50,8 +50,6 @@ public class AlgorithmRepository implements AlgorithmStore {
           ORDER_SIZE_PERCENT,
           RISK_PER_TRADE_PERCENT,
           STOP_LOSS_PERCENT);
-
-  private static final int SIMPLE_MOVING_AVERAGE_NUMBER = 1;
 
   private static final JsonMapper SETTINGS_MAPPER =
       JsonMapper.builder()
@@ -69,26 +67,34 @@ public class AlgorithmRepository implements AlgorithmStore {
   @Transactional
   public long findOrInsertAlgorithm(AlgorithmSettings settings, Instant createdAt) {
     String settingsJson = settingsJson(settings);
+    String algorithmType = settings.algorithmType().name();
+    long timeframeSeconds = settings.timeframe().duration().toSeconds();
     jdbcClient
         .sql(
             """
-            INSERT INTO algorithm (algorithm_type, timeframe, settings, created_at)
-            SELECT ?, ?, ?, ?
+            INSERT INTO algorithm (algorithm_type, timeframe_seconds, settings, created_at)
+            SELECT CAST(? AS algorithm_type), ?, ?, ?
             WHERE NOT EXISTS (SELECT 1 FROM algorithm
-                              WHERE algorithm_type = ? AND timeframe = ? AND settings = ?)
+                              WHERE algorithm_type = CAST(? AS algorithm_type)
+                                AND timeframe_seconds = ? AND settings = ?)
             """)
-        .param(algorithmTypeNumber(settings.algorithmType()))
-        .param(settings.timeframe().code())
+        .param(algorithmType)
+        .param(timeframeSeconds)
         .param(settingsJson)
         .param(OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC))
-        .param(algorithmTypeNumber(settings.algorithmType()))
-        .param(settings.timeframe().code())
+        .param(algorithmType)
+        .param(timeframeSeconds)
         .param(settingsJson)
         .update();
     return jdbcClient
-        .sql("SELECT id FROM algorithm WHERE algorithm_type = ? AND timeframe = ? AND settings = ?")
-        .param(algorithmTypeNumber(settings.algorithmType()))
-        .param(settings.timeframe().code())
+        .sql(
+            """
+            SELECT id FROM algorithm
+            WHERE algorithm_type = CAST(? AS algorithm_type) AND timeframe_seconds = ?
+              AND settings = ?
+            """)
+        .param(algorithmType)
+        .param(timeframeSeconds)
         .param(settingsJson)
         .query(Long.class)
         .single();
@@ -97,7 +103,10 @@ public class AlgorithmRepository implements AlgorithmStore {
   @Override
   public Optional<AlgorithmSettings> getAlgorithm(long algorithmId) {
     return jdbcClient
-        .sql("SELECT id, algorithm_type, timeframe, settings FROM algorithm WHERE id = ?")
+        .sql(
+            """
+            SELECT id, algorithm_type, timeframe_seconds, settings FROM algorithm WHERE id = ?
+            """)
         .param(algorithmId)
         .query(AlgorithmRepository::algorithmSettings)
         .optional();
@@ -129,8 +138,8 @@ public class AlgorithmRepository implements AlgorithmStore {
     long algorithmId = row.getLong("id");
     try {
       return algorithmSettings(
-          algorithmType(row.getInt("algorithm_type")),
-          CandleInterval.fromCode(row.getString("timeframe")),
+          AlgorithmType.valueOf(row.getString("algorithm_type")),
+          CandleInterval.fromSeconds(row.getLong("timeframe_seconds")),
           SETTINGS_MAPPER.readTree(row.getString("settings")));
     } catch (JacksonException | IllegalArgumentException | ArithmeticException e) {
       throw new IllegalStateException(
@@ -155,21 +164,6 @@ public class AlgorithmRepository implements AlgorithmStore {
                 .collect(
                     Collectors.toMap(
                         Map.Entry::getKey, property -> plainNumber(property.getValue())))));
-  }
-
-  static int algorithmTypeNumber(AlgorithmType algorithmType) {
-    return switch (algorithmType) {
-      case SIMPLE_MOVING_AVERAGE -> SIMPLE_MOVING_AVERAGE_NUMBER;
-    };
-  }
-
-  static AlgorithmType algorithmType(int algorithmTypeNumber) {
-    return switch (algorithmTypeNumber) {
-      case SIMPLE_MOVING_AVERAGE_NUMBER -> AlgorithmType.SIMPLE_MOVING_AVERAGE;
-      default ->
-          throw new IllegalArgumentException(
-              "Unknown algorithm type number: " + algorithmTypeNumber);
-    };
   }
 
   private static Optional<BigDecimal> optionalNumber(JsonNode values, String name) {

@@ -23,7 +23,7 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 | Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | In progress |
 | Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open orders, order history, fills | **Built** |
-| Positions (FIFO lots) and trades with P&L, MAE and MFE (§8) | In progress |
+| Positions at average cost with P&L, MAE and MFE (§8) | In progress |
 | Database: restart reconciliation | Planned, next |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
 | Dashboard: live bot, training and runs tabs, settings forms, charts, following tickers (§15.1, §15.2) | In progress |
@@ -53,7 +53,7 @@ flowchart LR
         Signal["SignalGenerator"]
         Orders["OrderValidator<br/>FeeService<br/>OrderExecutionService"]
         Account["AccountService"]
-        Db[("PostgreSQL<br/>open_order, order_history, order_fill")]
+        Db[("PostgreSQL<br/>orders, order_fill")]
         Api["REST API"]
     end
 
@@ -102,7 +102,7 @@ flowchart LR
 | `RequestSigner` | Built | Signs a request's query string. `BinanceRequestSigner` uses Ed25519. Without an API key, `MissingKeyRequestSigner` is used instead and refuses every signed request, so trading is off |
 | `BalanceCachingTradingGateway` | Built | Wraps a broker's trading gateway and answers balance reads from its `AccountBalanceCache`, so they send no request (§7.2) |
 | `BinanceUserDataStream` | Built | Binance's user data stream, on its own WebSocket connection (`userdata` package). Applies `outboundAccountPosition` balance events to the cache, and has `AccountBalanceSynchronizer` take a snapshot after each subscription and every 15 minutes (§7.2) |
-| `OrderService` | Built | Finds the broker, checks the ticker is one it trades, sends the order to the broker's trading gateway, then stores the result in `order_history` or `rejected_order` (§7.1, §11) |
+| `OrderService` | Built | Finds the broker, checks the ticker is one it trades, sends the order to the broker's trading gateway, then stores the result in `orders` (§7.1, §11) |
 | `OrderController` | Built | `POST /api/brokers/{broker}/orders` and `GET /api/brokers/{broker}/balance`. `ApiExceptionHandler` turns failures into HTTP problem responses |
 | `BotModeService` | Built | The current `BotMode` (`TRADING` or `TRAINING`). Switched at runtime, without a restart, through `PUT /api/bot/mode` |
 | `TradingBotService` | Planned | Owns the event loop, the bot state and the runs |
@@ -110,7 +110,7 @@ flowchart LR
 | `OrderValidator` | Planned | Turns a signal into a valid `OrderRequest`, or rejects it |
 | `FeeService` | Planned | Provides fee rates (exact Binance rates with an API key, the standard schedule otherwise) and calculates fees |
 | `OrderExecutionService` | Planned | Fills a valid `OrderRequest` and produces an `ExecutedOrder`. No validation or fee logic |
-| `PositionTracker` | In progress | Applies `ExecutedOrder`s to the bot's FIFO lots and position, and calculates realised P&L, MAE and MFE (§8) |
+| `PositionTracker` | In progress | Applies `ExecutedOrder`s to the bot's position at average cost, and calculates realised P&L, MAE and MFE (§8) |
 | `OrderRepository` | Built | PostgreSQL access for the order tables (`JdbcClient`, raw SQL, no ORM). Implements `OrderStore`, so `OrderService` doesn't depend on the database code |
 | Other repositories | Planned | Lots, trades, candles, runs |
 | REST API | Planned | Controls and read endpoints for the React dashboard |
@@ -443,7 +443,7 @@ sequenceDiagram
     G->>B: POST /api/v3/order (X-MBX-APIKEY)
     B-->>G: FULL response: status, executed qty, fills with commission
     G-->>S: ExecutedOrder (average price = quote amount / quantity)
-    S->>D: one transaction: INSERT order_history + order_fill rows (key: Binance orderId)
+    S->>D: one transaction: INSERT orders + order_fill rows (unique: ticker + Binance orderId)
     S-->>API: ExecutedOrder
     API-->>C: 201 Created
 ```
@@ -470,8 +470,8 @@ stateDiagram-v2
     SENT --> EXECUTED: 2xx, response read
     SENT --> REJECTED: 4xx, nothing executed
     SENT --> UNKNOWN: 5xx, timeout, unreadable 2xx
-    EXECUTED --> [*]: INSERT order_history with fills, 201
-    REJECTED --> [*]: INSERT rejected_order with code and message, 422
+    EXECUTED --> [*]: INSERT orders with fills, 201
+    REJECTED --> [*]: INSERT orders as REJECTED with code and message, 422
     UNKNOWN --> [*]: not stored yet, 502 + tb- client order id
 ```
 
@@ -480,9 +480,9 @@ stateDiagram-v2
 
 | Where the order is | Status |
 |---|---|
-| `open_order` (only active orders) | Orders Binance acknowledged that still rest on the book (`NEW`, `PARTIALLY_FILLED`). Market orders never stay open; this fills up once take-profit and stop-loss orders exist |
-| `order_history` (append-only) | Executed: Binance's final status (`FILLED`, `EXPIRED`, …), with fills |
-| `rejected_order` (append-only) | Refused by Binance: its error code and message |
+| `orders` with status `NEW` or `PARTIALLY_FILLED` | Orders Binance acknowledged that still rest on the book (`NEW`, `PARTIALLY_FILLED`). Market orders never stay open; this fills up once take-profit and stop-loss orders exist |
+| `orders` with any other status, no error | Executed: Binance's final status (`FILLED`, `EXPIRED`, …), with fills |
+| `orders` with status `REJECTED` | Refused by Binance: its error code and message |
 
 | Failure | Example | HTTP |
 |---|---|---|
@@ -498,7 +498,7 @@ stateDiagram-v2
 - A key file that can't be read stops the application at startup.
 - Timestamps use the local clock. Binance accepts requests that arrive within `recv-window` (5 seconds) of it.
 
-**Not covered yet:** rounding quantities to the symbol's step size and checking the minimum order value (via `exchangeInfo`). Binance rejects such orders with a filter failure, which comes back as a 422. Orders left `SENDING` or `UNKNOWN` in `open_order` are settled from Binance by the reconciliation step that comes next (§11).
+**Not covered yet:** rounding quantities to the symbol's step size and checking the minimum order value (via `exchangeInfo`). Binance rejects such orders with a filter failure, which comes back as a 422. Orders with an unknown outcome are settled from Binance by the reconciliation step that comes next (§11).
 
 ### 7.2 Account balances: cache and user data stream (built)
 
@@ -624,11 +624,9 @@ stateDiagram-v2
 
 ## 8. Positions and trades (in progress)
 
-Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position as **FIFO lots**: each buy adds a lot, and each sell uses up the oldest lots first. A sell uses only the quantity it sold, so one lot can be shared by several sells: buy 10, sell 3, sell 3, and a lot of 4 stays open. The position closes when nothing is left, or when what is left is worth less than the minimum order value at the sell price: that rest (what the lot step leaves after "sell everything") can never be sold, so it leaves the position and stays in the account.
+Every executed order of a run, live or training, goes through one `PositionTracker`. It keeps the bot's position at **average cost**: the coins held and what they cost. A buy adds its coins and its cost. A sell takes coins out at the average cost per coin: buy 1 at 100 and 1 at 120, sell 1 at 130, and the sell makes 20 while 1 coin stays at an entry price of 110. The position closes when nothing is left, or when what is left is worth less than the minimum order value at the sell price: that rest (what the lot step leaves after "sell everything") can never be sold, so it leaves the position and stays in the account.
 
-> **Two meanings of "lot":**
-> - **A lot** (`OpenLot`, `open_lot`) is one buy that still holds coins. Buy twice and the position has two lots.
-> - **The lot step** (`TickerTradingRules.lotStepSize`) is Binance's `LOT_SIZE` rule: the smallest amount a coin quantity can change by. For BTCUSDT it is 0.00001 BTC, so an order for 0.123456 BTC is sent as 0.12345 BTC.
+> **The lot step** (`TickerTradingRules.lotStepSize`) is Binance's `LOT_SIZE` rule: the smallest amount a coin quantity can change by. For BTCUSDT it is 0.00001 BTC, so an order for 0.123456 BTC is sent as 0.12345 BTC.
 
 ```mermaid
 flowchart LR
@@ -636,69 +634,24 @@ flowchart LR
     Checker --> Gateway["BinanceTradingGateway (live)<br/>VirtualTradingGateway (training)"]
     Gateway -- "ExecutedOrder" --> Tracker["PositionTracker<br/>one per live bot / training replay"]
     Price["every evaluated price"] -- "MAE / MFE" --> Tracker
-    Tracker -- "buy: add a lot<br/>sell: use up the oldest lots" --> Store["PositionStore"]
-    Store --> Db[("position, open_lot, trade")]
-    Db --> Api["GET /runs/{id}/trades<br/>GET /runs/{id}/positions/worst"]
+    Tracker -- "buy: add coins and cost<br/>sell: take out at average cost" --> Store["PositionStore"]
+    Store --> Db[("position")]
+    Db --> Api["GET /runs/{id}/positions/worst"]
 ```
 
-```mermaid
-erDiagram
-    position {
-        bigserial id PK
-        bigint run_id "FK, the run it opened in"
-        text broker
-        text ticker
-        text status "OPEN or CLOSED"
-        timestamptz opened_at
-        timestamptz closed_at "NULL while open"
-        numeric realised_pnl "sum of its trades"
-        numeric mae "worst unrealised P&L while open"
-        numeric mfe "best unrealised P&L while open"
-    }
-    open_lot {
-        bigserial id PK
-        bigint position_id "FK"
-        bigint run_id "FK, the run of the buy"
-        bigint buy_order_id "exchange order id of the buy"
-        timestamptz bought_at
-        numeric quantity "still held"
-        numeric entry_price "cost per coin, buy fee included"
-    }
-    trade {
-        bigserial id PK
-        bigint position_id "FK"
-        bigint run_id "FK, the run of the sell"
-        bigint buy_order_id "the buy of its lot"
-        bigint sell_order_id "shared by the trades of one sell"
-        timestamptz bought_at
-        timestamptz sold_at
-        numeric quantity
-        numeric entry_price
-        numeric exit_price
-        numeric fee "the sell fee's share, in USDT"
-        numeric realised_pnl
-    }
-    position ||--o{ open_lot : "holds"
-    position ||--o{ trade : "closed by"
-```
-
-- **`position`:** from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps it in memory; the table is its stored state.
-- **`open_lot` is a current table, `trade` a history table** (§11): a lot lives in `open_lot` while it holds coins. A sell matches the oldest lots and writes one `trade` row per lot (or part of a lot) it used. A lot used up completely is deleted.
-- **Order ids link everything:** a lot keeps the exchange order id of its buy. Each trade keeps the buy of its lot and the sell that used it, so the trades of one sell share its `sell_order_id`. Example: 3 buys make 3 lots; one sell of everything writes 3 trades with the same `sell_order_id` and 3 different `buy_order_id`s. Live ids are Binance's `orderId` and join to `order_history`; training ids come from the virtual account.
+- **`position`** (table in §11): from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps the coins held and their cost in memory; the table stores the position's cost, realised P&L, MAE and MFE.
 - **Fees:**
-  - A buy's fee is taken from the coins bought, on Binance and in the virtual gateway. A lot's quantity is what was received, and its entry price is the USDT spent divided by that quantity, so the fee is in the cost.
-  - A sell's fee is in USDT. It is shared over the matched lots by quantity.
-  - Realised P&L of a trade = (exit price − entry price) × quantity − its share of the sell fee.
-- **MAE and MFE:** the worst and best unrealised P&L of the open position, (price − average entry) × quantity, updated on every evaluated price. Stored with every trade write and when the position closes.
-- **Writes are transactional:**
-  - **Live:** after an order executes, its lot or trades, the deleted lots and the position row are written in one transaction.
+  - A buy's fee is taken from the coins bought, on Binance and in the virtual gateway. The coins held are what was received, and the cost is the USDT spent, so the fee is in the entry price.
+  - A sell's fee is in USDT.
+  - Realised P&L of a sell = exit price × quantity sold − their share of the cost − the sell fee. A sell of more than is held counts only what is held.
+- **MAE and MFE:** the worst and best unrealised P&L of the open position, price × quantity − cost, updated on every evaluated price. Stored with every position write.
+- **Writes:**
+  - **Live:** after an order executes, the position row is written.
   - **Training:** kept in memory and written with the run's end, in the same transaction.
   - If the write fails, the order still happened: it is logged with its exchange order id and the tracker keeps the position in memory.
-- **A live settings change** starts a new run (§16.4). The open position carries over: lots keep the run they were bought in, trades get the run they were sold in.
-- **Live bot start** loads the OPEN position and its lots of the broker and ticker, so coins the bot bought before a stop or a restart can still be sold or stopped out.
-- **API:**
-  - `GET /api/brokers/{broker}/runs/{id}/trades`: the trades sold in the run, oldest first.
-  - `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L, with MAE, MFE and duration.
+- **A live settings change** starts a new run (§16.4). The open position carries over and stays with the run it opened in.
+- **Not kept:** a live bot starts flat. A position left open by a stop or a restart is not loaded again; the coins stay in the account. Per-sell trades are not stored; the executed orders in `orders` are the record.
+- **API:** `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L, with MAE, MFE and duration.
 - **Money:** all amounts and quantities are `BigDecimal` / `numeric`.
 
 ## 9. Bot and run lifecycle (planned)
@@ -808,69 +761,133 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
 ## 11. Database (orders built, the rest planned)
 
 - **PostgreSQL 17** holds every table. Locally it runs from `backend/compose.yaml` (Docker), which Spring Boot's Docker Compose support starts on `spring-boot:run` and leaves running. Tests use Testcontainers.
-- **Flyway** creates and upgrades the tables at startup from numbered raw-SQL scripts in `backend/src/main/resources/db/migration` (`V1__create_order_tables.sql`, …). There's no ORM: the `database` package uses Spring's `JdbcClient` with plain SQL.
-- **Rule:** a "current" table holds only active rows; a history table only ever gets rows added. Moving a row from one to the other always happens in **one transaction**.
+- **Flyway** creates the tables at startup from numbered raw-SQL scripts in `backend/src/main/resources/db/migration`, one per area: `V1__create_broker_and_ticker_tables.sql`, `V2__create_candle_table.sql`, `V3__create_algorithm_tables.sql`, `V4__create_algorithm_run_tables.sql`, `V5__create_position_tables.sql`, `V6__create_order_tables.sql`. Each script only creates what the schema needs: no table is created and dropped later, and no data is copied between tables. There's no ORM: the `database` package uses Spring's `JdbcClient` with plain SQL.
+- **Brokers and tickers by id:** `brokers` holds one row per exchange. `ticker` belongs to a broker. Every other table points at `ticker_id` and never stores a broker or ticker as text; reads join `ticker` and `brokers` and give the domain records their names back.
+- **Enums are native PostgreSQL ENUM types:** each Java enum has a `CREATE TYPE … AS ENUM` with the same names (`order_side`, `order_status`, `run_status`, …). Writes cast the name, `CAST(? AS order_side)`, so an unknown name is refused and nothing is written. Reads use `valueOf` on the text. This is the one PostgreSQL-only part of the schema.
+- **Times as seconds:** an algorithm's timeframe and a candle's interval are stored in seconds (`timeframe_seconds`, `interval_seconds`). The API keeps the `5m` codes. A candle's close time is not stored: it is the open time + interval − 1 ms (`CandleInterval.closeTime`).
 
 ```mermaid
 erDiagram
-    open_order {
-        bigint exchange_order_id PK "Binance orderId"
-        text client_order_id "tb-... marker"
-        text broker
-        text ticker
-        text side
-        text order_type "take-profit, stop-loss, ... later"
+    brokers {
+        smallint broker_id PK
+        text name "binance"
+    }
+    ticker {
+        bigserial id PK
+        smallint broker_id FK
+        text symbol "BTCUSDT"
+        timestamptz followed_at "NULL: only its candles are stored"
+    }
+    candle {
+        bigint ticker_id PK
+        int interval_seconds PK
+        timestamptz open_time PK
+        numeric open
+        numeric high
+        numeric low
+        numeric close
+        numeric volume
+    }
+    algorithm {
+        bigserial id PK
+        algorithm_type algorithm_type "enum"
+        int timeframe_seconds
+        text settings "JSON, sorted keys"
+        timestamptz created_at
+    }
+    algorithm_run {
+        bigserial id PK
+        bigint ticker_id FK
+        bigint algorithm_id FK
+        bot_mode mode "enum"
+        run_status status "enum"
+        timestamptz started_at
+        timestamptz finished_at
+        timestamptz from_time "training only"
+        timestamptz to_time "training only"
+        numeric starting_value
+        numeric final_value
+        int buy_count
+        int sell_count
+        int stop_loss_count
+        int refused_order_count
+        text failure_reason
+    }
+    training_portfolio_point {
+        bigint run_id PK
+        timestamptz point_time PK
+        numeric cash
+        numeric value
+    }
+    active_algorithm {
+        bigint ticker_id PK
+        bigint algorithm_id FK
+        timestamptz activated_at
+    }
+    position {
+        bigserial id PK
+        bigint run_id FK "the run it opened in"
+        position_status status "enum"
+        timestamptz opened_at
+        timestamptz closed_at "NULL while open"
+        numeric cost
+        numeric realised_pnl
+        numeric mae
+        numeric mfe
+    }
+    orders {
+        bigserial id PK
+        bigint ticker_id FK
+        bigint exchange_order_id "Binance orderId, NULL when refused"
+        order_side side "enum"
+        order_type order_type "enum"
+        order_amount_type amount_type "enum"
+        order_status status "enum"
         numeric amount
-        text amount_type
-        text status "NEW or PARTIALLY_FILLED"
+        numeric executed_quantity
+        numeric quote_amount
+        numeric average_price
+        int error_code "only when refused"
+        text error_message
         timestamptz created_at
         timestamptz updated_at
     }
-    order_history {
-        bigint exchange_order_id PK "Binance orderId"
-        text client_order_id "tb-... marker"
-        text final_status "FILLED, EXPIRED, ..."
-        numeric executed_quantity
-        numeric quote_amount
-        numeric average_price "not null"
-        timestamptz created_at
-        timestamptz closed_at
-    }
-    rejected_order {
-        bigserial id PK "Binance gives refused orders no id"
-        int error_code "Binance's code, e.g. -2010"
-        text error_message
-        timestamptz rejected_at
-    }
     order_fill {
-        bigint exchange_order_id PK
+        bigint order_id PK
         bigint trade_id PK
         numeric price
         numeric quantity
         numeric commission
         text commission_asset
     }
-    order_history ||--o{ order_fill : "filled in"
-    open_order ||..|| order_history : "resting order finishes (later)"
+    brokers ||--o{ ticker : "lists"
+    ticker ||--o{ candle : "has"
+    ticker ||--o{ algorithm_run : "traded in"
+    ticker ||--o| active_algorithm : "last traded with"
+    ticker ||--o{ orders : "for"
+    algorithm ||--o{ algorithm_run : "used by"
+    algorithm_run ||--o{ training_portfolio_point : "charts"
+    algorithm_run ||--o{ position : "opens"
+    orders ||--o{ order_fill : "filled in"
 ```
 
-- **Keys:** live orders are keyed by Binance's `orderId` (`V3__key_orders_by_exchange_order_id.sql`). Binance gives a refused order no id, so `rejected_order` has its own `bigserial`.
-- `order_history` holds executed orders only and `rejected_order` holds refused orders only, so every column is always set: no nullable execution or error columns, and one fixed shape per list for the dashboard (`V2__split_rejected_orders.sql`).
-- Each keeps the order's broker, ticker, side, type and amount.
+Enum types: `algorithm_type`, `bot_mode`, `run_status`, `position_status`, `order_side`, `order_type`, `order_amount_type`, `order_status` (Binance's status names).
+
+- **One `orders` table** holds open, executed and refused live orders, told apart by status: open = `NEW` or `PARTIALLY_FILLED`, refused = `REJECTED`. A refused order has an error code and no exchange order id; a `CHECK` keeps the two together. The bot's `tb-…` client order id is not stored: every stored order is the bot's.
+- **Keys:** Binance's `orderId` is unique per symbol only, so an order is unique by `(ticker_id, exchange_order_id)`. Fills point at `orders.id`.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
-- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (history row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records.
-- **Idempotent:** inserting the same executed order twice changes nothing: `insertExecutedOrder` first runs `SELECT COUNT(*) FROM order_history WHERE exchange_order_id = ?` and skips an order that is already stored, in the same transaction as the inserts.
+- **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (order row plus fills, in **one transaction**), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records. The history and its fills are read from one snapshot (`REPEATABLE READ`), so both see the same orders.
+- **Idempotent:** inserting the same executed order twice changes nothing: `insertExecutedOrder` first counts the rows with its ticker and exchange order id and skips an order that is already stored, in the same transaction as the inserts.
 - **Plain SQL only:** queries use standard `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `WHERE`, `ORDER BY` and `LIMIT`, with `?` placeholders. No named parameters and no PostgreSQL-only clauses such as `ON CONFLICT`.
-- **Migrations are safe to re-run:** tables and indexes are created with `IF NOT EXISTS`.
 - **Failures:**
   - Database fails after Binance executed the order: the answer is still 201 and the error is logged. Reconciliation will fill the gap.
-  - A failed insert rolls back completely: no history row and no fills.
+  - A failed insert rolls back completely: no order row and no fills.
+  - An unknown broker, or a name its enum type doesn't have, is refused and nothing is written.
   - Database down on a read: 503.
 - **Endpoints:** `GET /api/brokers/{broker}/orders/open`, `GET /api/brokers/{broker}/orders/history` (the latest 100 executed orders, with fills) and `GET /api/brokers/{broker}/orders/rejected` (the latest 100 rejected orders).
 
 **Planned next (stacked PRs):**
 - **Reconciliation:** `executionReport` events from the user data stream record any bot order (`tb-` client id) missing from the database, keyed by Binance's `orderId`. A startup check of Binance's recent orders covers the time the app was down.
-- **Positions and trades (§8):** `position` (one per position, with MAE and MFE), `open_lot` (current, one row per buy that still holds coins) and `trade` (history: FIFO matches of buy lots with a sell, with entry and exit price, fee and P&L), written in one transaction per executed order.
 
 **Planned later:**
 
@@ -912,7 +929,6 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
 | POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
 | GET | `/runs`, `/runs/{id}` | Runs and their results |
-| GET | `/runs/{id}/trades` | Trades sold in the run: buy and sell time, quantity, entry and exit price, fee, P&L (§8) |
 | GET | `/runs/{id}/portfolio` | Current cash, positions and total value |
 | GET | `/runs/{id}/portfolio/history` | Portfolio value over time |
 | GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
@@ -1012,9 +1028,9 @@ com.tihomir.t212.tradingbot
 │                    OrderCheckerService, OrderCheck, RejectionReason, AccountView, VirtualTradingGateway
 │                    (planned) OrderExecutionService
 │   └── fee          (planned) FeeService
-├── position         PositionTracker, PositionStore, Position, PositionStatus, OpenLot, Trade (§8)
+├── position         PositionTracker, PositionStore, Position, PositionStatus (§8)
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
-│                    PositionRepository (position, open_lot, trade)
+│                    PositionRepository (position)
 └── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
                      RejectedOrderListResponse, MarketDataController, TickerPriceListResponse,
                      BotModeController, BotModeSetting, ApiExceptionHandler
@@ -1052,7 +1068,7 @@ flowchart TB
 - **Live bot editing** follows §16.6: the running bot's settings are read only; Edit unlocks them, Save asks to confirm, Confirm sends them, Back and Cancel keep the bot as it is.
 - **Charts** are plain SVG, with no chart library: portfolio value over time, the starting value as a dashed line, and the value under the mouse.
 - **Polling:** each part polls its endpoint (`usePolling`). On a failed request it keeps its last data, and a banner says the backend is unreachable until it answers again.
-- **Holdings** stand in for open positions until the positions work (FIFO lots, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't followed show no value.
+- **Holdings** stand in for open positions until the positions work (average cost, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't followed show no value.
 - **Mode switch:** it updates at once and reverts if `PUT /api/bot/mode` fails. It also opens the matching tab (Trading: Live bot, Training: Training).
 - **Theme:** light or dark, from the system setting at first, then remembered in `localStorage`. Colours are CSS variables switched with `data-theme` on `<html>`.
 - **Motion:** cards rise in, the mode switch and tabs slide, prices flash green or red when they move, and loading uses shimmering skeletons. All motion is turned off when the system asks for reduced motion.
@@ -1071,7 +1087,7 @@ flowchart TB
 
 1. The body is checked with `@Valid`: 2 to 20 capital letters or digits.
 2. `FollowedTickerService` asks the exchange for one page of candles. A 4xx answer means the exchange doesn't list the ticker (400); any other failure is 502. Nothing is stored in either case.
-3. The ticker is stored once in `followed_ticker (broker, symbol, followed_at)` (V7).
+3. The ticker row gets a `followed_at` once (§11); a ticker stored only for its candles has none.
 4. The broker adds it to its ticker price map, and the candle feeder reopens its connections with the new streams.
 
 At startup, `BrokerStartupRunner` adds the stored tickers before the streams open. If the database can't be read, startup goes on with the configured tickers only.
@@ -1114,14 +1130,13 @@ Candles are downloaded once and then read from the database.
 erDiagram
     ticker {
         bigserial id PK
-        text broker "unique with symbol"
+        smallint broker_id FK "unique with symbol"
         text symbol "e.g. BTCUSDT"
     }
     candle {
         bigint ticker_id PK
-        text candle_interval PK "code, e.g. 5m"
+        int interval_seconds PK "e.g. 300 for 5m"
         timestamptz open_time PK
-        timestamptz close_time
         numeric open
         numeric high
         numeric low
@@ -1131,7 +1146,7 @@ erDiagram
     ticker ||--o{ candle : "has"
 ```
 
-- **Index:** the primary key `(ticker_id, candle_interval, open_time)` is the index a period is read through.
+- **Index:** the primary key `(ticker_id, interval_seconds, open_time)` is the index a period is read through.
 - **Stored range:** the first and last stored candle of a ticker and interval, read through that same index (`MIN`/`MAX(open_time)`). No separate table is kept for it.
 - **The stored candles are one block.** Downloads only ever extend it at its ends, so it has no holes.
 

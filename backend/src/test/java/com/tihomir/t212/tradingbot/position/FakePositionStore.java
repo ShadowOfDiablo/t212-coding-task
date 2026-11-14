@@ -3,7 +3,6 @@ package com.tihomir.t212.tradingbot.position;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 /** Keeps every position write in memory; it can be told to fail like a database that is down. */
@@ -18,22 +17,6 @@ public final class FakePositionStore implements PositionStore {
       throw new DataAccessResourceFailureException("connection refused");
     }
     writes.add(write);
-  }
-
-  @Override
-  public synchronized Optional<OpenPosition> findOpenLivePosition(String broker, String ticker) {
-    return lastWrite(broker, ticker)
-        .filter(write -> write.position().status() == PositionStatus.OPEN)
-        .map(write -> new OpenPosition(write.position(), write.openLots()));
-  }
-
-  @Override
-  public synchronized TradeList getTrades(long runId) {
-    return new TradeList(
-        writes.stream()
-            .flatMap(write -> write.newTrades().trades().stream())
-            .filter(trade -> trade.runId() == runId)
-            .toList());
   }
 
   @Override
@@ -55,12 +38,5 @@ public final class FakePositionStore implements PositionStore {
 
   public synchronized PositionWriteList writes() {
     return new PositionWriteList(writes);
-  }
-
-  private Optional<PositionWrite> lastWrite(String broker, String ticker) {
-    return writes.reversed().stream()
-        .filter(write -> write.position().broker().equals(broker))
-        .filter(write -> write.position().ticker().equals(ticker))
-        .findFirst();
   }
 }

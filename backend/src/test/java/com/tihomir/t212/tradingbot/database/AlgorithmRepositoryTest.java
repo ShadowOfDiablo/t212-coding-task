@@ -34,6 +34,8 @@ class AlgorithmRepositoryTest {
 
   private static final Instant CREATED_AT = Instant.parse("2026-01-01T10:00:00Z");
   private static final String OPTION_NAME = "window";
+  private static final CandleInterval TIMEFRAME = CandleInterval.FIVE_MINUTES;
+  private static final long TIMEFRAME_SECONDS = TIMEFRAME.duration().toSeconds();
 
   @MockitoBean BrokerStartupRunner brokerStartupRunner;
 
@@ -43,8 +45,6 @@ class AlgorithmRepositoryTest {
   @BeforeEach
   void emptyTables() {
     jdbcClient.sql("DELETE FROM active_algorithm").update();
-    jdbcClient.sql("DELETE FROM trade").update();
-    jdbcClient.sql("DELETE FROM open_lot").update();
     jdbcClient.sql("DELETE FROM position").update();
     jdbcClient.sql("DELETE FROM training_portfolio_point").update();
     jdbcClient.sql("DELETE FROM algorithm_run").update();
@@ -61,7 +61,9 @@ class AlgorithmRepositoryTest {
     assertThat(repository.getAlgorithm(algorithmId)).contains(settings);
     assertThat(storedRow(algorithmId))
         .isEqualTo(
-            "1|5m|{\"liveOnTick\":true,\"orderSizePercent\":100,\"timePeriod\":20,\"window\":3}");
+            "SIMPLE_MOVING_AVERAGE|"
+                + TIMEFRAME_SECONDS
+                + "|{\"liveOnTick\":true,\"orderSizePercent\":100,\"timePeriod\":20,\"window\":3}");
   }
 
   @Test
@@ -95,9 +97,11 @@ class AlgorithmRepositoryTest {
         jdbcClient
             .sql(
                 """
-                INSERT INTO algorithm (algorithm_type, timeframe, settings, created_at)
-                VALUES (1, '5m', '{"liveOnTick":true}', ?) RETURNING id
+                INSERT INTO algorithm (algorithm_type, timeframe_seconds, settings, created_at)
+                VALUES ('SIMPLE_MOVING_AVERAGE', ?, '{"liveOnTick":true}', ?)
+                RETURNING id
                 """)
+            .param(TIMEFRAME_SECONDS)
             .param(OffsetDateTime.ofInstant(CREATED_AT, ZoneOffset.UTC))
             .query(Long.class)
             .single();
@@ -110,8 +114,10 @@ class AlgorithmRepositoryTest {
   private String storedRow(long algorithmId) {
     return jdbcClient
         .sql(
-            "SELECT algorithm_type || '|' || timeframe || '|' || settings FROM algorithm"
-                + " WHERE id = ?")
+            """
+            SELECT algorithm_type || '|' || timeframe_seconds || '|' || settings FROM algorithm
+            WHERE id = ?
+            """)
         .param(algorithmId)
         .query(String.class)
         .single();
@@ -122,7 +128,7 @@ class AlgorithmRepositoryTest {
     return new AlgorithmSettings(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         20,
-        CandleInterval.FIVE_MINUTES,
+        TIMEFRAME,
         true,
         Optional.empty(),
         new BigDecimal("100"),

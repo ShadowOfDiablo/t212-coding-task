@@ -6,7 +6,6 @@ import java.util.List;
 
 public record OrderHistoryEntry(
     long exchangeOrderId,
-    String clientOrderId,
     String broker,
     String ticker,
     OrderSide side,
@@ -29,7 +28,6 @@ public record OrderHistoryEntry(
       String broker, MarketOrderRequest request, ExecutedOrder order, Instant createdAt) {
     return new OrderHistoryEntry(
         order.exchangeOrderId(),
-        order.clientOrderId(),
         broker,
         order.ticker(),
         order.side(),

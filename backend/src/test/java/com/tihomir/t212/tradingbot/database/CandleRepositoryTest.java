@@ -132,14 +132,14 @@ class CandleRepositoryTest {
         TICKER,
         INTERVAL,
         openTime(index),
-        openTime(index + 1),
+        INTERVAL.closeTime(openTime(index)),
         price,
         price,
         price,
         price,
         new BigDecimal("12.34000000"),
         true,
-        openTime(index + 1));
+        INTERVAL.closeTime(openTime(index)));
   }
 
   private static Instant openTime(int index) {

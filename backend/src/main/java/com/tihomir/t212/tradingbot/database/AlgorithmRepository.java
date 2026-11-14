@@ -24,6 +24,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -65,39 +67,43 @@ public class AlgorithmRepository implements AlgorithmStore {
 
   @Override
   @Transactional
-  public long findOrInsertAlgorithm(AlgorithmSettings settings, Instant createdAt) {
+  public synchronized long findOrInsertAlgorithm(AlgorithmSettings settings, Instant createdAt) {
     String settingsJson = settingsJson(settings);
     String algorithmType = settings.algorithmType().name();
     long timeframeSeconds = settings.timeframe().duration().toSeconds();
+    Optional<Long> storedAlgorithmId =
+        jdbcClient
+            .sql(
+                """
+                SELECT id FROM algorithm
+                WHERE algorithm_type = CAST(? AS algorithm_type) AND timeframe_seconds = ?
+                  AND settings = ?
+                """)
+            .param(algorithmType)
+            .param(timeframeSeconds)
+            .param(settingsJson)
+            .query(Long.class)
+            .optional();
+    if (storedAlgorithmId.isPresent()) {
+      return storedAlgorithmId.get();
+    }
+    KeyHolder keyHolder = new GeneratedKeyHolder();
     jdbcClient
         .sql(
             """
             INSERT INTO algorithm (algorithm_type, timeframe_seconds, settings, created_at)
-            SELECT CAST(? AS algorithm_type), ?, ?, ?
-            WHERE NOT EXISTS (SELECT 1 FROM algorithm
-                              WHERE algorithm_type = CAST(? AS algorithm_type)
-                                AND timeframe_seconds = ? AND settings = ?)
+            VALUES (CAST(? AS algorithm_type), ?, ?, ?)
             """)
         .param(algorithmType)
         .param(timeframeSeconds)
         .param(settingsJson)
         .param(OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC))
-        .param(algorithmType)
-        .param(timeframeSeconds)
-        .param(settingsJson)
-        .update();
-    return jdbcClient
-        .sql(
-            """
-            SELECT id FROM algorithm
-            WHERE algorithm_type = CAST(? AS algorithm_type) AND timeframe_seconds = ?
-              AND settings = ?
-            """)
-        .param(algorithmType)
-        .param(timeframeSeconds)
-        .param(settingsJson)
-        .query(Long.class)
-        .single();
+        .update(keyHolder, "id");
+    Long algorithmId = keyHolder.getKeyAs(Long.class);
+    if (algorithmId == null) {
+      throw new IllegalStateException("The database returned no id for an algorithm");
+    }
+    return algorithmId;
   }
 
   @Override

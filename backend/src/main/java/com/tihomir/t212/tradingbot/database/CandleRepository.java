@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,21 +60,31 @@ public class CandleRepository implements CandleStore {
    * @throws IllegalStateException if the broker is not in the brokers table
    */
   @Override
-  public long insertTicker(String broker, String ticker) {
+  @Transactional
+  public synchronized long insertTicker(String broker, String ticker) {
+    Optional<Long> storedTickerId = getTickerId(broker, ticker);
+    if (storedTickerId.isPresent()) {
+      return storedTickerId.get();
+    }
+    KeyHolder keyHolder = new GeneratedKeyHolder();
     jdbcClient
-        .sql(
-            """
-            INSERT INTO ticker (broker_id, symbol)
-            SELECT b.broker_id, ? FROM brokers b
-            WHERE b.name = ?
-              AND NOT EXISTS (SELECT 1 FROM ticker t
-                              WHERE t.broker_id = b.broker_id AND t.symbol = ?)
-            """)
+        .sql("INSERT INTO ticker (broker_id, symbol) VALUES (?, ?)")
+        .param(brokerId(broker))
         .param(ticker)
+        .update(keyHolder, "id");
+    Long tickerId = keyHolder.getKeyAs(Long.class);
+    if (tickerId == null) {
+      throw new IllegalStateException("The database returned no id for ticker " + ticker);
+    }
+    return tickerId;
+  }
+
+  private int brokerId(String broker) {
+    return jdbcClient
+        .sql("SELECT broker_id FROM brokers WHERE name = ?")
         .param(broker)
-        .param(ticker)
-        .update();
-    return getTickerId(broker, ticker)
+        .query(Integer.class)
+        .optional()
         .orElseThrow(() -> new IllegalStateException("Unknown broker " + broker));
   }
 

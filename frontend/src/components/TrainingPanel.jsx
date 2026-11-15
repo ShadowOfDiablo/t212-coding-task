@@ -84,6 +84,11 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
     return () => clearInterval(timer)
   }, [tuning])
 
+  const applyTunedSettings = () => {
+    setDraft(settingsFromResponse(tuningResult.tuned.run.settings))
+    setTuningResult({ ...tuningResult, applied: true })
+  }
+
   const candles = () => ({ ticker: chosenTicker, from: toInstant(from), to: toInstant(to) })
 
   const runTraining = async () => {
@@ -119,8 +124,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
         ...tuningToBody(tuningForm, algorithm),
       })
       setProgress(DONE_PERCENT)
-      setDraft(settingsFromResponse(tuned.run.settings))
-      setTuningResult({ tuned, oldSettings })
+      setTuningResult({ tuned, oldSettings, applied: false })
       setResult(null)
       onRunRecorded()
     } catch (failure) {
@@ -209,7 +213,13 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           <span className="muted small">portfolio value, USDT</span>
         </div>
         {tuningResult && (
-          <TuningComparison tuning={tuningResult.tuned} oldSettings={tuningResult.oldSettings} />
+          <TuningComparison
+            tuning={tuningResult.tuned}
+            oldSettings={tuningResult.oldSettings}
+            applied={tuningResult.applied}
+            disabled={busy}
+            onApply={applyTunedSettings}
+          />
         )}
         {!tuningResult && result && <RunDetails details={result} />}
         {!tuningResult && !result && (

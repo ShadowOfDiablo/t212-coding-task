@@ -164,3 +164,74 @@
 .legend-old::before {
   border-top: 2px dashed var(--text-muted);
 }
+
+.apply-tuned {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-small);
+  background: var(--brand-soft);
+}
+
+.apply-tuned-done {
+  color: var(--up);
+}
+
+.apply-tuned-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-preview {
+  display: grid;
+  gap: 8px;
+  animation: rise 0.3s var(--ease) both;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.preview-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.preview-table tbody th {
+  font-weight: 500;
+}
+
+.preview-arrow {
+  width: 1px;
+  color: var(--text-muted);
+}
+
+.preview-before {
+  color: var(--text-muted);
+}
+
+.preview-table tr.is-changed {
+  background: var(--brand-soft);
+}
+
+.preview-table tr.is-changed .preview-before {
+  text-decoration: line-through;
+}
+
+.preview-table tr.is-changed .preview-after {
+  color: var(--brand);
+  font-weight: 700;
+}

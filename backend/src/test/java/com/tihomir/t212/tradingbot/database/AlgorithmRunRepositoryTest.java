@@ -17,13 +17,10 @@ import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
-import com.tihomir.t212.tradingbot.position.OpenLot;
-import com.tihomir.t212.tradingbot.position.OpenLotList;
 import com.tihomir.t212.tradingbot.position.Position;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.PositionWrite;
 import com.tihomir.t212.tradingbot.position.PositionWriteList;
-import com.tihomir.t212.tradingbot.position.TradeList;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -46,6 +43,8 @@ class AlgorithmRunRepositoryTest {
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
 
+  private static final int SECOND_BROKER_ID = 2;
+  private static final String SECOND_BROKER = "kraken";
   private static final Instant STARTED_AT = Instant.parse("2026-01-01T10:00:00Z");
   private static final Instant POINT_TIME = Instant.parse("2026-01-01T10:05:00Z");
   private static final Instant FINISHED_AT = Instant.parse("2026-01-01T10:10:00Z");
@@ -61,8 +60,6 @@ class AlgorithmRunRepositoryTest {
 
   @BeforeEach
   void emptyTablesAndStoreSettings() {
-    jdbcClient.sql("DELETE FROM trade").update();
-    jdbcClient.sql("DELETE FROM open_lot").update();
     jdbcClient.sql("DELETE FROM position").update();
     jdbcClient.sql("DELETE FROM training_portfolio_point").update();
     jdbcClient.sql("DELETE FROM active_algorithm").update();
@@ -125,12 +122,30 @@ class AlgorithmRunRepositoryTest {
         runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
     long newer =
         runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
-    runRepository.insertStartedRun(start(BotMode.TRAINING, "kraken", firstAlgorithmId));
+    jdbcClient
+        .sql(
+            """
+            INSERT INTO brokers (broker_id, name) SELECT ?, ?
+            WHERE NOT EXISTS (SELECT 1 FROM brokers WHERE name = ?)
+            """)
+        .param(SECOND_BROKER_ID)
+        .param(SECOND_BROKER)
+        .param(SECOND_BROKER)
+        .update();
+    runRepository.insertStartedRun(start(BotMode.TRAINING, SECOND_BROKER, firstAlgorithmId));
 
     assertThat(runRepository.getRuns("binance").runs())
         .extracting(RecordedRun::id)
         .containsExactly(newer, older);
     assertThat(runRepository.getRun(Long.MAX_VALUE)).isEmpty();
+  }
+
+  @Test
+  void refusesARunOfAnUnknownBroker() {
+    assertThatThrownBy(() ->
+            runRepository.insertStartedRun(start(BotMode.TRAINING, "unknown", firstAlgorithmId)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unknown");
   }
 
   @Test
@@ -186,12 +201,7 @@ class AlgorithmRunRepositoryTest {
             BigDecimal.ZERO,
             BigDecimal.ZERO,
             BigDecimal.ZERO);
-    PositionWrite write =
-        new PositionWrite(
-            position,
-            new OpenLotList(
-                List.of(new OpenLot(runId, 1, STARTED_AT, BigDecimal.ONE, new BigDecimal("100")))),
-            TradeList.NONE);
+    PositionWrite write = new PositionWrite(position);
 
     runRepository.finishRun(
         runId,
@@ -204,7 +214,7 @@ class AlgorithmRunRepositoryTest {
             PortfolioPointList.NONE,
             new PositionWriteList(List.of(write))));
 
-    assertThat(jdbcClient.sql("SELECT count(*) FROM open_lot").query(Long.class).single())
+    assertThat(jdbcClient.sql("SELECT count(*) FROM position").query(Long.class).single())
         .isEqualTo(1);
     assertThat(runRepository.getRun(runId).orElseThrow().run().status())
         .isEqualTo(RunStatus.COMPLETED);
@@ -216,7 +226,13 @@ class AlgorithmRunRepositoryTest {
 
   private long activeAlgorithmId() {
     return jdbcClient
-        .sql("SELECT algorithm_id FROM active_algorithm WHERE broker = ? AND ticker = ?")
+        .sql(
+            """
+            SELECT a.algorithm_id FROM active_algorithm a
+            JOIN ticker t ON t.id = a.ticker_id
+            JOIN brokers b ON b.broker_id = t.broker_id
+            WHERE b.name = ? AND t.symbol = ?
+            """)
         .param("binance")
         .param("BTCUSDT")
         .query(Long.class)

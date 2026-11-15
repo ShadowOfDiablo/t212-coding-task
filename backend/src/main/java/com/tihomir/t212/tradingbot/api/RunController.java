@@ -41,8 +41,7 @@ public class RunController {
 
   @GetMapping("/training")
   public TrainingStatusResponse getTrainingStatus() {
-    boolean editable = trainingService.areParametersEditable();
-    return new TrainingStatusResponse(!editable, editable);
+    return new TrainingStatusResponse(trainingService.isTrainingRunning());
   }
 
   @GetMapping("/runs")
@@ -53,11 +52,6 @@ public class RunController {
   @GetMapping("/runs/{runId}")
   public RunDetailsResponse getRun(@PathVariable String broker, @PathVariable long runId) {
     return RunDetailsResponse.of(runService.getRun(broker, runId));
-  }
-
-  @GetMapping("/runs/{runId}/trades")
-  public TradeListResponse getTrades(@PathVariable String broker, @PathVariable long runId) {
-    return TradeListResponse.of(runService.getTrades(broker, runId));
   }
 
   @GetMapping("/runs/{runId}/positions/worst")

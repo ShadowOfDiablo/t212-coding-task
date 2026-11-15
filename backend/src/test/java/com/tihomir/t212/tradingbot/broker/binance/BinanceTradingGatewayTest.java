@@ -107,8 +107,8 @@ class BinanceTradingGatewayTest {
     assertThat(order.averagePrice()).isEqualByComparingTo("100000");
     assertThat(order.transactTime()).isEqualTo(Instant.ofEpochMilli(1762779782500L));
     assertThat(order.fills()).hasSize(2);
-    assertThat(order.fills().getFirst().commission()).isEqualByComparingTo("0.0000001");
-    assertThat(order.fills().getFirst().commissionAsset()).isEqualTo("BTC");
+    assertThat(order.fills().getFirst().feeAmount()).isEqualByComparingTo("0.0000001");
+    assertThat(order.fills().getFirst().feeCurrency()).isEqualTo("BTC");
     server.verify();
   }
 

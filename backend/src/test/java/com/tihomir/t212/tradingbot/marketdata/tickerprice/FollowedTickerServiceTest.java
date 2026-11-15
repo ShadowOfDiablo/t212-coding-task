@@ -76,6 +76,18 @@ class FollowedTickerServiceTest {
     assertThat(broker.tickers()).containsExactly(FakeBroker.TRADED_TICKER, NEW_TICKER);
   }
 
+  @Test
+  void storesTheConfiguredTickersAsFollowedAtStartup() {
+    store.insertFollowedTicker(BROKER, NEW_TICKER, Instant.EPOCH);
+
+    service.restoreFollowedTickers(broker);
+    service.restoreFollowedTickers(broker);
+
+    assertThat(store.getFollowedTickers(BROKER))
+        .containsExactly(NEW_TICKER, FakeBroker.TRADED_TICKER);
+    assertThat(broker.tickers()).containsExactly(FakeBroker.TRADED_TICKER, NEW_TICKER);
+  }
+
   private ResponseActions expectCandleCheck() {
     return rest.expect(requestTo(Matchers.startsWith("http://rest.test/candles")));
   }

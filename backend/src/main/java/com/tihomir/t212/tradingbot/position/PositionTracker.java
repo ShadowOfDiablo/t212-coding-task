@@ -7,22 +7,18 @@ import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The bot's position on one ticker, as FIFO lots: a buy adds a lot, a sell uses up the oldest lots
- * first. Fees paid in the base or quote asset are counted; fees in any other asset are not.
+ * The bot's position on one ticker at average cost: a buy adds its coins and its cost, a sell takes
+ * coins out at the average cost per coin. Fees paid in the base or quote asset are counted; fees in
+ * any other asset are not.
  *
- * <p>A sell uses only the quantity it sold, so one lot can be shared by several sells and the rest
- * stays open. When what is left is worth less than the minimum order value at the sell price, it
- * can never be sold: it stays in the account but leaves the position, which closes. That is what
- * the exchange's lot step leaves behind when the whole position is sold.
+ * <p>When what is left is worth less than the minimum order value at the sell price, it can never
+ * be sold: it stays in the account but leaves the position, which closes. That is what the
+ * exchange's lot step leaves behind when the whole position is sold.
  */
 public final class PositionTracker {
 
@@ -33,7 +29,8 @@ public final class PositionTracker {
   private final String broker;
   private final String ticker;
   private final String baseAsset;
-  private final Deque<OpenLot> lots = new ArrayDeque<>();
+  private BigDecimal heldQuantity = BigDecimal.ZERO;
+  private BigDecimal heldCost = BigDecimal.ZERO;
   private Optional<Position> openPosition = Optional.empty();
   private Optional<Long> runId = Optional.empty();
 
@@ -49,28 +46,21 @@ public final class PositionTracker {
     this.baseAsset = ticker.substring(0, ticker.length() - QUOTE_ASSET.length());
   }
 
-  /** Goes on with a position stored earlier, for example by a live bot that was stopped. */
-  public synchronized void restorePosition(OpenPosition stored) {
-    openPosition = Optional.of(stored.position());
-    lots.clear();
-    lots.addAll(stored.openLots().lots());
-  }
-
-  /** New lots, trades and positions belong to this run from now on. */
+  /** New positions belong to this run from now on. */
   public synchronized void startRun(long newRunId) {
     runId = Optional.of(newRunId);
   }
 
   public synchronized BigDecimal quantity() {
-    return lots.stream().map(OpenLot::quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+    return heldQuantity;
   }
 
+  /** The average USDT paid per coin held, buy fees included. */
   public synchronized Optional<BigDecimal> entryPrice() {
-    BigDecimal quantity = quantity();
-    if (quantity.signum() <= 0) {
+    if (heldQuantity.signum() <= 0) {
       return Optional.empty();
     }
-    return Optional.of(lotsCost().divide(quantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN));
+    return Optional.of(heldCost.divide(heldQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN));
   }
 
   public synchronized void updateExcursions(BigDecimal price) {
@@ -80,7 +70,7 @@ public final class PositionTracker {
   }
 
   /**
-   * Applies an executed order to the lots.
+   * Applies an executed order to the position.
    *
    * @return what changed, to be stored; empty when the order changed nothing, like a sell while no
    *     position is held
@@ -94,7 +84,7 @@ public final class PositionTracker {
 
   /** The open position as it is now, to be stored when a run ends; empty while flat. */
   public synchronized Optional<PositionWrite> currentWrite() {
-    return openPosition.map(position -> write(position, TradeList.NONE));
+    return openPosition.map(PositionWrite::new);
   }
 
   private Optional<PositionWrite> recordBuy(ExecutedOrder order) {
@@ -104,18 +94,12 @@ public final class PositionTracker {
       log.warn("{} {}: buy {} received no coins", broker, ticker, order.exchangeOrderId());
       return Optional.empty();
     }
-    Instant boughtAt = order.transactTime();
-    lots.addLast(
-        new OpenLot(
-            currentRunId(),
-            order.exchangeOrderId(),
-            boughtAt,
-            received,
-            spent.divide(received, AMOUNT_SCALE, RoundingMode.HALF_EVEN)));
+    heldQuantity = heldQuantity.add(received);
+    heldCost = heldCost.add(spent);
     Position position =
-        openPosition.map(open -> withCost(open, spent)).orElse(opened(boughtAt, spent));
+        openPosition.map(open -> withCost(open, spent)).orElse(opened(order.transactTime(), spent));
     openPosition = Optional.of(position);
-    return Optional.of(write(position, TradeList.NONE));
+    return Optional.of(new PositionWrite(position));
   }
 
   private Optional<PositionWrite> recordSell(ExecutedOrder order) {
@@ -123,87 +107,52 @@ public final class PositionTracker {
       log.warn("{} {}: sell {} while no position is held", broker, ticker, order.exchangeOrderId());
       return Optional.empty();
     }
-    TradeList trades = matchOldestLots(order);
-    BigDecimal realisedPnl =
-        trades.trades().stream().map(Trade::realisedPnl).reduce(BigDecimal.ZERO, BigDecimal::add);
-    Position afterSell = withRealisedPnl(openPosition.get(), realisedPnl);
+    Position afterSell = withRealisedPnl(openPosition.get(), sellAtAverageCost(order));
     if (isSellable(order.averagePrice())) {
       openPosition = Optional.of(afterSell);
-      return Optional.of(write(afterSell, trades));
+      return Optional.of(new PositionWrite(afterSell));
     }
-    lots.clear();
+    heldQuantity = BigDecimal.ZERO;
+    heldCost = BigDecimal.ZERO;
     openPosition = Optional.empty();
-    return Optional.of(write(closed(afterSell, order.transactTime()), trades));
+    return Optional.of(new PositionWrite(closed(afterSell, order.transactTime())));
   }
 
-  private TradeList matchOldestLots(ExecutedOrder order) {
-    BigDecimal soldQuantity = order.executedQuantity();
+  /**
+   * Takes the sold coins out at the average cost and returns the realised P&L of the sell, fee
+   * included: sold × exit price − their share of the cost − fee. A sell of more than is held counts
+   * only what is held.
+   */
+  private BigDecimal sellAtAverageCost(ExecutedOrder order) {
     BigDecimal exitPrice = order.averagePrice();
     BigDecimal fee =
         fees(order, QUOTE_ASSET)
             .add(fees(order, baseAsset).multiply(exitPrice))
             .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
-    List<Trade> trades = new ArrayList<>();
-    BigDecimal unmatched = soldQuantity;
-    while (unmatched.signum() > 0 && !lots.isEmpty()) {
-      OpenLot oldest = lots.removeFirst();
-      BigDecimal matched = oldest.quantity().min(unmatched);
-      trades.add(trade(oldest, matched, order, feeShare(fee, matched, soldQuantity)));
-      unmatched = unmatched.subtract(matched);
-      if (matched.compareTo(oldest.quantity()) < 0) {
-        lots.addFirst(withQuantity(oldest, oldest.quantity().subtract(matched)));
-      }
-    }
-    return new TradeList(trades);
-  }
-
-  private Trade trade(OpenLot lot, BigDecimal quantity, ExecutedOrder sell, BigDecimal fee) {
-    BigDecimal exitPrice = sell.averagePrice();
-    BigDecimal realisedPnl =
-        exitPrice
-            .subtract(lot.entryPrice())
-            .multiply(quantity)
-            .subtract(fee)
-            .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
-    return new Trade(
-        currentRunId(),
-        lot.buyOrderId(),
-        sell.exchangeOrderId(),
-        lot.boughtAt(),
-        sell.transactTime(),
-        quantity,
-        lot.entryPrice(),
-        exitPrice,
-        fee,
-        realisedPnl);
-  }
-
-  private static BigDecimal feeShare(BigDecimal fee, BigDecimal matched, BigDecimal soldQuantity) {
-    return fee.multiply(matched).divide(soldQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN);
-  }
-
-  private static OpenLot withQuantity(OpenLot lot, BigDecimal quantity) {
-    return new OpenLot(lot.runId(), lot.buyOrderId(), lot.boughtAt(), quantity, lot.entryPrice());
+    BigDecimal sold = order.executedQuantity().min(heldQuantity);
+    BigDecimal soldCost =
+        heldCost.multiply(sold).divide(heldQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN);
+    heldQuantity = heldQuantity.subtract(sold);
+    heldCost = heldCost.subtract(soldCost);
+    return exitPrice
+        .multiply(sold)
+        .subtract(soldCost)
+        .subtract(fee)
+        .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
   }
 
   private static BigDecimal fees(ExecutedOrder order, String asset) {
     return order.fills().stream()
-        .filter(fill -> asset.equals(fill.commissionAsset()))
-        .map(OrderFill::commission)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-  }
-
-  private BigDecimal lotsCost() {
-    return lots.stream()
-        .map(lot -> lot.quantity().multiply(lot.entryPrice()))
+        .filter(fill -> asset.equals(fill.feeCurrency()))
+        .map(OrderFill::feeAmount)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 
   private Position withExcursions(Position position, BigDecimal price) {
     BigDecimal unrealisedPnl =
         price
-            .multiply(quantity())
-            .subtract(lotsCost())
+            .multiply(heldQuantity)
+            .subtract(heldCost)
             .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
     return new Position(
         position.runId(),
@@ -281,9 +230,5 @@ public final class PositionTracker {
 
   private long currentRunId() {
     return runId.orElseThrow(() -> new IllegalStateException("No run started for " + ticker));
-  }
-
-  private PositionWrite write(Position position, TradeList newTrades) {
-    return new PositionWrite(position, new OpenLotList(List.copyOf(lots)), newTrades);
   }
 }

@@ -100,9 +100,7 @@ class TrainingServiceTest {
     PositionWrite closing = runStore.positionWrites(runId).writes().get(1);
     assertThat(closing.position().realisedPnl()).isEqualByComparingTo("996.002");
     assertThat(closing.position().mfe()).isPositive();
-    assertThat(closing.newTrades().trades())
-        .singleElement()
-        .satisfies(trade -> assertThat(trade.runId()).isEqualTo(runId));
+    assertThat(closing.position().runId()).isEqualTo(runId);
   }
 
   @Test
@@ -153,22 +151,22 @@ class TrainingServiceTest {
   void locksTheSettingsAndRefusesAnotherRunWhileOneGoesOn() {
     storeCandles(candle(0, 100, 100), candle(1, 100, 100));
     AtomicReference<TrainingService> serviceHolder = new AtomicReference<>();
-    AtomicBoolean editableDuringRun = new AtomicBoolean(true);
+    AtomicBoolean runningDuringRun = new AtomicBoolean();
     AtomicBoolean secondRunRefused = new AtomicBoolean();
     TrainingService service =
         service(
             List.of(),
             () -> {
-              editableDuringRun.set(serviceHolder.get().areParametersEditable());
+              runningDuringRun.set(serviceHolder.get().isTrainingRunning());
               secondRunRefused.set(isRefused(serviceHolder.get()));
             });
     serviceHolder.set(service);
 
     service.runTraining(request(2, Map.of()));
 
-    assertThat(editableDuringRun).isFalse();
+    assertThat(runningDuringRun).isTrue();
     assertThat(secondRunRefused).isTrue();
-    assertThat(service.areParametersEditable()).isTrue();
+    assertThat(service.isTrainingRunning()).isFalse();
   }
 
   @Test
@@ -180,7 +178,7 @@ class TrainingServiceTest {
     assertThatThrownBy(() -> service.runTraining(request(2, Map.of())))
         .isInstanceOf(ExchangeUnavailableException.class);
     assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
-    assertThat(service.areParametersEditable()).isTrue();
+    assertThat(service.isTrainingRunning()).isFalse();
   }
 
   @Test
@@ -221,7 +219,7 @@ class TrainingServiceTest {
     RecordedRun run = runStore.getRuns(BROKER).runs().getFirst();
     assertThat(run.status()).isEqualTo(RunStatus.FAILED);
     assertThat(run.failureReason()).contains("There are no closed candles in this range");
-    assertThat(service.areParametersEditable()).isTrue();
+    assertThat(service.isTrainingRunning()).isFalse();
   }
 
   private void isFinalValueOfTheTrade(BigDecimal finalValue) {

@@ -32,8 +32,6 @@ import com.tihomir.t212.tradingbot.position.Position;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.StoredPosition;
 import com.tihomir.t212.tradingbot.position.StoredPositionList;
-import com.tihomir.t212.tradingbot.position.Trade;
-import com.tihomir.t212.tradingbot.position.TradeList;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -120,28 +118,19 @@ class RunControllerTest {
 
   @Test
   void tellsWhetherTheSettingsCanBeEdited() throws Exception {
-    when(trainingService.areParametersEditable()).thenReturn(false);
+    when(trainingService.isTrainingRunning()).thenReturn(true);
 
     mockMvc
         .perform(get("/api/brokers/binance/training"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.running").value(true))
-        .andExpect(jsonPath("$.areParametersEditable").value(false));
+        .andExpect(jsonPath("$.running").value(true));
   }
 
   @Test
-  void answersWithTheTradesAndTheWorstPositionsOfARun() throws Exception {
-    when(runService.getTrades("binance", 7)).thenReturn(new TradeList(List.of(trade())));
+  void answersWithTheWorstPositionsOfARun() throws Exception {
     when(runService.getWorstPositions("binance", 7, 3))
         .thenReturn(new StoredPositionList(List.of(new StoredPosition(11, closedPosition()))));
 
-    mockMvc
-        .perform(get(RUNS + "/7/trades"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.trades[0].realisedPnl").value(-5))
-        .andExpect(jsonPath("$.trades[0].buyOrderId").value(31))
-        .andExpect(jsonPath("$.trades[0].sellOrderId").value(32))
-        .andExpect(jsonPath("$.trades[0].soldAt").value("2020-01-01T01:00:00Z"));
     mockMvc
         .perform(get(RUNS + "/7/positions/worst").param("limit", "3"))
         .andExpect(status().isOk())
@@ -153,7 +142,7 @@ class RunControllerTest {
 
   @Test
   void refusesALimitOutOfRangeAndAnswersNotFoundForAnUnknownRun() throws Exception {
-    when(runService.getTrades("binance", 8)).thenThrow(new RunNotFoundException(8));
+    when(runService.getWorstPositions("binance", 8, 3)).thenThrow(new RunNotFoundException(8));
 
     mockMvc
         .perform(get(RUNS + "/7/positions/worst").param("limit", "0"))
@@ -161,21 +150,9 @@ class RunControllerTest {
     mockMvc
         .perform(get(RUNS + "/7/positions/worst").param("limit", "101"))
         .andExpect(status().isBadRequest());
-    mockMvc.perform(get(RUNS + "/8/trades")).andExpect(status().isNotFound());
-  }
-
-  private static Trade trade() {
-    return new Trade(
-        7,
-        31,
-        32,
-        FROM,
-        FROM.plusSeconds(3600),
-        BigDecimal.ONE,
-        new BigDecimal("100"),
-        new BigDecimal("95"),
-        BigDecimal.ZERO,
-        new BigDecimal("-5"));
+    mockMvc
+        .perform(get(RUNS + "/8/positions/worst").param("limit", "3"))
+        .andExpect(status().isNotFound());
   }
 
   private static Position closedPosition() {

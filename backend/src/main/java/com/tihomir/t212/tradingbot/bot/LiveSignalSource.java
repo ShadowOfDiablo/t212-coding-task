@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
 final class LiveSignalSource {
 
   private static final Logger log = LoggerFactory.getLogger(LiveSignalSource.class);
-  private static final Duration CLOSE_TIME_OFFSET = Duration.ofMillis(1);
 
   private final CandleHistoryService candleHistory;
   private final String broker;
@@ -128,7 +127,7 @@ final class LiveSignalSource {
         ticker,
         settings.timeframe(),
         openTime,
-        openTime.plus(timeframe).minus(CLOSE_TIME_OFFSET),
+        settings.timeframe().closeTime(openTime),
         price,
         price,
         price,

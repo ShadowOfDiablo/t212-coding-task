@@ -6,8 +6,6 @@ import java.util.Optional;
 
 /** The live bot of a broker; the run fields are JSON {@code null} while it doesn't run. */
 public record LiveBotStatusResponse(
-    boolean running,
-    boolean areParametersEditable,
     Optional<Long> runId,
     Optional<String> ticker,
     Optional<AlgorithmSettingsResponse> currentParameters,
@@ -20,8 +18,6 @@ public record LiveBotStatusResponse(
 
   private static final LiveBotStatusResponse NOT_RUNNING =
       new LiveBotStatusResponse(
-          false,
-          false,
           Optional.empty(),
           Optional.empty(),
           Optional.empty(),
@@ -38,8 +34,6 @@ public record LiveBotStatusResponse(
 
   static LiveBotStatusResponse running(LiveBotStatus status) {
     return new LiveBotStatusResponse(
-        true,
-        true,
         Optional.of(status.runId()),
         Optional.of(status.ticker()),
         Optional.of(AlgorithmSettingsResponse.of(status.currentParameters())),

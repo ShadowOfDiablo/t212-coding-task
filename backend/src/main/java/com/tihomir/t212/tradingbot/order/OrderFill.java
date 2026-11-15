@@ -6,5 +6,5 @@ public record OrderFill(
     long tradeId,
     BigDecimal price,
     BigDecimal quantity,
-    BigDecimal commission,
-    String commissionAsset) {}
+    BigDecimal feeAmount,
+    String feeCurrency) {}

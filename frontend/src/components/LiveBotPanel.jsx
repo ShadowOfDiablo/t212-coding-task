@@ -40,7 +40,7 @@ export function LiveBotPanel({ algorithms, tickers, mode }) {
   const [error, setError] = useState(null)
 
   const status = bot.data
-  const running = status?.running ?? false
+  const running = status?.runId != null
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const startForm = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
   const shownSettings =
@@ -99,7 +99,7 @@ export function LiveBotPanel({ algorithms, tickers, mode }) {
           <p className="muted small">
             Trading <strong>{status.ticker}</strong> on{' '}
             {timeframeLabel(status.currentParameters.timeframe)} candles. Parameters editable:{' '}
-            {status.areParametersEditable ? 'yes' : 'no'}.
+            {running ? 'yes' : 'no'}.
           </p>
         ) : (
           <label className="field">

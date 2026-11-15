@@ -20,7 +20,7 @@ import com.tihomir.t212.tradingbot.order.OpenOrder;
 import com.tihomir.t212.tradingbot.order.OpenOrderList;
 import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
 import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderFill;
+import com.tihomir.t212.tradingbot.order.OrderFee;
 import com.tihomir.t212.tradingbot.order.OrderHistory;
 import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
 import com.tihomir.t212.tradingbot.order.OrderService;
@@ -33,6 +33,7 @@ import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -176,7 +177,6 @@ class OrderControllerTest {
                 List.of(
                     new OpenOrder(
                         30,
-                        "tb-3",
                         "binance",
                         "BTCUSDT",
                         OrderSide.SELL,
@@ -195,14 +195,13 @@ class OrderControllerTest {
   }
 
   @Test
-  void orderHistoryIsListedWithFills() throws Exception {
+  void orderHistoryIsListedWithTheFee() throws Exception {
     when(orderService.getOrderHistory("binance"))
         .thenReturn(
             new OrderHistory(
                 List.of(
                     new OrderHistoryEntry(
                         28L,
-                        "tb-1",
                         "binance",
                         "BTCUSDT",
                         OrderSide.BUY,
@@ -215,20 +214,14 @@ class OrderControllerTest {
                         new BigDecimal("100000"),
                         Instant.EPOCH,
                         Instant.EPOCH,
-                        List.of(
-                            new OrderFill(
-                                7,
-                                new BigDecimal("100000"),
-                                new BigDecimal("0.0001"),
-                                new BigDecimal("0.0000001"),
-                                "BTC"))))));
+                        Optional.of(new OrderFee(new BigDecimal("0.0000001"), "BTC"))))));
 
     mockMvc
         .perform(get(ORDERS + "/history"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.orders[0].exchangeOrderId").value(28))
         .andExpect(jsonPath("$.orders[0].finalStatus").value("FILLED"))
-        .andExpect(jsonPath("$.orders[0].fills[0].tradeId").value(7));
+        .andExpect(jsonPath("$.orders[0].fee.currency").value("BTC"));
   }
 
   @Test

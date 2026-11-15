@@ -79,9 +79,6 @@ public class TradingBotService {
     }
     Broker broker = candleHistory.tradingBroker(request.broker(), request.ticker());
     PositionTracker positionTracker = new PositionTracker(broker.name(), request.ticker());
-    positionStore
-        .findOpenLivePosition(broker.name(), request.ticker())
-        .ifPresent(positionTracker::restorePosition);
     LiveTradingAccount account =
         new LiveTradingAccount(
             request.ticker(), broker.tradingGateway(), positionTracker, positionStore);

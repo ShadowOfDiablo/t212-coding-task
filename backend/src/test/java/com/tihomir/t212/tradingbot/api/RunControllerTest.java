@@ -205,6 +205,21 @@ class RunControllerTest {
   }
 
   @Test
+  void answersWithEveryPositionOfARunAndNotFoundForAnUnknownRun() throws Exception {
+    when(runService.getPositions("binance", 7))
+        .thenReturn(new StoredPositionList(List.of(new StoredPosition(11, closedPosition()))));
+    when(runService.getPositions("binance", 8)).thenThrow(new RunNotFoundException(8));
+
+    mockMvc
+        .perform(get(RUNS + "/7/positions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.positions[0].id").value(11))
+        .andExpect(jsonPath("$.positions[0].status").value("CLOSED"))
+        .andExpect(jsonPath("$.positions[0].realisedPnl").value(-5));
+    mockMvc.perform(get(RUNS + "/8/positions")).andExpect(status().isNotFound());
+  }
+
+  @Test
   void answersWithTheWorstPositionsOfARun() throws Exception {
     when(runService.getWorstPositions("binance", 7, 3))
         .thenReturn(new StoredPositionList(List.of(new StoredPosition(11, closedPosition()))));

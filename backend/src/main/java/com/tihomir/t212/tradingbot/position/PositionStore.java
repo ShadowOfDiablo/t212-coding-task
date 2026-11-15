@@ -6,4 +6,7 @@ public interface PositionStore {
   void savePosition(PositionWrite write);
 
   StoredPositionList getWorstPositions(long runId, int maxPositions);
+
+  /** Every position of the run, open ones included, the newest first. */
+  StoredPositionList getPositions(long runId);
 }

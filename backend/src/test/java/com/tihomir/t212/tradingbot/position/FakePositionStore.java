@@ -32,6 +32,17 @@ public final class FakePositionStore implements PositionStore {
             .toList());
   }
 
+  @Override
+  public synchronized StoredPositionList getPositions(long runId) {
+    return new StoredPositionList(
+        writes.stream()
+            .map(PositionWrite::position)
+            .filter(position -> position.runId() == runId)
+            .sorted(Comparator.comparing(Position::openedAt).reversed())
+            .map(position -> new StoredPosition(writes.size(), position))
+            .toList());
+  }
+
   public synchronized void failWrites() {
     failing = true;
   }

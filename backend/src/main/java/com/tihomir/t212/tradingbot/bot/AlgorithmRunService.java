@@ -42,6 +42,14 @@ public class AlgorithmRunService {
     return positionStore.getWorstPositions(runId, maxPositions);
   }
 
+  /**
+   * @throws RunNotFoundException if the broker has no run with this id
+   */
+  public StoredPositionList getPositions(String broker, long runId) {
+    storedRun(broker, runId);
+    return positionStore.getPositions(runId);
+  }
+
   private StoredRunDetails storedRun(String broker, long runId) {
     return runStore
         .getRun(runId)

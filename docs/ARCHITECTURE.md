@@ -636,7 +636,7 @@ flowchart LR
     Price["every evaluated price"] -- "MAE / MFE" --> Tracker
     Tracker -- "buy: add coins and cost<br/>sell: take out at average cost" --> Store["PositionStore"]
     Store --> Db[("position")]
-    Db --> Api["GET /runs/{id}/positions/worst"]
+    Db --> Api["GET /runs/{id}/positions<br/>GET /runs/{id}/positions/worst"]
 ```
 
 - **`position`** (table in §11): from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps the coins held and their cost in memory; the table stores the position's cost, realised P&L, MAE and MFE.
@@ -651,7 +651,7 @@ flowchart LR
   - If the write fails, the order still happened: it is logged with its exchange order id and the tracker keeps the position in memory.
 - **A live settings change** starts a new run (§16.4). The open position carries over and stays with the run it opened in.
 - **Not kept:** a live bot starts flat. A position left open by a stop or a restart is not loaded again; the coins stay in the account. Per-sell trades are not stored; the executed orders in `orders` are the record.
-- **API:** `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L, with MAE, MFE and duration.
+- **API:** `GET /api/brokers/{broker}/runs/{id}/positions`: every position of the run, open ones included, the newest first (the dashboard's Trades view). `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L. Both carry MAE, MFE and duration.
 - **Money:** all amounts and quantities are `BigDecimal` / `numeric`.
 
 ## 9. Bot and run lifecycle (planned)
@@ -926,6 +926,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/runs/{id}/portfolio` | Current cash, positions and total value |
 | GET | `/runs/{id}/portfolio/history` | Portfolio value over time |
 | GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
+| GET | `/runs/{id}/positions` | Every position of the run, the newest first (§8) |
 | GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration (§8) |
 | GET | `/runs/{id}/positions/{positionId}/chart` | The price path around one position, with the entry, exit, MAE and MFE marked |
 | GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading |

@@ -67,7 +67,7 @@ public class OrderCheckerService {
   public OrderCheck checkOrder(
       TradingSignal signal, AccountView account, BigDecimal price, AlgorithmSettings settings) {
     return switch (signal) {
-      case BUY -> checkBuy(account, price, settings);
+      case BUY -> checkBuy(account, settings);
       case SELL -> checkSell(account, price);
       case HOLD -> throw new IllegalArgumentException("HOLD is not an order");
     };
@@ -86,13 +86,29 @@ public class OrderCheckerService {
             account.entryPrice().map(entry -> entry.subtract(percentOf(entry, stopLoss))));
   }
 
-  private OrderCheck checkBuy(AccountView account, BigDecimal price, AlgorithmSettings settings) {
+  public boolean isTakeProfitReached(
+      AccountView account, BigDecimal highestPrice, AlgorithmSettings settings) {
+    return takeProfitPrice(account, settings)
+        .map(takeProfit -> highestPrice.compareTo(takeProfit) >= 0)
+        .orElse(false);
+  }
+
+  /**
+   * Entry price × (1 + take profit %) of the position held; empty without a take profit or a
+   * position.
+   */
+  public Optional<BigDecimal> takeProfitPrice(AccountView account, AlgorithmSettings settings) {
+    return settings
+        .takeProfitPercent()
+        .flatMap(takeProfit ->
+            account.entryPrice().map(entry -> entry.add(percentOf(entry, takeProfit))));
+  }
+
+  private OrderCheck checkBuy(AccountView account, AlgorithmSettings settings) {
     if (account.cash().signum() <= 0) {
       return OrderCheck.refused(RejectionReason.INSUFFICIENT_FUNDS);
     }
-    BigDecimal amount =
-        riskCappedAmount(
-            account, price, settings, percentOf(account.cash(), settings.orderSizePercent()));
+    BigDecimal amount = percentOf(account.cash(), settings.orderSizePercent());
     if (amount.compareTo(MIN_ORDER_VALUE) < 0) {
       return OrderCheck.refused(RejectionReason.BELOW_MIN_ORDER_VALUE);
     }
@@ -112,21 +128,6 @@ public class OrderCheckerService {
     return OrderCheck.approved(
         new MarketOrderRequest(
             account.ticker(), OrderSide.SELL, quantity, OrderAmountType.BASE_QUANTITY));
-  }
-
-  /** Spending x with a stop s% below loses x * s%; that loss may be at most risk% of the value. */
-  private static BigDecimal riskCappedAmount(
-      AccountView account, BigDecimal price, AlgorithmSettings settings, BigDecimal amount) {
-    if (settings.riskPerTradePercent().isEmpty() || settings.stopLossPercent().isEmpty()) {
-      return amount;
-    }
-    BigDecimal portfolioValue = account.cash().add(account.baseQuantity().multiply(price));
-    BigDecimal maxLoss = percentOf(portfolioValue, settings.riskPerTradePercent().get());
-    BigDecimal maxAmount =
-        maxLoss
-            .multiply(PERCENT)
-            .divide(settings.stopLossPercent().get(), AMOUNT_SCALE, RoundingMode.DOWN);
-    return amount.min(maxAmount);
   }
 
   private static BigDecimal percentOf(BigDecimal value, BigDecimal percent) {

@@ -7,6 +7,7 @@ import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.bot.RunStart;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
@@ -146,7 +147,8 @@ class PositionRepositoryTest {
         Optional.empty(),
         Optional.empty(),
         STARTING_VALUE,
-        algorithmId);
+        algorithmId,
+        SettingsSource.MANUAL);
   }
 
   private static AlgorithmSettings settings() {

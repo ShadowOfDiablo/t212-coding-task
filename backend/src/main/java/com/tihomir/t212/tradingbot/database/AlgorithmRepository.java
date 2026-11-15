@@ -2,8 +2,8 @@ package com.tihomir.t212.tradingbot.database;
 
 import static com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues.plainValue;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.ORDER_SIZE_PERCENT;
-import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.RISK_PER_TRADE_PERCENT;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.STOP_LOSS_PERCENT;
+import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.TAKE_PROFIT_PERCENT;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.TIME_PERIOD;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.UPDATE_TIME_SECONDS;
 
@@ -50,8 +50,8 @@ public class AlgorithmRepository implements AlgorithmStore {
           TIME_PERIOD,
           UPDATE_TIME_SECONDS,
           ORDER_SIZE_PERCENT,
-          RISK_PER_TRADE_PERCENT,
-          STOP_LOSS_PERCENT);
+          STOP_LOSS_PERCENT,
+          TAKE_PROFIT_PERCENT);
 
   private static final JsonMapper SETTINGS_MAPPER =
       JsonMapper.builder()
@@ -128,8 +128,8 @@ public class AlgorithmRepository implements AlgorithmStore {
     values.put(TIME_PERIOD, settings.timePeriod());
     putNumber(values, UPDATE_TIME_SECONDS, settings.updateTimeSeconds().map(BigDecimal::valueOf));
     putNumber(values, ORDER_SIZE_PERCENT, Optional.of(settings.orderSizePercent()));
-    putNumber(values, RISK_PER_TRADE_PERCENT, settings.riskPerTradePercent());
     putNumber(values, STOP_LOSS_PERCENT, settings.stopLossPercent());
+    putNumber(values, TAKE_PROFIT_PERCENT, settings.takeProfitPercent());
     return SETTINGS_MAPPER.writeValueAsString(values);
   }
 
@@ -162,8 +162,8 @@ public class AlgorithmRepository implements AlgorithmStore {
         values.required(LIVE_ON_TICK).booleanValue(),
         optionalNumber(values, UPDATE_TIME_SECONDS).map(BigDecimal::intValueExact),
         plainNumber(values.required(ORDER_SIZE_PERCENT)),
-        optionalNumber(values, RISK_PER_TRADE_PERCENT),
         optionalNumber(values, STOP_LOSS_PERCENT),
+        optionalNumber(values, TAKE_PROFIT_PERCENT),
         new AlgorithmSettingValues(
             values.properties().stream()
                 .filter(property -> !SHARED_NAMES.contains(property.getKey()))

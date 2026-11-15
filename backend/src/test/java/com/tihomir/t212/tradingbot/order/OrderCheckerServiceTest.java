@@ -72,18 +72,6 @@ class OrderCheckerServiceTest {
   }
 
   @Test
-  void capsABuySoTheStopLossCostsAtMostTheRiskShare() {
-    OrderCheck check =
-        checker.checkOrder(
-            TradingSignal.BUY,
-            FakeAccountView.withCash("1000"),
-            PRICE,
-            settingsWithRisk(BigDecimal.ONE, BigDecimal.TWO));
-
-    assertThat(check.order().orElseThrow().amount()).isEqualByComparingTo("500");
-  }
-
-  @Test
   void refusesABuyWithoutCashOrBelowTheMinimumOrderValue() {
     assertThat(
             checker
@@ -136,7 +124,7 @@ class OrderCheckerServiceTest {
 
   @Test
   void reachesTheStopLossOnlyWhenOneIsSetAndSomethingIsHeld() {
-    AlgorithmSettings withStop = settingsWithRisk(BigDecimal.ONE, BigDecimal.TWO);
+    AlgorithmSettings withStop = settingsWithSellLimits(BigDecimal.TWO, BigDecimal.TEN);
     FakeAccountView position = FakeAccountView.holding("1", "100");
 
     assertThat(checker.stopPrice(position, withStop)).contains(new BigDecimal("98.00000000"));
@@ -144,6 +132,25 @@ class OrderCheckerServiceTest {
     assertThat(checker.isStopLossReached(position, new BigDecimal("98.01"), withStop)).isFalse();
     assertThat(checker.isStopLossReached(position, BigDecimal.ONE, settings("100"))).isFalse();
     assertThat(checker.isStopLossReached(FakeAccountView.withCash("100"), BigDecimal.ONE, withStop))
+        .isFalse();
+  }
+
+  @Test
+  void reachesTheTakeProfitOnlyWhenOneIsSetAndSomethingIsHeld() {
+    AlgorithmSettings withTakeProfit = settingsWithSellLimits(BigDecimal.TWO, BigDecimal.TEN);
+    FakeAccountView position = FakeAccountView.holding("1", "100");
+
+    assertThat(checker.takeProfitPrice(position, withTakeProfit))
+        .contains(new BigDecimal("110.00000000"));
+    assertThat(checker.isTakeProfitReached(position, new BigDecimal("110"), withTakeProfit))
+        .isTrue();
+    assertThat(checker.isTakeProfitReached(position, new BigDecimal("109.99"), withTakeProfit))
+        .isFalse();
+    assertThat(checker.isTakeProfitReached(position, new BigDecimal("1000"), settings("100")))
+        .isFalse();
+    assertThat(
+            checker.isTakeProfitReached(
+                FakeAccountView.withCash("100"), new BigDecimal("1000"), withTakeProfit))
         .isFalse();
   }
 
@@ -160,7 +167,8 @@ class OrderCheckerServiceTest {
         AlgorithmSettingValues.NONE);
   }
 
-  private static AlgorithmSettings settingsWithRisk(BigDecimal risk, BigDecimal stopLoss) {
+  private static AlgorithmSettings settingsWithSellLimits(
+      BigDecimal stopLoss, BigDecimal takeProfit) {
     return new AlgorithmSettings(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         20,
@@ -168,8 +176,8 @@ class OrderCheckerServiceTest {
         true,
         Optional.empty(),
         new BigDecimal("100"),
-        Optional.of(risk),
         Optional.of(stopLoss),
+        Optional.of(takeProfit),
         AlgorithmSettingValues.NONE);
   }
 }

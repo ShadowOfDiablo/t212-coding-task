@@ -12,6 +12,7 @@ public record RecordedRun(
     String broker,
     String ticker,
     long algorithmId,
+    SettingsSource settingsSource,
     RunStatus status,
     Instant startedAt,
     Optional<Instant> finishedAt,

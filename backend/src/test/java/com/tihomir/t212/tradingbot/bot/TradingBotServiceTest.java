@@ -58,12 +58,14 @@ class TradingBotServiceTest {
   private static final long ONE_HOUR_IN_SECONDS = 3600;
   private static final List<TradingSignal> WARM_UP =
       List.of(TradingSignal.HOLD, TradingSignal.HOLD);
-  private static final Map<String, BigDecimal> RISK_LIMITS =
+  private static final BigDecimal TOO_HIGH_STOP_LOSS_PERCENT = BigDecimal.valueOf(100);
+  private static final BigDecimal BUY_AMOUNT = new BigDecimal("100.00000000");
+  private static final Map<String, BigDecimal> STOP_LOSS_AND_TAKE_PROFIT =
       Map.of(
-          TradingAlgorithm.RISK_PER_TRADE_PERCENT,
-          BigDecimal.ONE,
           TradingAlgorithm.STOP_LOSS_PERCENT,
-          BigDecimal.TWO);
+          BigDecimal.TWO,
+          TradingAlgorithm.TAKE_PROFIT_PERCENT,
+          BigDecimal.TEN);
 
   private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
   private final FakeBroker broker = new FakeBroker(BROKER, gateway);
@@ -101,7 +103,7 @@ class TradingBotServiceTest {
                 OrderAmountType.BASE_QUANTITY));
     assertThat(details.run().mode()).isEqualTo(BotMode.TRADING);
     assertThat(details.run().status()).isEqualTo(RunStatus.STOPPED);
-    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0, 0));
     assertThat(details.run().startingValue()).isEqualByComparingTo("100");
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isTheStartingCash);
     assertThat(details.points().points())
@@ -112,9 +114,9 @@ class TradingBotServiceTest {
   }
 
   @Test
-  void sellsAtTheStopLossAfterARiskCappedBuy() {
+  void sellsAtTheStopLoss() {
     TradingBotService service = service(TradingSignal.BUY);
-    long runId = service.startBot(request(true, RISK_LIMITS));
+    long runId = service.startBot(request(true, STOP_LOSS_AND_TAKE_PROFIT));
     LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
 
     bot.evaluate(BigDecimal.ONE, NOW);
@@ -123,10 +125,24 @@ class TradingBotServiceTest {
 
     assertThat(gateway.placedOrders())
         .extracting(MarketOrderRequest::side, MarketOrderRequest::amount)
-        .containsExactly(
-            tuple(OrderSide.BUY, new BigDecimal("50.00000000")),
-            tuple(OrderSide.SELL, new BigDecimal("50.00000000")));
-    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0));
+        .containsExactly(tuple(OrderSide.BUY, BUY_AMOUNT), tuple(OrderSide.SELL, BUY_AMOUNT));
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0, 0));
+  }
+
+  @Test
+  void sellsAtTheTakeProfit() {
+    TradingBotService service = service(TradingSignal.BUY);
+    long runId = service.startBot(request(true, STOP_LOSS_AND_TAKE_PROFIT));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+
+    bot.evaluate(BigDecimal.ONE, NOW);
+    bot.evaluate(new BigDecimal("1.1"), NOW);
+    service.stopBot(BROKER);
+
+    assertThat(gateway.placedOrders())
+        .extracting(MarketOrderRequest::side)
+        .containsExactly(OrderSide.BUY, OrderSide.SELL);
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 1, 0, 1, 0));
   }
 
   @Test
@@ -143,17 +159,17 @@ class TradingBotServiceTest {
     bot.evaluate(BigDecimal.ONE, NOW);
 
     assertThat(service.getBotStatus(BROKER).orElseThrow().counts())
-        .isEqualTo(new RunCounts(0, 0, 0, 2));
+        .isEqualTo(new RunCounts(0, 0, 0, 0, 2));
     assertThat(evaluatedPrices).hasValue(WARM_UP.size() + 3);
   }
 
   @Test
   void refusesToStartOutsideTradingModeOrWithBadSettingsBeforeRecordingAnything() {
     TradingBotService service = service();
-    Map<String, BigDecimal> riskWithoutStop =
-        Map.of(TradingAlgorithm.RISK_PER_TRADE_PERCENT, BigDecimal.ONE);
+    Map<String, BigDecimal> stopLossTooHigh =
+        Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, TOO_HIGH_STOP_LOSS_PERCENT);
 
-    assertThatThrownBy(() -> service.startBot(request(true, riskWithoutStop)))
+    assertThatThrownBy(() -> service.startBot(request(true, stopLossTooHigh)))
         .isInstanceOf(InvalidAlgorithmSettingsException.class);
     assertThatThrownBy(() ->
             service.startBot(new LiveRunRequest(BROKER, "DOGEUSDT", settings(true, Map.of()))))
@@ -187,10 +203,13 @@ class TradingBotServiceTest {
     long firstRunId = service.startBot(request(true, Map.of()));
     long firstAlgorithmId = service.getBotStatus(BROKER).orElseThrow().algorithmId();
 
-    LiveBotStatus changed = service.updateCurrentParameters(BROKER, settings(true, RISK_LIMITS));
+    LiveBotStatus changed =
+        service.updateCurrentParameters(BROKER, settings(true, STOP_LOSS_AND_TAKE_PROFIT));
     assertThatThrownBy(() ->
             service.updateCurrentParameters(
-                BROKER, settings(true, Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.ONE))))
+                BROKER,
+                settings(
+                    true, Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, TOO_HIGH_STOP_LOSS_PERCENT))))
         .isInstanceOf(InvalidAlgorithmSettingsException.class);
     LiveBotStatus afterInvalidChange = service.getBotStatus(BROKER).orElseThrow();
     service.stopBot(BROKER);

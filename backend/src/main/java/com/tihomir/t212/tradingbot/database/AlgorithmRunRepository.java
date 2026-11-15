@@ -9,6 +9,7 @@ import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunEnd;
 import com.tihomir.t212.tradingbot.bot.RunStart;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import java.sql.ResultSet;
@@ -63,15 +64,17 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
     jdbcClient
         .sql(
             """
-            INSERT INTO algorithm_run (ticker_id, algorithm_id, mode, status,
+            INSERT INTO algorithm_run (ticker_id, algorithm_id, mode, settings_source, status,
                                        started_at, from_time, to_time, starting_value, buy_count,
-                                       sell_count, stop_loss_count, refused_order_count)
-            VALUES (?, ?, CAST(? AS bot_mode),
-                    CAST(? AS run_status), ?, ?, ?, ?, ?, ?, ?, ?)
+                                       sell_count, stop_loss_count, take_profit_count,
+                                       refused_order_count)
+            VALUES (?, ?, CAST(? AS bot_mode), CAST(? AS settings_source),
+                    CAST(? AS run_status), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
         .param(tickerId)
         .param(start.algorithmId())
         .param(start.mode().name())
+        .param(start.settingsSource().name())
         .param(RunStatus.STARTED.name())
         .param(timestamp(start.startedAt()))
         .param(optionalTimestamp(start.from()))
@@ -80,6 +83,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
         .param(RunCounts.NONE.buyCount())
         .param(RunCounts.NONE.sellCount())
         .param(RunCounts.NONE.stopLossCount())
+        .param(RunCounts.NONE.takeProfitCount())
         .param(RunCounts.NONE.refusedOrderCount())
         .update(keyHolder, "id");
     Long runId = keyHolder.getKeyAs(Long.class);
@@ -103,6 +107,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
                 UPDATE algorithm_run
                 SET status = CAST(? AS run_status), finished_at = ?,
                     final_value = ?, buy_count = ?, sell_count = ?, stop_loss_count = ?,
+                    take_profit_count = ?,
                     refused_order_count = ?, failure_reason = ?
                 WHERE id = ? AND status = CAST(? AS run_status)
                 """)
@@ -112,6 +117,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             .param(counts.buyCount())
             .param(counts.sellCount())
             .param(counts.stopLossCount())
+            .param(counts.takeProfitCount())
             .param(counts.refusedOrderCount())
             .param(new SqlParameterValue(Types.VARCHAR, end.failureReason().orElse(null)))
             .param(runId)
@@ -224,6 +230,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
         row.getString("broker"),
         row.getString("ticker"),
         row.getLong("algorithm_id"),
+        SettingsSource.valueOf(row.getString("settings_source")),
         RunStatus.valueOf(row.getString("status")),
         instant(row, "started_at"),
         optionalInstant(row, "finished_at"),
@@ -235,6 +242,7 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             row.getInt("buy_count"),
             row.getInt("sell_count"),
             row.getInt("stop_loss_count"),
+            row.getInt("take_profit_count"),
             row.getInt("refused_order_count")),
         Optional.ofNullable(row.getString("failure_reason")));
   }

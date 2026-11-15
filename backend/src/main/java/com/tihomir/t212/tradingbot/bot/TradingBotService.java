@@ -96,7 +96,8 @@ public class TradingBotService {
                 Optional.empty(),
                 Optional.empty(),
                 startingValue,
-                algorithmId));
+                algorithmId,
+                SettingsSource.MANUAL));
     account.startRun(runId);
     LiveTradingBot bot =
         new LiveTradingBot(broker, runId, account, orderChecker, signalSource, algorithmId, clock);
@@ -210,7 +211,8 @@ public class TradingBotService {
         Optional.empty(),
         Optional.empty(),
         end.finalValue().orElseGet(bot::cash),
-        algorithmId);
+        algorithmId,
+        SettingsSource.MANUAL);
   }
 
   private LiveSignalSource warmedUpSignalSource(

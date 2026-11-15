@@ -9,9 +9,8 @@ function SettingsSummary({ settings }) {
     `period ${settings.timePeriod}`,
     settings.liveOnTick ? 'every price' : `every ${settings.updateTimeSeconds}s`,
     `buy ${settings.orderSizePercent}% of cash`,
-    settings.riskPerTradePercent == null
-      ? 'no risk limit'
-      : `risk ${settings.riskPerTradePercent}% · stop ${settings.stopLossPercent}%`,
+    settings.stopLossPercent == null ? 'no stop loss' : `stop loss ${settings.stopLossPercent}%`,
+    settings.takeProfitPercent == null ? 'no take profit' : `take profit ${settings.takeProfitPercent}%`,
     ...Object.entries(settings.options ?? {}).map(([name, value]) => `${name} ${value}`),
   ]
   return (
@@ -52,7 +51,7 @@ export function RunDetails({ details }) {
         )}
         <span className="muted">
           {' '}
-          · {run.buyCount} buys · {run.sellCount} sells · {run.stopLossCount} stop-loss ·{' '}
+          · {run.buyCount} buys · {run.sellCount} sells · {run.stopLossCount} stop-loss · {run.takeProfitCount} take-profit ·{' '}
           {run.refusedOrderCount} refused
         </span>
       </p>

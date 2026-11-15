@@ -36,7 +36,7 @@ class AlgorithmControllerTest {
         .andExpect(jsonPath("$.algorithms[0].settings[0].required").value(true))
         .andExpect(jsonPath("$.algorithms[0].settings[0].wholeNumber").value(true))
         .andExpect(jsonPath("$.algorithms[0].settings[0].defaultValue").value(20))
-        .andExpect(jsonPath("$.algorithms[0].settings[3].name").value("riskPerTradePercent"))
+        .andExpect(jsonPath("$.algorithms[0].settings[3].name").value("stopLossPercent"))
         .andExpect(jsonPath("$.algorithms[0].settings[3].required").value(false))
         .andExpect(jsonPath("$.algorithms[0].settings[3].defaultValue").isEmpty());
   }

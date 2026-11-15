@@ -58,12 +58,7 @@ class BotControllerTest {
   void showsABotThatDoesNotRun() throws Exception {
     when(tradingBotService.getBotStatus("binance")).thenReturn(Optional.empty());
 
-    mockMvc
-        .perform(get(BOT))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.running").value(false))
-        .andExpect(jsonPath("$.areParametersEditable").value(false))
-        .andExpect(jsonPath("$.runId").isEmpty());
+    mockMvc.perform(get(BOT)).andExpect(status().isOk()).andExpect(jsonPath("$.runId").isEmpty());
   }
 
   @Test
@@ -73,8 +68,6 @@ class BotControllerTest {
     mockMvc
         .perform(post(BOT + "/start").contentType(MediaType.APPLICATION_JSON).content(START_BODY))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.running").value(true))
-        .andExpect(jsonPath("$.areParametersEditable").value(true))
         .andExpect(jsonPath("$.runId").value(4))
         .andExpect(jsonPath("$.currentParameters.timePeriod").value(50))
         .andExpect(jsonPath("$.buyCount").value(1));
@@ -137,7 +130,7 @@ class BotControllerTest {
             Optional.empty(),
             AlgorithmSettingValues.NONE),
         3,
-        new RunCounts(1, 0, 0, 0),
+        new RunCounts(1, 0, 0, 0, 0),
         PortfolioPointList.NONE);
   }
 }

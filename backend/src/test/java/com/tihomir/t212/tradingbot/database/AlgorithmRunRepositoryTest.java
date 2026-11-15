@@ -13,6 +13,7 @@ import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunEnd;
 import com.tihomir.t212.tradingbot.bot.RunStart;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
@@ -82,10 +83,34 @@ class AlgorithmRunRepositoryTest {
     assertThat(details.run().status()).isEqualTo(RunStatus.COMPLETED);
     assertThat(details.run().finishedAt()).contains(FINISHED_AT);
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isFinalValue);
-    assertThat(details.run().counts()).isEqualTo(new RunCounts(3, 2, 1, 4));
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(3, 2, 1, 5, 4));
     assertThat(details.run().algorithmId()).isEqualTo(firstAlgorithmId);
     assertThat(activeAlgorithmCount()).isZero();
     assertThat(details.points().points()).hasSize(1);
+  }
+
+  @Test
+  void storesWhoChoseTheSettingsOfARun() {
+    RunStart manual = start(BotMode.TRAINING, "binance", firstAlgorithmId);
+    RunStart automatic =
+        new RunStart(
+            manual.mode(),
+            manual.broker(),
+            manual.ticker(),
+            manual.startedAt(),
+            manual.from(),
+            manual.to(),
+            manual.startingValue(),
+            manual.algorithmId(),
+            SettingsSource.AUTOMATIC);
+
+    long manualRunId = runRepository.insertStartedRun(manual);
+    long automaticRunId = runRepository.insertStartedRun(automatic);
+
+    assertThat(runRepository.getRun(manualRunId).orElseThrow().run().settingsSource())
+        .isEqualTo(SettingsSource.MANUAL);
+    assertThat(runRepository.getRun(automaticRunId).orElseThrow().run().settingsSource())
+        .isEqualTo(SettingsSource.AUTOMATIC);
   }
 
   @Test
@@ -252,7 +277,8 @@ class AlgorithmRunRepositoryTest {
         Optional.of(Instant.parse("2020-01-01T00:00:00Z")),
         Optional.of(Instant.parse("2020-02-01T00:00:00Z")),
         new BigDecimal("1000"),
-        algorithmId);
+        algorithmId,
+        SettingsSource.MANUAL);
   }
 
   private static RunEnd end(PortfolioPointList points) {
@@ -260,7 +286,7 @@ class AlgorithmRunRepositoryTest {
         RunStatus.COMPLETED,
         FINISHED_AT,
         Optional.of(new BigDecimal("1010")),
-        new RunCounts(3, 2, 1, 4),
+        new RunCounts(3, 2, 1, 5, 4),
         Optional.empty(),
         points,
         PositionWriteList.NONE);

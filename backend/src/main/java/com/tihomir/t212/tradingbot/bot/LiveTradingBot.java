@@ -55,6 +55,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   private int buyCount;
   private int sellCount;
   private int stopLossCount;
+  private int takeProfitCount;
   private int refusedOrderCount;
   private final Deque<PortfolioPoint> points = new ArrayDeque<>();
   private Instant lastPointTime = Instant.EPOCH;
@@ -144,6 +145,7 @@ final class LiveTradingBot implements CandleUpdateListener {
     buyCount = 0;
     sellCount = 0;
     stopLossCount = 0;
+    takeProfitCount = 0;
     refusedOrderCount = 0;
     points.clear();
     lastPointTime = Instant.EPOCH;
@@ -172,6 +174,10 @@ final class LiveTradingBot implements CandleUpdateListener {
       sellAtStopLoss(price, settings);
       return;
     }
+    if (orderChecker.isTakeProfitReached(account, price, settings)) {
+      sellAtTakeProfit(price, settings);
+      return;
+    }
     TradingSignal signal = signalSource.signalAt(price, time);
     if (signal == TradingSignal.HOLD) {
       return;
@@ -194,6 +200,15 @@ final class LiveTradingBot implements CandleUpdateListener {
     }
     sellCount++;
     stopLossCount++;
+  }
+
+  private void sellAtTakeProfit(BigDecimal price, AlgorithmSettings settings) {
+    if (!placeCheckedOrder(TradingSignal.SELL, price, settings)) {
+      refusedOrderCount++;
+      return;
+    }
+    sellCount++;
+    takeProfitCount++;
   }
 
   private boolean placeCheckedOrder(
@@ -312,6 +327,6 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   private RunCounts counts() {
-    return new RunCounts(buyCount, sellCount, stopLossCount, refusedOrderCount);
+    return new RunCounts(buyCount, sellCount, stopLossCount, takeProfitCount, refusedOrderCount);
   }
 }

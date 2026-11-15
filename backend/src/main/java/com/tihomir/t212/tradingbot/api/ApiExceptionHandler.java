@@ -4,6 +4,7 @@ import com.tihomir.t212.tradingbot.algorithm.InvalidAlgorithmSettingsException;
 import com.tihomir.t212.tradingbot.algorithm.UnknownAlgorithmException;
 import com.tihomir.t212.tradingbot.bot.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.LiveBotRunningException;
+import com.tihomir.t212.tradingbot.bot.NoSuccessfulTuningTrialException;
 import com.tihomir.t212.tradingbot.bot.RunNotFoundException;
 import com.tihomir.t212.tradingbot.bot.TradingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.TrainingAlreadyRunningException;
@@ -85,6 +86,11 @@ public class ApiExceptionHandler {
     ProblemDetail problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, e);
     problem.setProperty("exchangeErrorCode", e.exchangeErrorCode());
     return problem;
+  }
+
+  @ExceptionHandler(NoSuccessfulTuningTrialException.class)
+  ProblemDetail noSuccessfulTuningTrial(NoSuccessfulTuningTrialException e) {
+    return problem(HttpStatus.UNPROCESSABLE_CONTENT, e);
   }
 
   @ExceptionHandler(OrderStatusUnknownException.class)

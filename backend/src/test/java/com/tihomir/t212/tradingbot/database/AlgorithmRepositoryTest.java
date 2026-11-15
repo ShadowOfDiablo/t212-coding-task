@@ -68,22 +68,22 @@ class AlgorithmRepositoryTest {
 
   @Test
   void matchesEqualNumbersWrittenDifferentlyButNotEmptyOptionalSettings() {
-    long withoutRisk =
+    long withoutSellLimits =
         repository.findOrInsertAlgorithm(settings(Optional.empty(), Optional.empty()), CREATED_AT);
-    long withRisk =
+    long withSellLimits =
         repository.findOrInsertAlgorithm(
             settings(Optional.of(BigDecimal.ONE), Optional.of(new BigDecimal("0.0000001"))),
             CREATED_AT);
 
-    assertThat(withRisk).isNotEqualTo(withoutRisk);
+    assertThat(withSellLimits).isNotEqualTo(withoutSellLimits);
     assertThat(
             repository.findOrInsertAlgorithm(
                 settings(Optional.of(new BigDecimal("1.00")), Optional.of(new BigDecimal("1E-7"))),
                 CREATED_AT))
-        .isEqualTo(withRisk);
-    assertThat(repository.getAlgorithm(withRisk))
+        .isEqualTo(withSellLimits);
+    assertThat(repository.getAlgorithm(withSellLimits))
         .hasValueSatisfying(
-            stored -> assertThat(stored.stopLossPercent()).contains(new BigDecimal("1E-7")));
+            stored -> assertThat(stored.takeProfitPercent()).contains(new BigDecimal("1E-7")));
   }
 
   @Test
@@ -124,7 +124,7 @@ class AlgorithmRepositoryTest {
   }
 
   private static AlgorithmSettings settings(
-      Optional<BigDecimal> riskPerTradePercent, Optional<BigDecimal> stopLossPercent) {
+      Optional<BigDecimal> stopLossPercent, Optional<BigDecimal> takeProfitPercent) {
     return new AlgorithmSettings(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         20,
@@ -132,8 +132,8 @@ class AlgorithmRepositoryTest {
         true,
         Optional.empty(),
         new BigDecimal("100"),
-        riskPerTradePercent,
         stopLossPercent,
+        takeProfitPercent,
         new AlgorithmSettingValues(Map.of(OPTION_NAME, new BigDecimal("3"))));
   }
 }

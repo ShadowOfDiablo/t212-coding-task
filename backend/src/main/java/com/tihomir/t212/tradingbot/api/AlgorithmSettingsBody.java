@@ -25,18 +25,13 @@ public record AlgorithmSettingsBody(
     @Positive Integer timePeriod,
     @Positive Integer updateTimeSeconds,
     @Positive @DecimalMax("100") BigDecimal orderSizePercent,
-    @Positive @DecimalMax("100") BigDecimal riskPerTradePercent,
     @Positive @DecimalMax(value = "100", inclusive = false) BigDecimal stopLossPercent,
+    @Positive @DecimalMax("100") BigDecimal takeProfitPercent,
     Map<String, BigDecimal> options) {
 
   @AssertTrue(message = "updateTimeSeconds is set exactly when liveOnTick is off")
   public boolean isUpdateTimeSetWhenNotOnTick() {
     return liveOnTick == null || liveOnTick == (updateTimeSeconds == null);
-  }
-
-  @AssertTrue(message = "riskPerTradePercent and stopLossPercent are set together")
-  public boolean isRiskComplete() {
-    return (riskPerTradePercent == null) == (stopLossPercent == null);
   }
 
   AlgorithmSettingsRequest toSettingsRequest() {
@@ -51,9 +46,8 @@ public record AlgorithmSettingsBody(
         TradingAlgorithm.UPDATE_TIME_SECONDS,
         Optional.ofNullable(updateTimeSeconds).map(BigDecimal::valueOf));
     putIfSet(values, TradingAlgorithm.ORDER_SIZE_PERCENT, Optional.ofNullable(orderSizePercent));
-    putIfSet(
-        values, TradingAlgorithm.RISK_PER_TRADE_PERCENT, Optional.ofNullable(riskPerTradePercent));
     putIfSet(values, TradingAlgorithm.STOP_LOSS_PERCENT, Optional.ofNullable(stopLossPercent));
+    putIfSet(values, TradingAlgorithm.TAKE_PROFIT_PERCENT, Optional.ofNullable(takeProfitPercent));
     return new AlgorithmSettingsRequest(algorithmType, timeframe, liveOnTick, values);
   }
 

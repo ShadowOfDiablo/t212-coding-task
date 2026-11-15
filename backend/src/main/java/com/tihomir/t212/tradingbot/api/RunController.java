@@ -2,6 +2,8 @@ package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.TrainingService;
+import com.tihomir.t212.tradingbot.bot.TuningResult;
+import com.tihomir.t212.tradingbot.bot.TuningService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
@@ -23,10 +25,15 @@ public class RunController {
   private static final long MAX_WORST_POSITIONS = 100;
 
   private final TrainingService trainingService;
+  private final TuningService tuningService;
   private final AlgorithmRunService runService;
 
-  public RunController(TrainingService trainingService, AlgorithmRunService runService) {
+  public RunController(
+      TrainingService trainingService,
+      TuningService tuningService,
+      AlgorithmRunService runService) {
     this.trainingService = trainingService;
+    this.tuningService = tuningService;
     this.runService = runService;
   }
 
@@ -39,10 +46,23 @@ public class RunController {
     return RunDetailsResponse.of(runService.getRun(broker, runId));
   }
 
+  /** Tunes settings automatically and answers with the best one, recorded as a training run. */
+  @PostMapping("/training/tunings")
+  @ResponseStatus(HttpStatus.CREATED)
+  public TuningResponse runTuning(
+      @PathVariable String broker, @Valid @RequestBody TuningRequestBody body) {
+    TuningResult result = tuningService.runTuning(body.toTuningRequest(broker));
+    return new TuningResponse(
+        RunDetailsResponse.of(runService.getRun(broker, result.runId())),
+        result.bestTuneReturnPercent(),
+        result.trialCount(),
+        result.baseRun().map(UnrecordedRunResponse::of));
+  }
+
   @GetMapping("/training")
   public TrainingStatusResponse getTrainingStatus() {
-    boolean editable = trainingService.areParametersEditable();
-    return new TrainingStatusResponse(!editable, editable);
+    return new TrainingStatusResponse(
+        trainingService.isTrainingRunning(), tuningService.progressPercent());
   }
 
   @GetMapping("/runs")

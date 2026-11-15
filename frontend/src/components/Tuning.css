@@ -1,0 +1,161 @@
+.tuning-fields {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  min-width: 0;
+}
+
+.tuning-fields:disabled {
+  opacity: 0.55;
+}
+
+.tune-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.field-label-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tune-toggle,
+.tune-toggle-sample {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 2px solid var(--brand);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+
+.tune-toggle-sample {
+  display: inline-block;
+  vertical-align: -3px;
+  background: var(--brand);
+  box-shadow: inset 0 0 0 3px var(--surface);
+  cursor: default;
+}
+
+.tune-toggle:checked {
+  background: var(--brand);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.tune-toggle:hover:not(:disabled) {
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+
+.tune-toggle:checked:hover:not(:disabled) {
+  box-shadow:
+    inset 0 0 0 3px var(--surface),
+    0 0 0 4px var(--brand-soft);
+}
+
+.tune-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.tune-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tuning-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--brand-soft);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand-strong), var(--brand), var(--brand-strong));
+  background-size: 200% 100%;
+  transition: width 0.9s var(--ease);
+  animation: progress-shine 1.6s linear infinite;
+}
+
+@keyframes progress-shine {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    transition: none;
+    animation: none;
+  }
+}
+
+.tuning-comparison {
+  display: grid;
+  gap: 12px;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.comparison-settings {
+  display: block;
+  font-weight: 400;
+}
+
+.comparison-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.legend-tuned::before,
+.legend-old::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--up);
+}
+
+.legend-old::before {
+  border-top: 2px dashed var(--text-muted);
+}
+
+.legend-tuned.legend-down::before {
+  border-top-color: var(--down);
+}

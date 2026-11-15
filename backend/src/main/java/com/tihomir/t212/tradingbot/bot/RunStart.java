@@ -19,4 +19,5 @@ public record RunStart(
     Optional<Instant> from,
     Optional<Instant> to,
     BigDecimal startingValue,
-    long algorithmId) {}
+    long algorithmId,
+    SettingsSource settingsSource) {}

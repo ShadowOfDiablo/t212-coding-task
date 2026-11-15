@@ -21,8 +21,8 @@ class TradingAlgorithmTest {
     assertThat(settings.timePeriod()).isEqualTo(20);
     assertThat(settings.orderSizePercent()).isEqualByComparingTo("100");
     assertThat(settings.updateTimeSeconds()).isEmpty();
-    assertThat(settings.riskPerTradePercent()).isEmpty();
     assertThat(settings.stopLossPercent()).isEmpty();
+    assertThat(settings.takeProfitPercent()).isEmpty();
     assertThat(settings.options().wholeNumber(ThresholdTestAlgorithm.WINDOW)).isEqualTo(5);
     assertThat(settings.options().optionalValue(ThresholdTestAlgorithm.THRESHOLD)).isEmpty();
   }
@@ -32,13 +32,13 @@ class TradingAlgorithmTest {
     Map<String, BigDecimal> values = new HashMap<>();
     values.put(ThresholdTestAlgorithm.THRESHOLD, null);
     values.put(ThresholdTestAlgorithm.WINDOW, BigDecimal.ONE);
-    values.put(TradingAlgorithm.RISK_PER_TRADE_PERCENT, null);
     values.put(TradingAlgorithm.STOP_LOSS_PERCENT, null);
+    values.put(TradingAlgorithm.TAKE_PROFIT_PERCENT, null);
 
     AlgorithmSettings settings = algorithm.resolveSettings(request(true, values));
 
     assertThat(settings.options().optionalValue(ThresholdTestAlgorithm.THRESHOLD)).isEmpty();
-    assertThat(settings.riskPerTradePercent()).isEmpty();
+    assertThat(settings.takeProfitPercent()).isEmpty();
   }
 
   @Test
@@ -96,22 +96,18 @@ class TradingAlgorithmTest {
   }
 
   @Test
-  void needsRiskAndStopLossTogether() {
-    assertThatThrownBy(() ->
-            algorithm.resolveSettings(
-                request(true, Map.of(TradingAlgorithm.RISK_PER_TRADE_PERCENT, BigDecimal.ONE))))
-        .isInstanceOf(InvalidAlgorithmSettingsException.class);
-
-    AlgorithmSettings settings =
+  void takesAStopLossAndATakeProfitEachOnItsOwn() {
+    AlgorithmSettings stopOnly =
         algorithm.resolveSettings(
-            request(
-                true,
-                Map.of(
-                    TradingAlgorithm.RISK_PER_TRADE_PERCENT,
-                    new BigDecimal("3.00"),
-                    TradingAlgorithm.STOP_LOSS_PERCENT,
-                    BigDecimal.TWO)));
-    assertThat(settings.riskPerTradePercent()).isEqualTo(Optional.of(new BigDecimal("3")));
+            request(true, Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.TWO)));
+    AlgorithmSettings takeProfitOnly =
+        algorithm.resolveSettings(
+            request(true, Map.of(TradingAlgorithm.TAKE_PROFIT_PERCENT, new BigDecimal("3.00"))));
+
+    assertThat(stopOnly.stopLossPercent()).contains(BigDecimal.TWO);
+    assertThat(stopOnly.takeProfitPercent()).isEmpty();
+    assertThat(takeProfitOnly.takeProfitPercent()).isEqualTo(Optional.of(new BigDecimal("3")));
+    assertThat(takeProfitOnly.stopLossPercent()).isEmpty();
   }
 
   @Test
@@ -122,8 +118,8 @@ class TradingAlgorithmTest {
             TradingAlgorithm.TIME_PERIOD,
             TradingAlgorithm.UPDATE_TIME_SECONDS,
             TradingAlgorithm.ORDER_SIZE_PERCENT,
-            TradingAlgorithm.RISK_PER_TRADE_PERCENT,
             TradingAlgorithm.STOP_LOSS_PERCENT,
+            TradingAlgorithm.TAKE_PROFIT_PERCENT,
             ThresholdTestAlgorithm.WINDOW,
             ThresholdTestAlgorithm.THRESHOLD);
   }

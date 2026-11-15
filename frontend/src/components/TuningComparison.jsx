@@ -3,6 +3,7 @@ import { formatPrice, formatUtcDateTime } from '../format.js'
 import { timeframeLabel } from '../settings.js'
 import { useState } from 'react'
 import { LineChart } from './LineChart.jsx'
+import { RunTrades } from './RunTrades.jsx'
 import { SettingsPreview } from './SettingsPreview.jsx'
 
 const PERCENT = 100
@@ -119,6 +120,7 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
         <span className="legend-tuned">Tuned ({signedPercent(tunedReturn)})</span>
         <span className="legend-old">Old settings, dashed</span>
       </p>
+      <RunTrades key={run.id} runId={run.id} />
     </div>
   )
 }

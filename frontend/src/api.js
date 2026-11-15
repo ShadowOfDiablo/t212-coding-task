@@ -43,4 +43,5 @@ export const api = {
   runTuning: (body) => send('POST', `${BROKER_PATH}/training/tunings`, body),
   getRuns: () => request(`${BROKER_PATH}/runs`),
   getRun: (id) => request(`${BROKER_PATH}/runs/${id}`),
+  getRunPositions: (id) => request(`${BROKER_PATH}/runs/${id}/positions`),
 }

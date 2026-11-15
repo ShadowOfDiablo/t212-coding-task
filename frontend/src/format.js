@@ -1,6 +1,8 @@
 const QUOTE_ASSET = 'USDT'
 
-const HOUR_MS = 3_600_000
+const SECOND_MS = 1000
+const MINUTE_MS = 60 * SECOND_MS
+const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
 const YEAR_MS = 365 * DAY_MS
 
@@ -63,6 +65,9 @@ export const formatTime = (iso) => (iso ? timeFormat.format(new Date(iso)) : '�
 /** Date, year and time in UTC, the zone training ranges are chosen in. */
 export const formatUtcDateTime = (iso) => (iso ? `${utcDateTimeFormat.format(new Date(iso))} UTC` : '—')
 
+/** The same without the zone, for tables whose header already says UTC. */
+export const formatUtcDateTimeShort = (iso) => (iso ? utcDateTimeFormat.format(new Date(iso)) : '—')
+
 /** An axis label that fits the span the chart covers: times for a day, days for a month, and so on. */
 export function formatAxisTime(time, spanMs) {
   if (spanMs <= HOUR_MS) {
@@ -78,6 +83,27 @@ export function formatAxisTime(time, spanMs) {
     return axisFormats.day.format(time)
   }
   return axisFormats.month.format(time)
+}
+
+/** "3d 4h", "2h 15m" or "45m"; seconds only under a minute. */
+export function formatDuration(seconds) {
+  if (seconds == null) {
+    return '—'
+  }
+  const milliseconds = seconds * SECOND_MS
+  const days = Math.floor(milliseconds / DAY_MS)
+  const hours = Math.floor((milliseconds % DAY_MS) / HOUR_MS)
+  const minutes = Math.floor((milliseconds % HOUR_MS) / MINUTE_MS)
+  if (days > 0) {
+    return `${days}d ${hours}h`
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+  if (minutes > 0) {
+    return `${minutes}m`
+  }
+  return `${seconds}s`
 }
 
 export const baseAsset = (ticker) =>

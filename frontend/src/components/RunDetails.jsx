@@ -1,6 +1,7 @@
 import { formatPrice, formatUtcDateTime } from '../format.js'
 import { timeframeLabel } from '../settings.js'
 import { LineChart } from './LineChart.jsx'
+import { RunTrades } from './RunTrades.jsx'
 
 function SettingsSummary({ settings }) {
   const entries = [
@@ -63,6 +64,7 @@ export function RunDetails({ details }) {
       />
       <p className="muted small">Algorithm {run.algorithmId}</p>
       <SettingsSummary settings={settings} />
+      <RunTrades key={run.id} runId={run.id} />
     </div>
   )
 }

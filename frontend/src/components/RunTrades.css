@@ -1,0 +1,57 @@
+.run-trades {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.run-trades .button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-trades-body {
+  width: 100%;
+  animation: rise 0.3s var(--ease) both;
+}
+
+.trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.trades-table th,
+.trades-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.trades-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.trades-table .numeric {
+  text-align: right;
+}
+
+.trades-table tbody tr:hover {
+  background: var(--surface-raised);
+}
+
+.trade-percent {
+  opacity: 0.75;
+}
+
+.trade-open {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}

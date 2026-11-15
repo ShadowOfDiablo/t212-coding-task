@@ -1442,7 +1442,8 @@ flowchart TD
     Record --> Db[("algorithm, algorithm_run,<br/>positions, points")]
 ```
 
-- **Request:** broker, ticker, `from`, `checkFrom`, `to`, the base settings, the free settings with their own minimum and maximum, the number of tries (at most 200), the starting balance and an optional random seed.
+- **Request:** broker, ticker, `from`, `checkFrom`, `to`, the base settings, the free settings with their own minimum and maximum, the number of tries (at most 200), the starting balance.
+- **Repeatable:** the random seed of the tries is derived from the request (`TuningRequest.getSeed`), so the same tuning always tries the same settings and finds the same best. A different range, setting or number of tries searches anew. The request has no seed of its own.
   - Free settings can be `timePeriod`, `timeframe` (a list of allowed codes), `orderSizePercent`, `stopLossPercent` and `takeProfitPercent`. Each optional setting is also tried on and off. Every other setting keeps its base value.
   - `liveOnTick` and `updateTimeSeconds` are never free: training runs once per candle anyway.
   - Each free range must lie inside the setting's definition range (§16.2), with whole-number bounds for a whole-number setting. The body is checked with `@Valid`, the ranges against the algorithm's definitions; both before any try runs (400).

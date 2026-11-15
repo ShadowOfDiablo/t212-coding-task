@@ -78,8 +78,7 @@ class RunControllerTest {
        "startingBalance": 1000,
        "settingRanges": [{"name": "timePeriod", "minimum": 5, "maximum": 300}],
        "timeframes": ["5m", "1h"],
-       "maxTrials": 50,
-       "randomSeed": 42}
+       "maxTrials": 50}
       """;
 
   @Autowired MockMvc mockMvc;
@@ -173,7 +172,6 @@ class RunControllerTest {
                 TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(5), BigDecimal.valueOf(300)));
     assertThat(request.getValue().timeframes())
         .containsExactly(CandleInterval.FIVE_MINUTES, CandleInterval.ONE_HOUR);
-    assertThat(request.getValue().randomSeed()).contains(42L);
   }
 
   @Test

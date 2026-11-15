@@ -130,6 +130,6 @@ public class TuningService {
   }
 
   private static Random random(TuningRequest request) {
-    return request.randomSeed().map(Random::new).orElseGet(Random::new);
+    return new Random(request.getSeed());
   }
 }

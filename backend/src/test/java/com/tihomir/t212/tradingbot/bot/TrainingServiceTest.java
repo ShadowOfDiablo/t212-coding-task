@@ -79,6 +79,22 @@ class TrainingServiceTest {
   }
 
   @Test
+  void replaysTheSameTrainingTheSameWayEveryTime() {
+    storeCandles(
+        candle(0, 100, 100), candle(1, 200, 200), candle(2, 150, 150), candle(3, 400, 400));
+    List<TradingSignal> signals =
+        List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL);
+
+    RunDetails first = runDetails(service(signals, () -> {}).runTraining(request(4, Map.of())));
+    RunDetails second = runDetails(service(signals, () -> {}).runTraining(request(4, Map.of())));
+
+    assertThat(second.run().id()).isNotEqualTo(first.run().id());
+    assertThat(second.run().finalValue()).isEqualTo(first.run().finalValue());
+    assertThat(second.run().counts()).isEqualTo(first.run().counts());
+    assertThat(second.points()).isEqualTo(first.points());
+  }
+
+  @Test
   void endsTheRunWithItsClosedPositionAndTheOneStillOpen() {
     storeCandles(
         candle(0, 100, 100),

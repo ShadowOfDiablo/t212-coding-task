@@ -28,7 +28,8 @@ class UnfinishedRunCleanupTest {
                 Optional.empty(),
                 Optional.empty(),
                 BigDecimal.TEN,
-                1));
+                1,
+                SettingsSource.MANUAL));
 
     new UnfinishedRunCleanup(runStore, Clock.fixed(NOW, ZoneOffset.UTC))
         .run(new DefaultApplicationArguments());

@@ -15,6 +15,6 @@ public record AlgorithmSettings(
     boolean liveOnTick,
     Optional<Integer> updateTimeSeconds,
     BigDecimal orderSizePercent,
-    Optional<BigDecimal> riskPerTradePercent,
     Optional<BigDecimal> stopLossPercent,
+    Optional<BigDecimal> takeProfitPercent,
     AlgorithmSettingValues options) {}

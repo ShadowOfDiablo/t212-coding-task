@@ -15,8 +15,8 @@ public record AlgorithmSettingsResponse(
     boolean liveOnTick,
     Optional<Integer> updateTimeSeconds,
     BigDecimal orderSizePercent,
-    Optional<BigDecimal> riskPerTradePercent,
     Optional<BigDecimal> stopLossPercent,
+    Optional<BigDecimal> takeProfitPercent,
     Map<String, BigDecimal> options) {
 
   static AlgorithmSettingsResponse of(AlgorithmSettings settings) {
@@ -27,8 +27,8 @@ public record AlgorithmSettingsResponse(
         settings.liveOnTick(),
         settings.updateTimeSeconds(),
         settings.orderSizePercent(),
-        settings.riskPerTradePercent(),
         settings.stopLossPercent(),
+        settings.takeProfitPercent(),
         settings.options().values());
   }
 }

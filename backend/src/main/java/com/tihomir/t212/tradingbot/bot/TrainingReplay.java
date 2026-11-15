@@ -22,8 +22,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Replays the candles of one training run, in one thread and without waiting. For each candle: the
- * stop loss, then the signal, then the order checks; a signal fills at the next candle's open, so
- * the run never looks ahead.
+ * stop loss, then the take profit, then the signal, then the order checks; a signal fills at the
+ * next candle's open, so the run never looks ahead.
  */
 final class TrainingReplay {
 
@@ -44,6 +44,7 @@ final class TrainingReplay {
   private int buyCount;
   private int sellCount;
   private int stopLossCount;
+  private int takeProfitCount;
   private int refusedOrderCount;
 
   TrainingReplay(
@@ -70,6 +71,7 @@ final class TrainingReplay {
       positionTracker.updateExcursions(candle.low());
       positionTracker.updateExcursions(candle.high());
       sellAtStopLossIfReached(candle);
+      sellAtTakeProfitIfReached(candle);
       TradingSignal signal = signalGenerator.onPrice(candle);
       PortfolioPoint point = portfolioPointAt(candle);
       if (index % pointStep == 0 || index == lastIndex) {
@@ -94,7 +96,7 @@ final class TrainingReplay {
   }
 
   RunCounts counts() {
-    return new RunCounts(buyCount, sellCount, stopLossCount, refusedOrderCount);
+    return new RunCounts(buyCount, sellCount, stopLossCount, takeProfitCount, refusedOrderCount);
   }
 
   private PortfolioPoint portfolioPointAt(CandleUpdate candle) {
@@ -114,6 +116,23 @@ final class TrainingReplay {
     if (placeCheckedOrder(TradingSignal.SELL, fillPrice)) {
       sellCount++;
       stopLossCount++;
+    }
+  }
+
+  /**
+   * Runs after the stop loss, so when one candle reaches both, the stop loss wins: the worse
+   * outcome. A candle that opens above the take profit fills at its open.
+   */
+  private void sellAtTakeProfitIfReached(CandleUpdate candle) {
+    if (!orderChecker.isTakeProfitReached(account, candle.high(), settings)) {
+      return;
+    }
+    BigDecimal takeProfitPrice = orderChecker.takeProfitPrice(account, settings).orElseThrow();
+    BigDecimal fillPrice = takeProfitPrice.max(candle.open());
+    account.updateMarketPrice(fillPrice, candle.openTime());
+    if (placeCheckedOrder(TradingSignal.SELL, fillPrice)) {
+      sellCount++;
+      takeProfitCount++;
     }
   }
 

@@ -10,7 +10,7 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 |---|---|
 | Market data: Binance WebSocket streams, REST candle history, ticker price map | Built |
 | Demo account orders: market buy and sell, balances, over a REST API | Built |
-| Order checks for every order (cash, order size, risk per trade, stop loss, minimum value) and a virtual account for training | Built |
+| Order checks for every order (cash, order size, stop loss, take profit, minimum value) and a virtual account for training | Built |
 | Trading algorithms: required and optional settings, stored once and reused (`GET /api/algorithms`), SMA example | Built |
 | Training runs: replay stored candles on a virtual account, recorded with their settings | Built |
 | Live trading bot on the demo account | Planned, next |
@@ -219,11 +219,11 @@ curl localhost:8080/api/algorithms
 curl -X POST localhost:8080/api/brokers/binance/training/runs -H "Content-Type: application/json" -d '{
   "candles": {"ticker": "BTCUSDT", "from": "2021-01-01T00:00:00Z", "to": "2021-03-01T00:00:00Z"},
   "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "5m", "liveOnTick": true,
-               "timePeriod": 50, "orderSizePercent": 100, "riskPerTradePercent": 3, "stopLossPercent": 2},
+               "timePeriod": 50, "orderSizePercent": 100, "stopLossPercent": 2, "takeProfitPercent": 5},
   "startingBalance": 10000}'
 ```
 
-- **Settings:** left-out required settings take their default; left-out optional ones (`riskPerTradePercent` with `stopLossPercent`) skip their checks. `updateTimeSeconds` is set exactly when `liveOnTick` is false. Invalid bodies are refused with 400 naming the fields.
+- **Settings:** left-out required settings take their default; left-out optional ones (`stopLossPercent`, `takeProfitPercent`) skip their checks. `updateTimeSeconds` is set exactly when `liveOnTick` is false. Invalid bodies are refused with 400 naming the fields.
 - **Candles** are downloaded once, 1,000 at a time, and read from the database after that.
 - **Orders:** every signal goes through the order checks, then fills at the next candle's open with Binance's 0.1% fee.
 - **Recorded runs:** every run is stored with the settings it used at start and at the end. Identical settings are stored once.

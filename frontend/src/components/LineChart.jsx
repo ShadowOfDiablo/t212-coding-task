@@ -31,19 +31,25 @@ function scaleFor(points, baseline) {
   }
 }
 
-export function LineChart({ points, baseline = null, emptyText = 'No data yet.' }) {
+export function LineChart({ points, comparePoints = null, baseline = null, emptyText = 'No data yet.' }) {
   const [hoverIndex, setHoverIndex] = useState(null)
 
   if (!points || points.length === 0) {
     return <p className="empty chart-empty">{emptyText}</p>
   }
 
-  const scale = scaleFor(points, baseline)
+  const scale = scaleFor([...points, ...(comparePoints ?? [])], baseline)
   const coordinates = points.map((point) => ({
     x: scale.x(new Date(point.time).getTime()),
     y: scale.y(point.value),
   }))
   const line = coordinates.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ')
+  const compareLine = (comparePoints ?? [])
+    .map((point, index) => {
+      const command = index === 0 ? 'M' : 'L'
+      return `${command}${scale.x(new Date(point.time).getTime())},${scale.y(point.value)}`
+    })
+    .join(' ')
   const area = `${line} L${coordinates.at(-1).x},${PADDING.top + PLOT_HEIGHT} L${coordinates[0].x},${PADDING.top + PLOT_HEIGHT} Z`
   const lastValue = points.at(-1).value
   const trend = baseline == null || lastValue >= baseline ? 'up' : 'down'
@@ -92,6 +98,7 @@ export function LineChart({ points, baseline = null, emptyText = 'No data yet.' 
           />
         )}
         <path className="chart-area" d={area} />
+        {compareLine && <path className="chart-line-compare" d={compareLine} />}
         <path className="chart-line" d={line} />
         <text className="chart-axis" x={PADDING.left} y={HEIGHT - 6}>
           {formatTime(points[0].time)}

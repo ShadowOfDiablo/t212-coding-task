@@ -73,9 +73,25 @@ class TrainingServiceTest {
             new BigDecimal("1498.5"),
             new BigDecimal("1996.002"));
     assertThat(details.run().status()).isEqualTo(RunStatus.COMPLETED);
-    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0));
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 0, 0));
     assertThat(details.run().finalValue()).hasValueSatisfying(this::isFinalValueOfTheTrade);
     assertThat(liveGateway.placedOrders()).isEmpty();
+  }
+
+  @Test
+  void replaysTheSameTrainingTheSameWayEveryTime() {
+    storeCandles(
+        candle(0, 100, 100), candle(1, 200, 200), candle(2, 150, 150), candle(3, 400, 400));
+    List<TradingSignal> signals =
+        List.of(TradingSignal.BUY, TradingSignal.HOLD, TradingSignal.SELL);
+
+    RunDetails first = runDetails(service(signals, () -> {}).runTraining(request(4, Map.of())));
+    RunDetails second = runDetails(service(signals, () -> {}).runTraining(request(4, Map.of())));
+
+    assertThat(second.run().id()).isNotEqualTo(first.run().id());
+    assertThat(second.run().finalValue()).isEqualTo(first.run().finalValue());
+    assertThat(second.run().counts()).isEqualTo(first.run().counts());
+    assertThat(second.points()).isEqualTo(first.points());
   }
 
   @Test
@@ -115,22 +131,59 @@ class TrainingServiceTest {
   }
 
   @Test
-  void sellsAtTheStopLossAndCapsTheBuyByTheRiskShare() {
+  void sellsAtTheStopLossWithTheBuySpendingTheWholeCash() {
     storeCandles(
         candle(0, 100, 100), candle(1, 100, 100), candle(2, 99, 97, 99), candle(3, 99, 99));
-    Map<String, BigDecimal> riskLimits =
-        Map.of(
-            TradingAlgorithm.RISK_PER_TRADE_PERCENT,
-            BigDecimal.ONE,
-            TradingAlgorithm.STOP_LOSS_PERCENT,
-            BigDecimal.TWO);
 
     RunDetails details =
         runDetails(
-            service(List.of(TradingSignal.BUY), () -> {}).runTraining(request(4, riskLimits)));
+            service(List.of(TradingSignal.BUY), () -> {})
+                .runTraining(
+                    request(4, Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.TWO))));
 
-    assertThat(details.points().points().get(1).cash()).isEqualByComparingTo("500");
-    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0));
+    assertThat(details.points().points().get(1).cash()).isEqualByComparingTo("0");
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0, 0));
+  }
+
+  @Test
+  void sellsAtTheTakeProfit() {
+    storeCandles(
+        candle(0, 100, 100),
+        candle(1, 100, 100),
+        candle(2, 100, 100, 106, 100),
+        candle(3, 100, 100));
+
+    RunDetails details =
+        runDetails(
+            service(List.of(TradingSignal.BUY), () -> {})
+                .runTraining(
+                    request(
+                        4, Map.of(TradingAlgorithm.TAKE_PROFIT_PERCENT, BigDecimal.valueOf(5)))));
+
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 0, 1, 0));
+    assertThat(details.points().points().get(2).cash()).isPositive();
+  }
+
+  @Test
+  void letsTheStopLossWinWhenOneCandleReachesBoth() {
+    storeCandles(
+        candle(0, 100, 100),
+        candle(1, 100, 100),
+        candle(2, 100, 97, 106, 100),
+        candle(3, 100, 100));
+    Map<String, BigDecimal> stopLossAndTakeProfit =
+        Map.of(
+            TradingAlgorithm.STOP_LOSS_PERCENT,
+            BigDecimal.TWO,
+            TradingAlgorithm.TAKE_PROFIT_PERCENT,
+            BigDecimal.valueOf(5));
+
+    RunDetails details =
+        runDetails(
+            service(List.of(TradingSignal.BUY), () -> {})
+                .runTraining(request(4, stopLossAndTakeProfit)));
+
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0, 0));
   }
 
   @Test
@@ -144,7 +197,7 @@ class TrainingServiceTest {
 
     RunDetails details = runDetails(service.runTraining(request(4, Map.of())));
 
-    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 0, 0, 2));
+    assertThat(details.run().counts()).isEqualTo(new RunCounts(1, 0, 0, 0, 2));
   }
 
   @Test
@@ -184,10 +237,10 @@ class TrainingServiceTest {
   @Test
   void refusesToRunOutsideTrainingModeOrWithBadSettingsBeforeRecordingAnything() {
     TrainingService service = service(List.of(), () -> {});
-    Map<String, BigDecimal> riskWithoutStop =
-        Map.of(TradingAlgorithm.RISK_PER_TRADE_PERCENT, BigDecimal.ONE);
+    Map<String, BigDecimal> stopLossTooHigh =
+        Map.of(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.valueOf(100));
 
-    assertThatThrownBy(() -> service.runTraining(request(2, riskWithoutStop)))
+    assertThatThrownBy(() -> service.runTraining(request(2, stopLossTooHigh)))
         .isInstanceOf(InvalidAlgorithmSettingsException.class);
     assertThatThrownBy(() ->
             service.runTraining(
@@ -258,6 +311,7 @@ class TrainingServiceTest {
                 new FakeOrderStore(),
                 CLOCK)),
         runStore,
+        new TrainingLock(),
         CLOCK);
   }
 
@@ -287,13 +341,17 @@ class TrainingServiceTest {
   }
 
   private static CandleUpdate candle(int index, int open, int low, int close) {
+    return candle(index, open, low, Math.max(open, close), close);
+  }
+
+  private static CandleUpdate candle(int index, int open, int low, int high, int close) {
     return new CandleUpdate(
         TICKER,
         TIMEFRAME,
         openTime(index),
         openTime(index + 1).minusMillis(1),
         BigDecimal.valueOf(open),
-        BigDecimal.valueOf(Math.max(open, close)),
+        BigDecimal.valueOf(high),
         BigDecimal.valueOf(low),
         BigDecimal.valueOf(close),
         BigDecimal.ONE,

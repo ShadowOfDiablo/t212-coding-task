@@ -21,6 +21,25 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class PositionRepository implements PositionStore {
 
+  private static final String SELECT_POSITIONS_OF_RUN =
+      """
+      SELECT p.*, b.name AS broker, t.symbol AS ticker
+      FROM position p
+      JOIN algorithm_run r ON r.id = p.run_id
+      JOIN ticker t ON t.id = r.ticker_id
+      JOIN brokers b ON b.broker_id = t.broker_id
+      WHERE p.run_id = ?
+      """;
+
+  private static final String WORST_CLOSED_FIRST =
+      """
+      AND p.status = CAST(? AS position_status)
+      ORDER BY p.realised_pnl, p.id
+      LIMIT ?
+      """;
+
+  private static final String NEWEST_FIRST = "ORDER BY p.opened_at DESC, p.id DESC";
+
   private final JdbcClient jdbcClient;
 
   public PositionRepository(JdbcClient jdbcClient) {
@@ -40,20 +59,20 @@ public class PositionRepository implements PositionStore {
   public StoredPositionList getWorstPositions(long runId, int maxPositions) {
     return new StoredPositionList(
         jdbcClient
-            .sql(
-                """
-                SELECT p.*, b.name AS broker, t.symbol AS ticker
-                FROM position p
-                JOIN algorithm_run r ON r.id = p.run_id
-                JOIN ticker t ON t.id = r.ticker_id
-                JOIN brokers b ON b.broker_id = t.broker_id
-                WHERE p.run_id = ? AND p.status = CAST(? AS position_status)
-                ORDER BY p.realised_pnl, p.id
-                LIMIT ?
-                """)
+            .sql(SELECT_POSITIONS_OF_RUN + WORST_CLOSED_FIRST)
             .param(runId)
             .param(PositionStatus.CLOSED.name())
             .param(maxPositions)
+            .query(PositionRepository::mapPositionRow)
+            .list());
+  }
+
+  @Override
+  public StoredPositionList getPositions(long runId) {
+    return new StoredPositionList(
+        jdbcClient
+            .sql(SELECT_POSITIONS_OF_RUN + NEWEST_FIRST)
+            .param(runId)
             .query(PositionRepository::mapPositionRow)
             .list());
   }

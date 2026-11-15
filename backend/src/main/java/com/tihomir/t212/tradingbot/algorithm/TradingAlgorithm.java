@@ -14,8 +14,8 @@ public abstract class TradingAlgorithm {
   public static final String TIME_PERIOD = "timePeriod";
   public static final String UPDATE_TIME_SECONDS = "updateTimeSeconds";
   public static final String ORDER_SIZE_PERCENT = "orderSizePercent";
-  public static final String RISK_PER_TRADE_PERCENT = "riskPerTradePercent";
   public static final String STOP_LOSS_PERCENT = "stopLossPercent";
+  public static final String TAKE_PROFIT_PERCENT = "takeProfitPercent";
 
   private static final int DEFAULT_TIME_PERIOD = 20;
   private static final int MIN_TIME_PERIOD = 1;
@@ -40,9 +40,9 @@ public abstract class TradingAlgorithm {
               AlgorithmSettingDefinition.requiredNumber(
                   ORDER_SIZE_PERCENT, "Each buy spends (% of cash)", "100", "0.01", "100"),
               AlgorithmSettingDefinition.optionalNumber(
-                  RISK_PER_TRADE_PERCENT, "Risk per trade (% of portfolio)", "0.01", "100"),
+                  STOP_LOSS_PERCENT, "Stop loss (% below the entry)", "0.01", "99"),
               AlgorithmSettingDefinition.optionalNumber(
-                  STOP_LOSS_PERCENT, "Stop loss (% below the buy)", "0.01", "99")));
+                  TAKE_PROFIT_PERCENT, "Take profit (% above the entry)", "0.01", "100")));
 
   private final AlgorithmType type;
   private final String name;
@@ -104,8 +104,8 @@ public abstract class TradingAlgorithm {
             request.liveOnTick(),
             values.optionalWholeNumber(UPDATE_TIME_SECONDS),
             values.value(ORDER_SIZE_PERCENT),
-            values.optionalValue(RISK_PER_TRADE_PERCENT),
             values.optionalValue(STOP_LOSS_PERCENT),
+            values.optionalValue(TAKE_PROFIT_PERCENT),
             values.only(optionDefinitions.names()));
     checkSharedRules(settings);
     checkOptionRules(settings);
@@ -135,10 +135,6 @@ public abstract class TradingAlgorithm {
     if (!settings.liveOnTick() && settings.updateTimeSeconds().isEmpty()) {
       throw new InvalidAlgorithmSettingsException(
           "updateTimeSeconds is required when liveOnTick is off");
-    }
-    if (settings.riskPerTradePercent().isPresent() != settings.stopLossPercent().isPresent()) {
-      throw new InvalidAlgorithmSettingsException(
-          "riskPerTradePercent and stopLossPercent are set together");
     }
   }
 }

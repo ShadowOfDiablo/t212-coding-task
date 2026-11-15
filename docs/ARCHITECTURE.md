@@ -636,7 +636,7 @@ flowchart LR
     Price["every evaluated price"] -- "MAE / MFE" --> Tracker
     Tracker -- "buy: add coins and cost<br/>sell: take out at average cost" --> Store["PositionStore"]
     Store --> Db[("position")]
-    Db --> Api["GET /runs/{id}/positions/worst"]
+    Db --> Api["GET /runs/{id}/positions<br/>GET /runs/{id}/positions/worst"]
 ```
 
 - **`position`** (table in §11): from the first buy while flat until the last coin is sold. One position is open per bot at a time. `PositionTracker` keeps the coins held and their cost in memory; the table stores the position's cost, realised P&L, MAE and MFE.
@@ -651,7 +651,7 @@ flowchart LR
   - If the write fails, the order still happened: it is logged with its exchange order id and the tracker keeps the position in memory.
 - **A live settings change** starts a new run (§16.4). The open position carries over and stays with the run it opened in.
 - **Not kept:** a live bot starts flat. A position left open by a stop or a restart is not loaded again; the coins stay in the account. Per-sell trades are not stored; the executed orders in `orders` are the record.
-- **API:** `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L, with MAE, MFE and duration.
+- **API:** `GET /api/brokers/{broker}/runs/{id}/positions`: every position of the run, open ones included, the newest first (the dashboard's Trades view). `GET /api/brokers/{broker}/runs/{id}/positions/worst?limit=10`: the run's closed positions with the lowest realised P&L. Both carry MAE, MFE and duration.
 - **Money:** all amounts and quantities are `BigDecimal` / `numeric`.
 
 ## 9. Bot and run lifecycle (planned)
@@ -810,6 +810,7 @@ erDiagram
         int buy_count
         int sell_count
         int stop_loss_count
+        int take_profit_count
         int refused_order_count
         text failure_reason
     }
@@ -925,6 +926,7 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | GET | `/runs/{id}/portfolio` | Current cash, positions and total value |
 | GET | `/runs/{id}/portfolio/history` | Portfolio value over time |
 | GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
+| GET | `/runs/{id}/positions` | Every position of the run, the newest first (§8) |
 | GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration (§8) |
 | GET | `/runs/{id}/positions/{positionId}/chart` | The price path around one position, with the entry, exit, MAE and MFE marked |
 | GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading |
@@ -1008,7 +1010,8 @@ com.tihomir.t212.tradingbot
 ├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmType, AlgorithmStore,
 │   │                AlgorithmRegistryService, SignalGenerator, TradingSignal, SimpleMovingAverageAlgorithm
 │   └── indicator    SimpleMovingAverage
-├── bot              TradingBotService, TrainingService, AlgorithmRunStore, RunStatus
+├── bot              TradingBotService, TrainingService, TrainingLock, AlgorithmRunStore, RunStatus, SettingsSource,
+│                    TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange, TuningTrial, TuningResult
 ├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
 ├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
 │                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
@@ -1202,7 +1205,7 @@ classDiagram
         algorithmType, timePeriod, timeframe
         liveOnTick, updateTimeSeconds (optional)
         orderSizePercent
-        riskPerTradePercent, stopLossPercent (optional)
+        stopLossPercent, takeProfitPercent (optional)
         options (the algorithm's own, optional)
     }
     class AlgorithmStore {
@@ -1233,7 +1236,8 @@ classDiagram
 | `liveOnTick` | yes | Live: run on every price update |
 | `updateTimeSeconds` | only when `liveOnTick` is false | Live: run every this many seconds. `null` when `liveOnTick` is true |
 | `orderSizePercent` | yes | Share of the cash a buy spends |
-| `riskPerTradePercent`, `stopLossPercent` | optional, together | Cap each buy so the stop loses at most this share of the portfolio, and sell at the stop |
+| `stopLossPercent` | optional | Sell everything once the price falls this far below the average entry price |
+| `takeProfitPercent` | optional | Sell everything once the price rises this far above the average entry price |
 
 - **Adding an algorithm** takes two things:
   1. a value in `AlgorithmType`, and its number in the exhaustive `switch` of `AlgorithmRepository`
@@ -1260,9 +1264,12 @@ flowchart TD
 ```
 
 - **The checker sees every order before it is placed.** Each optional check is skipped when its setting is `null`.
-  - **BUY:** spends `orderSizePercent` of the cash. With risk set, the amount is capped so that a fall to the stop costs at most `riskPerTradePercent` of the portfolio value. Refused with `INSUFFICIENT_FUNDS`, or `BELOW_MIN_ORDER_VALUE` (under the exchange's minimum, a named constant for now).
+  - **BUY:** spends exactly `orderSizePercent` of the free cash, rounded down to the lot step. Refused with `INSUFFICIENT_FUNDS`, or `BELOW_MIN_ORDER_VALUE` (under the exchange's minimum, a named constant for now).
   - **SELL:** sells the whole position. Refused with `NO_POSITION` when nothing is held.
-  - **Stop loss:** sits `stopLossPercent` below the buy price. A price at or below it forces a sell.
+  - **Stop loss:** entry price × (1 − `stopLossPercent`). A price at or below it forces a sell of everything.
+  - **Take profit:** entry price × (1 + `takeProfitPercent`). A price at or above it forces a sell of everything. Training checks it on the candle high; a candle that opens above it fills at its open.
+  - **Both in one candle (training):** the stop loss is checked first and wins, the worse outcome, so a backtest never looks better than it could have been.
+  - Stop-loss and take-profit sells are counted on their own (`stop_loss_count`, `take_profit_count`) and also as sells.
 - **`AccountView`** provides cash, base quantity and entry price. Training reads the virtual account; trading reads the cached Binance balances (§7.2).
 - **`VirtualTradingGateway`** implements the same `ExchangeTradingGateway` as Binance and follows the same rules. That is the swap: training never sends an order to Binance.
   - **Same rules:** training reads the ticker's `TickerTradingRules` (lot step, minimum order value) from Binance before the run is recorded, and gives them to the virtual gateway. Both gateways round base quantities down with `TickerTradingRules.roundDownToLotStep`.
@@ -1288,6 +1295,7 @@ erDiagram
         text ticker
         bigint algorithm_id "FK to algorithm.id"
         text status "STARTED, COMPLETED, STOPPED, FAILED"
+        settings_source settings_source "MANUAL or AUTOMATIC"
         timestamptz started_at
         timestamptz finished_at "NULL while running"
         timestamptz from_time "training only"
@@ -1297,6 +1305,7 @@ erDiagram
         int buy_count
         int sell_count
         int stop_loss_count
+        int take_profit_count
         int refused_order_count
         text failure_reason
     }
@@ -1325,6 +1334,7 @@ erDiagram
 - **Identical variants are stored once:**
   - The JSON is written in one fixed form: keys sorted, numbers plain without trailing zeros (`1.00` is `1`), empty optional settings left out.
   - So identical settings give identical text, and saving looks for a row with the same type, timeframe and text. A match is reused; otherwise a row is inserted. `UNIQUE (algorithm_type, timeframe, settings)` backs this up.
+- **Settings source:** `algorithm_run.settings_source` says who chose the variant: `MANUAL` (the user, in a training or live run) or `AUTOMATIC` (the tuner, §16.7). Rows from before the column read as `MANUAL`.
 - **A run uses one variant** (`algorithm_run.algorithm_id`). The database is written twice:
   - **Start:** the run row (`STARTED`). A live run also sets its ticker's `active_algorithm`, in the same transaction.
   - **End:** status, counts, final value and points, in one transaction. The status is `COMPLETED`, `STOPPED` (stopped on request, or interrupted by a restart) or `FAILED` (with its reason).
@@ -1398,7 +1408,7 @@ stateDiagram-v2
 
   It takes effect from the next evaluation. If any step before 5 fails, the bot keeps its run and settings.
 - **Request bodies use nested `@Valid`:**
-  - `AlgorithmSettingsBody`: `updateTimeSeconds` must be `null` exactly when `liveOnTick` is true, and risk and stop must be set together.
+  - `AlgorithmSettingsBody`: `updateTimeSeconds` must be `null` exactly when `liveOnTick` is true.
   - `TrainingRunRequestBody(@Valid CandleRangeBody candles, @Valid AlgorithmSettingsBody settings, startingBalance)`.
   - `LiveRunRequestBody(ticker, @Valid AlgorithmSettingsBody settings)`.
 
@@ -1406,9 +1416,67 @@ stateDiagram-v2
 |---|---|---|
 | GET | `/algorithms` | Algorithms and their setting definitions |
 | POST | `/brokers/{broker}/training/runs` | Run a training (409 outside `TRAINING` or while one runs) |
-| GET | `/brokers/{broker}/training` | `running` while a training run goes on |
+| POST | `/brokers/{broker}/training/tunings` | Tune settings automatically and record the best one as a training run (§16.7). Same 409s as a training run |
+| GET | `/brokers/{broker}/training` | `running` while a training run or a tuning goes on; `tuningProgressPercent` while a tuning runs |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
 | GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
+
+### 16.7 Automatic tuning (planned)
+
+The tuner finds good settings for one algorithm on one ticker by itself. It runs many training replays in memory, each with other settings, and keeps the one with the best return. Only that one is recorded, as a normal training run with `settings_source = AUTOMATIC`. The tries themselves are never stored.
+
+```mermaid
+flowchart TD
+    Ui["POST /brokers/{broker}/training/tunings"] --> Tune["TuningService"]
+    Tune -- "getCandles once, from .. to" --> Hist["CandleHistoryService"]
+    Tune --> Split["split at checkFrom:<br/>tune part | check part"]
+    Split --> Loop{"tries left?"}
+    Loop -- yes --> Sampler["TpeSampler<br/>next settings"]
+    Sampler --> Replay["TrainingReplay on the tune part<br/>fresh virtual account, in memory"]
+    Replay -- "return" --> Sampler
+    Replay --> Loop
+    Loop -- no --> Best["best try"]
+    Best --> Record["TrainingService<br/>one recorded run on the check part,<br/>AUTOMATIC"]
+    Record --> Db[("algorithm, algorithm_run,<br/>positions, points")]
+```
+
+- **Request:** broker, ticker, `from`, `checkFrom`, `to`, the base settings, the free settings with their own minimum and maximum, the number of tries (at most 200), the starting balance.
+- **Repeatable:** the random seed of the tries is derived from the request (`TuningRequest.getSeed`), so the same tuning always tries the same settings and finds the same best. A different range, setting or number of tries searches anew. The request has no seed of its own.
+  - Free settings can be `timePeriod`, `timeframe` (a list of allowed codes), `orderSizePercent`, `stopLossPercent` and `takeProfitPercent`. Each optional setting is also tried on and off. Every other setting keeps its base value.
+  - `liveOnTick` and `updateTimeSeconds` are never free: training runs once per candle anyway.
+  - Each free range must lie inside the setting's definition range (§16.2), with whole-number bounds for a whole-number setting. The body is checked with `@Valid`, the ranges against the algorithm's definitions; both before any try runs (400).
+  - **Candles are read once per timeframe** for the tune range. A timeframe whose candles can't be read fails its later tries without asking again.
+- **Tune and check:** the tries are scored on `[from, checkFrom)`. The best try is replayed once on `[checkFrom, to)`, data it has never seen, and that replay is the recorded run. A big gap between the two returns means the settings were overfitted.
+- **Score:** the return of a replay, `(final value − starting balance) / starting balance`.
+- **Method: TPE (Tree-structured Parzen Estimator),** a kind of Bayesian optimization:
+  1. The first 10 tries draw every free setting at random within its range.
+  2. After that, the tries are sorted by score. The top 20% are *good*, the rest *bad*.
+  3. For each free setting on its own, two densities are built: l from its values in the good tries, g from its values in the bad tries. Numbers use a Gaussian bump around each value; whole numbers are rounded; the timeframe and the stop pair's on/off use counted frequencies plus one.
+  4. 24 candidates are drawn from l, and the one with the highest l / g is the next try.
+- **Failures:** a try whose settings `resolveSettings` refuses, or whose replay throws, is logged with its settings, scored as the worst, and the next try goes on. If no try succeeds, nothing is recorded and the request fails with 422.
+- **One at a time:** tuning and training share one flag, so neither starts while the other runs (409). Tuning answers when it is done, like a training run; moving both to a background thread is planned.
+- **Answer:** 201 with the recorded run (as `GET /runs/{id}`), the best try's tune return, the number of tries run, and `baseRun`: the request's own settings replayed on the same check range, **in memory only**, for the comparison. If that replay fails, `baseRun` is empty and the tuned run still stands.
+- **Progress:** `GET /brokers/{broker}/training` carries `tuningProgressPercent` (tries done / tries asked) while a tuning runs, and nothing otherwise.
+
+#### Dashboard
+
+```mermaid
+sequenceDiagram
+    participant U as Training panel
+    participant B as Backend
+    U->>B: POST /training/tunings (checkFrom = from + tune share of the range)
+    loop every second while the POST runs
+        U->>B: GET /training
+        B-->>U: tuningProgressPercent
+    end
+    B-->>U: 201 tuned run + baseRun
+    U->>U: put the tuned settings into the form, show old vs tuned
+```
+
+- **A blue round checkbox beside each setting** in the training form, and beside the timeframe: filled means the tuner may change it. The user never picks a range; a ticked setting is searched over its whole definition range, and a ticked timeframe over every candle size. The live bot's form has no circles.
+- **Tune automatically** below the form holds **Tune on the first (% of the range)** (default 70) and **Tries** (default 50).
+- While it runs, every field and both buttons are disabled, and the panel shows "Tuning in progress. Currently X% done, please wait" over a progress bar that moves smoothly between polls.
+- When it ends, the tuned settings replace the form's settings, and the result card shows **old vs tuned**: final value, return and buys/sells of both on the check range, and one chart with the tuned line and the old settings dashed.

@@ -16,6 +16,7 @@ import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
+import com.tihomir.t212.tradingbot.bot.NoSuccessfulTuningTrialException;
 import com.tihomir.t212.tradingbot.bot.PortfolioPoint;
 import com.tihomir.t212.tradingbot.bot.PortfolioPointList;
 import com.tihomir.t212.tradingbot.bot.RecordedRun;
@@ -23,9 +24,15 @@ import com.tihomir.t212.tradingbot.bot.RunCounts;
 import com.tihomir.t212.tradingbot.bot.RunDetails;
 import com.tihomir.t212.tradingbot.bot.RunNotFoundException;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.TrainingRunRequest;
 import com.tihomir.t212.tradingbot.bot.TrainingService;
+import com.tihomir.t212.tradingbot.bot.TunedSettingRange;
+import com.tihomir.t212.tradingbot.bot.TuningRequest;
+import com.tihomir.t212.tradingbot.bot.TuningResult;
+import com.tihomir.t212.tradingbot.bot.TuningService;
+import com.tihomir.t212.tradingbot.bot.UnrecordedRun;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.position.Position;
@@ -56,13 +63,28 @@ class RunControllerTest {
                    "to": "2020-02-01T00:00:00Z"},
        "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "5m",
                     "liveOnTick": true, "timePeriod": 20,
-                    "riskPerTradePercent": 3, "stopLossPercent": 2},
+                    "stopLossPercent": 2, "takeProfitPercent": 3},
        "startingBalance": 1000}
+      """;
+
+  private static final String TUNINGS = "/api/brokers/binance/training/tunings";
+  private static final String TUNING_BODY =
+      """
+      {"candles": {"ticker": "BTCUSDT", "from": "2020-01-01T00:00:00Z",
+                   "to": "2020-02-01T00:00:00Z"},
+       "checkFrom": "2020-01-20T00:00:00Z",
+       "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "5m",
+                    "liveOnTick": true},
+       "startingBalance": 1000,
+       "settingRanges": [{"name": "timePeriod", "minimum": 5, "maximum": 300}],
+       "timeframes": ["5m", "1h"],
+       "maxTrials": 50}
       """;
 
   @Autowired MockMvc mockMvc;
 
   @MockitoBean TrainingService trainingService;
+  @MockitoBean TuningService tuningService;
   @MockitoBean AlgorithmRunService runService;
 
   @Test
@@ -79,7 +101,7 @@ class RunControllerTest {
         .andExpect(jsonPath("$.run.algorithmId").value(1))
         .andExpect(jsonPath("$.settings.algorithmType").value("SIMPLE_MOVING_AVERAGE"))
         .andExpect(jsonPath("$.settings.timePeriod").value(20))
-        .andExpect(jsonPath("$.settings.riskPerTradePercent").isEmpty())
+        .andExpect(jsonPath("$.settings.takeProfitPercent").isEmpty())
         .andExpect(jsonPath("$.points[0].value").value(1000));
 
     ArgumentCaptor<TrainingRunRequest> request = ArgumentCaptor.forClass(TrainingRunRequest.class);
@@ -87,18 +109,21 @@ class RunControllerTest {
     assertThat(request.getValue().settings().values())
         .containsEntry(TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(20))
         .containsEntry(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.valueOf(2))
+        .containsEntry(TradingAlgorithm.TAKE_PROFIT_PERCENT, BigDecimal.valueOf(3))
         .doesNotContainKey(TradingAlgorithm.ORDER_SIZE_PERCENT);
   }
 
   @Test
   void checksTheNestedBodiesWithValid() throws Exception {
     String endsBeforeItStarts = RUN_BODY.replace("2020-02-01", "2019-02-01");
-    String riskWithoutStop = RUN_BODY.replace(", \"stopLossPercent\": 2", "");
+    String takeProfitTooHigh =
+        RUN_BODY.replace("\"takeProfitPercent\": 3", "\"takeProfitPercent\": 101");
     String timerWithoutTime = RUN_BODY.replace("\"liveOnTick\": true", "\"liveOnTick\": false");
     String blankTicker = RUN_BODY.replace("\"ticker\": \"BTCUSDT\"", "\"ticker\": \"\"");
 
     expectBadRequest(endsBeforeItStarts, "from must be before to");
-    expectBadRequest(riskWithoutStop, "riskPerTradePercent and stopLossPercent are set together");
+    expectBadRequest(
+        takeProfitTooHigh, "settings.takeProfitPercent must be less than or equal to 100");
     expectBadRequest(timerWithoutTime, "updateTimeSeconds is set exactly when liveOnTick is off");
     expectBadRequest(blankTicker, "candles.ticker must not be blank");
     verifyNoInteractions(trainingService);
@@ -117,13 +142,81 @@ class RunControllerTest {
   }
 
   @Test
+  void tunesAndAnswersWithTheRecordedRunAndTheTuneReturn() throws Exception {
+    when(tuningService.runTuning(any(TuningRequest.class)))
+        .thenReturn(
+            new TuningResult(
+                7,
+                new BigDecimal("9.8"),
+                50,
+                Optional.of(
+                    new UnrecordedRun(
+                        new BigDecimal("1005"), RunCounts.NONE, PortfolioPointList.NONE))));
+    when(runService.getRun("binance", 7)).thenReturn(details());
+
+    mockMvc
+        .perform(post(TUNINGS).contentType(MediaType.APPLICATION_JSON).content(TUNING_BODY))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.run.run.id").value(7))
+        .andExpect(jsonPath("$.run.run.settingsSource").value("MANUAL"))
+        .andExpect(jsonPath("$.bestTuneReturnPercent").value(9.8))
+        .andExpect(jsonPath("$.baseRun.finalValue").value(1005))
+        .andExpect(jsonPath("$.trialCount").value(50));
+
+    ArgumentCaptor<TuningRequest> request = ArgumentCaptor.forClass(TuningRequest.class);
+    verify(tuningService).runTuning(request.capture());
+    assertThat(request.getValue().checkFrom()).isEqualTo(Instant.parse("2020-01-20T00:00:00Z"));
+    assertThat(request.getValue().settingRanges())
+        .containsExactly(
+            new TunedSettingRange(
+                TradingAlgorithm.TIME_PERIOD, BigDecimal.valueOf(5), BigDecimal.valueOf(300)));
+    assertThat(request.getValue().timeframes())
+        .containsExactly(CandleInterval.FIVE_MINUTES, CandleInterval.ONE_HOUR);
+  }
+
+  @Test
+  void checksTheTuningBodyAndAnswers422WhenNoTrySucceeded() throws Exception {
+    String checkAfterTheEnd = TUNING_BODY.replace("2020-01-20", "2020-03-01");
+    String tooManyTrials = TUNING_BODY.replace("\"maxTrials\": 50", "\"maxTrials\": 201");
+    String rangeUpsideDown = TUNING_BODY.replace("\"maximum\": 300", "\"maximum\": 1");
+    expectBadTuningRequest(
+        checkAfterTheEnd, "checkFrom must lie after candles.from and before candles.to");
+    expectBadTuningRequest(tooManyTrials, "maxTrials must be less than or equal to 200");
+    expectBadTuningRequest(rangeUpsideDown, "a tuned setting's minimum is at most its maximum");
+    verifyNoInteractions(tuningService);
+
+    when(tuningService.runTuning(any(TuningRequest.class)))
+        .thenThrow(new NoSuccessfulTuningTrialException(50));
+    mockMvc
+        .perform(post(TUNINGS).contentType(MediaType.APPLICATION_JSON).content(TUNING_BODY))
+        .andExpect(status().isUnprocessableContent());
+  }
+
+  @Test
   void tellsWhetherTheSettingsCanBeEdited() throws Exception {
     when(trainingService.isTrainingRunning()).thenReturn(true);
+    when(tuningService.progressPercent()).thenReturn(Optional.of(40));
 
     mockMvc
         .perform(get("/api/brokers/binance/training"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.running").value(true));
+        .andExpect(jsonPath("$.running").value(true))
+        .andExpect(jsonPath("$.tuningProgressPercent").value(40));
+  }
+
+  @Test
+  void answersWithEveryPositionOfARunAndNotFoundForAnUnknownRun() throws Exception {
+    when(runService.getPositions("binance", 7))
+        .thenReturn(new StoredPositionList(List.of(new StoredPosition(11, closedPosition()))));
+    when(runService.getPositions("binance", 8)).thenThrow(new RunNotFoundException(8));
+
+    mockMvc
+        .perform(get(RUNS + "/7/positions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.positions[0].id").value(11))
+        .andExpect(jsonPath("$.positions[0].status").value("CLOSED"))
+        .andExpect(jsonPath("$.positions[0].realisedPnl").value(-5));
+    mockMvc.perform(get(RUNS + "/8/positions")).andExpect(status().isNotFound());
   }
 
   @Test
@@ -176,6 +269,13 @@ class RunControllerTest {
         .andExpect(jsonPath("$.detail").value(containsString(message)));
   }
 
+  private void expectBadTuningRequest(String body, String message) throws Exception {
+    mockMvc
+        .perform(post(TUNINGS).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail").value(containsString(message)));
+  }
+
   private static RunDetails details() {
     RecordedRun run =
         new RecordedRun(
@@ -184,6 +284,7 @@ class RunControllerTest {
             "binance",
             "BTCUSDT",
             1,
+            SettingsSource.MANUAL,
             RunStatus.COMPLETED,
             FROM,
             Optional.empty(),

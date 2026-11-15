@@ -2,11 +2,13 @@ package com.tihomir.t212.tradingbot.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.bot.RunStart;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
@@ -106,6 +108,19 @@ class PositionRepositoryTest {
   }
 
   @Test
+  void listsEveryPositionOfTheRunNewestFirst() {
+    repository.savePosition(write(runId, FIRST_BUY, PositionStatus.CLOSED, LOSS));
+    repository.savePosition(write(runId, SECOND_BUY, PositionStatus.OPEN, NO_PNL));
+
+    assertThat(repository.getPositions(runId).positions())
+        .extracting(StoredPosition::position)
+        .extracting(Position::openedAt, Position::status)
+        .containsExactly(
+            tuple(SECOND_BUY, PositionStatus.OPEN), tuple(FIRST_BUY, PositionStatus.CLOSED));
+    assertThat(repository.getPositions(MISSING_RUN_ID).positions()).isEmpty();
+  }
+
+  @Test
   void refusesAPositionOfAMissingRun() {
     assertThatThrownBy(() ->
             repository.savePosition(write(MISSING_RUN_ID, FIRST_BUY, PositionStatus.OPEN, NO_PNL)))
@@ -146,7 +161,8 @@ class PositionRepositoryTest {
         Optional.empty(),
         Optional.empty(),
         STARTING_VALUE,
-        algorithmId);
+        algorithmId,
+        SettingsSource.MANUAL);
   }
 
   private static AlgorithmSettings settings() {

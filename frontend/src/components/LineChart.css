@@ -69,3 +69,11 @@
   padding: 48px 0;
   text-align: center;
 }
+
+.chart-line-compare {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  stroke-linejoin: round;
+}

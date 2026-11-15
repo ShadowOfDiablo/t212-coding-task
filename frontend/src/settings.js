@@ -13,8 +13,8 @@ const SHARED_SETTINGS = [
   'timePeriod',
   UPDATE_TIME_SECONDS,
   'orderSizePercent',
-  'riskPerTradePercent',
   'stopLossPercent',
+  'takeProfitPercent',
 ]
 
 const asText = (value) => (value == null ? '' : String(value))
@@ -61,8 +61,8 @@ export function settingsToBody(form) {
     timePeriod: number('timePeriod'),
     updateTimeSeconds: form.liveOnTick ? null : number(UPDATE_TIME_SECONDS),
     orderSizePercent: number('orderSizePercent'),
-    riskPerTradePercent: number('riskPerTradePercent'),
     stopLossPercent: number('stopLossPercent'),
+    takeProfitPercent: number('takeProfitPercent'),
     options,
   }
 }

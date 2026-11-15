@@ -1,15 +1,39 @@
 import './Panels.css'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api.js'
-import { defaultSettings, settingsToBody } from '../settings.js'
+import { defaultSettings, settingsFromResponse, settingsToBody } from '../settings.js'
+import {
+  checkFromInstant,
+  defaultTuning,
+  hasAnythingToTune,
+  isTuned,
+  tuningToBody,
+  withDefaults,
+  withTuned,
+} from '../tuning.js'
 import { RunDetails } from './RunDetails.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
+import { TuningComparison } from './TuningComparison.jsx'
+import { TuningFields } from './TuningFields.jsx'
+import { TuningProgress } from './TuningProgress.jsx'
 
 const DEFAULT_FROM = '2021-01-01T00:00'
 const DEFAULT_TO = '2021-02-01T00:00'
 const DEFAULT_BALANCE = '10000'
+const PROGRESS_POLL_MS = 1000
+const DONE_PERCENT = 100
 
 const toInstant = (localDateTime) => `${localDateTime}:00Z`
+
+function statusText(running, tuning) {
+  if (tuning) {
+    return 'Tuning…'
+  }
+  if (running) {
+    return 'Running…'
+  }
+  return 'Settings editable'
+}
 
 export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
   const [ticker, setTicker] = useState('')
@@ -17,23 +41,57 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
   const [to, setTo] = useState(DEFAULT_TO)
   const [balance, setBalance] = useState(DEFAULT_BALANCE)
   const [draft, setDraft] = useState(null)
+  const [tuningDraft, setTuningDraft] = useState(null)
   const [running, setRunning] = useState(false)
+  const [tuning, setTuning] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const [tuningResult, setTuningResult] = useState(null)
 
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const form = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
+  const algorithm = algorithms?.find((candidate) => candidate.type === form?.algorithmType)
+  const tuningForm =
+    tuningDraft?.algorithmType === form?.algorithmType ? tuningDraft : algorithm && defaultTuning(algorithm)
+  const busy = running || tuning
+  const canStart = !busy && mode === 'TRAINING' && form && chosenTicker
+  const tuningControls = tuningForm && {
+    isTuned: (name) => isTuned(tuningForm, name),
+    onToggle: (name, checked) => setTuningDraft(withTuned(tuningForm, name, checked)),
+    disabled: busy,
+  }
+
+  useEffect(() => {
+    if (!tuning) {
+      return undefined
+    }
+    const timer = setInterval(async () => {
+      try {
+        const status = await api.getTraining()
+        if (status.tuningProgressPercent != null) {
+          setProgress(status.tuningProgressPercent)
+        }
+      } catch {
+        // The bar keeps its last value; the tuning request itself reports failures.
+      }
+    }, PROGRESS_POLL_MS)
+    return () => clearInterval(timer)
+  }, [tuning])
+
+  const candles = () => ({ ticker: chosenTicker, from: toInstant(from), to: toInstant(to) })
 
   const runTraining = async () => {
     setRunning(true)
     setError(null)
     try {
       const details = await api.runTraining({
-        candles: { ticker: chosenTicker, from: toInstant(from), to: toInstant(to) },
+        candles: candles(),
         settings: settingsToBody(form),
         startingBalance: Number(balance),
       })
       setResult(details)
+      setTuningResult(null)
       onRunRecorded()
     } catch (failure) {
       setError(failure)
@@ -42,19 +100,42 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
     }
   }
 
+  const runTuning = async () => {
+    setTuning(true)
+    setProgress(0)
+    setError(null)
+    const oldSettings = withDefaults(settingsToBody(form), algorithm)
+    try {
+      const tuned = await api.runTuning({
+        candles: candles(),
+        checkFrom: checkFromInstant(toInstant(from), toInstant(to), tuningForm.tuneSharePercent),
+        settings: settingsToBody(form),
+        startingBalance: Number(balance),
+        ...tuningToBody(tuningForm, algorithm),
+      })
+      setProgress(DONE_PERCENT)
+      setDraft(settingsFromResponse(tuned.run.settings))
+      setTuningResult({ tuned, oldSettings })
+      setResult(null)
+      onRunRecorded()
+    } catch (failure) {
+      setError(failure)
+    } finally {
+      setTuning(false)
+    }
+  }
+
   return (
     <div className="panel-grid">
       <section className="card">
         <div className="card-head">
           <h2>Training</h2>
-          <span className={`pill ${running ? 'pill-on' : ''}`}>
-            {running ? 'Running…' : 'Settings editable'}
-          </span>
+          <span className={`pill ${busy ? 'pill-on' : ''}`}>{statusText(running, tuning)}</span>
         </div>
         {mode !== 'TRAINING' && (
           <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
         )}
-        <fieldset className="date-fields" disabled={running}>
+        <fieldset className="date-fields" disabled={busy}>
           <label className="field">
             <span className="field-label">Ticker</span>
             <select value={chosenTicker} onChange={(event) => setTicker(event.target.value)}>
@@ -83,7 +164,14 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
             />
           </label>
         </fieldset>
-        <SettingsForm algorithms={algorithms} value={form} onChange={setDraft} disabled={running} />
+        <SettingsForm
+          algorithms={algorithms}
+          value={form}
+          onChange={setDraft}
+          disabled={busy}
+          tuning={tuningControls}
+        />
+        <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
         {error && (
           <p className="form-error" role="alert">
             {error.message}
@@ -93,23 +181,36 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           <button
             type="button"
             className="button button-primary"
-            disabled={running || mode !== 'TRAINING' || !form || !chosenTicker}
+            disabled={!canStart}
             onClick={runTraining}
           >
             {running ? 'Running…' : 'Run training'}
           </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!canStart || !tuningForm || !hasAnythingToTune(tuningForm)}
+            onClick={runTuning}
+          >
+            {tuning ? 'Tuning…' : 'Tune settings'}
+          </button>
           <span className="muted small">Missing candles are downloaded first, then stored.</span>
         </div>
+        {tuning && <TuningProgress percent={progress} />}
       </section>
       <section className="card">
         <div className="card-head">
-          <h2>Result</h2>
+          <h2>{tuningResult ? 'Old vs tuned settings' : 'Result'}</h2>
           <span className="muted small">portfolio value, USDT</span>
         </div>
-        {result ? (
-          <RunDetails details={result} />
-        ) : (
-          <p className="empty chart-empty">Run a training to see how the algorithm would have done.</p>
+        {tuningResult && (
+          <TuningComparison tuning={tuningResult.tuned} oldSettings={tuningResult.oldSettings} />
+        )}
+        {!tuningResult && result && <RunDetails details={result} />}
+        {!tuningResult && !result && (
+          <p className="empty chart-empty">
+            Run a training to see how the algorithm would have done, or tune its settings.
+          </p>
         )}
       </section>
     </div>

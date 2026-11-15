@@ -1,14 +1,38 @@
 import './SettingsForm.css'
+import { useId } from 'react'
 import { defaultSettings, TIMEFRAMES, UPDATE_TIME_SECONDS } from '../settings.js'
+import { TuneToggle } from './TuneToggle.jsx'
 
-function SettingField({ definition, value, disabled, onChange }) {
+const TIMEFRAME = 'timeframe'
+
+function FieldLabel({ inputId, label, tuning, name }) {
+  return (
+    <span className="field-label-row">
+      <label className="field-label" htmlFor={inputId}>
+        {label}
+      </label>
+      {tuning && (
+        <TuneToggle
+          label={label}
+          checked={tuning.isTuned(name)}
+          disabled={tuning.disabled}
+          onChange={(checked) => tuning.onToggle(name, checked)}
+        />
+      )}
+    </span>
+  )
+}
+
+function SettingField({ definition, value, disabled, onChange, tuning }) {
+  const inputId = useId()
   const hint = definition.required
     ? `Required · ${definition.minimum}–${definition.maximum}`
     : `Optional, empty = off · ${definition.minimum}–${definition.maximum}`
   return (
-    <label className="field">
-      <span className="field-label">{definition.label}</span>
+    <div className="field">
+      <FieldLabel inputId={inputId} label={definition.label} tuning={tuning} name={definition.name} />
       <input
+        id={inputId}
         type="number"
         inputMode="decimal"
         step={definition.wholeNumber ? 1 : 'any'}
@@ -20,15 +44,17 @@ function SettingField({ definition, value, disabled, onChange }) {
         onChange={(event) => onChange(definition.name, event.target.value)}
       />
       <span className="field-hint">{hint}</span>
-    </label>
+    </div>
   )
 }
 
 /**
  * The settings of an algorithm, built from its setting definitions. `value` is the form state
- * (see settings.js); every change is passed up whole through `onChange`.
+ * (see settings.js); every change is passed up whole through `onChange`. With `tuning`
+ * ({ isTuned, onToggle, disabled }), each tunable setting gets a round checkbox beside its label.
  */
-export function SettingsForm({ algorithms, value, onChange, disabled = false }) {
+export function SettingsForm({ algorithms, value, onChange, disabled = false, tuning = null }) {
+  const timeframeId = useId()
   if (!algorithms || !value) {
     return [0, 1, 2].map((row) => <p key={row} className="skeleton skeleton-line" />)
   }
@@ -39,6 +65,7 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
   const definitions = (algorithm?.settings ?? []).filter(
     (definition) => definition.name !== UPDATE_TIME_SECONDS || !value.liveOnTick,
   )
+  const tuningFor = (definition) => (definition.name === UPDATE_TIME_SECONDS ? null : tuning)
 
   return (
     <fieldset className="settings-form" disabled={disabled}>
@@ -53,9 +80,10 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
         </select>
         <span className="field-hint">{algorithm?.name}</span>
       </label>
-      <label className="field">
-        <span className="field-label">Timeframe</span>
+      <div className="field">
+        <FieldLabel inputId={timeframeId} label="Timeframe" tuning={tuning} name={TIMEFRAME} />
         <select
+          id={timeframeId}
           value={value.timeframe}
           onChange={(event) => onChange({ ...value, timeframe: event.target.value })}
         >
@@ -66,7 +94,7 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
           ))}
         </select>
         <span className="field-hint">Candle size</span>
-      </label>
+      </div>
       <label className="field field-check">
         <input
           type="checkbox"
@@ -85,6 +113,7 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false }) 
           value={value.values[definition.name]}
           disabled={disabled}
           onChange={setValue}
+          tuning={tuningFor(definition)}
         />
       ))}
     </fieldset>

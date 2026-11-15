@@ -130,7 +130,7 @@ class BotControllerTest {
             Optional.empty(),
             AlgorithmSettingValues.NONE),
         3,
-        new RunCounts(1, 0, 0, 0),
+        new RunCounts(1, 0, 0, 0, 0),
         PortfolioPointList.NONE);
   }
 }

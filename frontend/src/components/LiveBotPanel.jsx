@@ -13,6 +13,7 @@ function Counts({ bot }) {
     ['Buys', bot.buyCount],
     ['Sells', bot.sellCount],
     ['Stop-loss sells', bot.stopLossCount],
+    ['Take-profit sells', bot.takeProfitCount],
     ['Refused', bot.refusedOrderCount],
   ]
   return (

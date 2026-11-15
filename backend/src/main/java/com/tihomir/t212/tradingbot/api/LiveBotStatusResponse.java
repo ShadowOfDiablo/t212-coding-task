@@ -13,6 +13,7 @@ public record LiveBotStatusResponse(
     int buyCount,
     int sellCount,
     int stopLossCount,
+    int takeProfitCount,
     int refusedOrderCount,
     List<PortfolioPointResponse> points) {
 
@@ -22,6 +23,7 @@ public record LiveBotStatusResponse(
           Optional.empty(),
           Optional.empty(),
           Optional.empty(),
+          0,
           0,
           0,
           0,
@@ -41,6 +43,7 @@ public record LiveBotStatusResponse(
         status.counts().buyCount(),
         status.counts().sellCount(),
         status.counts().stopLossCount(),
+        status.counts().takeProfitCount(),
         status.counts().refusedOrderCount(),
         status.points().points().stream().map(PortfolioPointResponse::of).toList());
   }

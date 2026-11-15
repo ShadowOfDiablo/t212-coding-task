@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.bot.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.RunStatus;
+import com.tihomir.t212.tradingbot.bot.SettingsSource;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,6 +14,7 @@ public record RecordedRunResponse(
     String broker,
     String ticker,
     long algorithmId,
+    SettingsSource settingsSource,
     RunStatus status,
     Instant startedAt,
     Optional<Instant> finishedAt,
@@ -23,6 +25,7 @@ public record RecordedRunResponse(
     int buyCount,
     int sellCount,
     int stopLossCount,
+    int takeProfitCount,
     int refusedOrderCount,
     Optional<String> failureReason) {
 
@@ -33,6 +36,7 @@ public record RecordedRunResponse(
         run.broker(),
         run.ticker(),
         run.algorithmId(),
+        run.settingsSource(),
         run.status(),
         run.startedAt(),
         run.finishedAt(),
@@ -43,6 +47,7 @@ public record RecordedRunResponse(
         run.counts().buyCount(),
         run.counts().sellCount(),
         run.counts().stopLossCount(),
+        run.counts().takeProfitCount(),
         run.counts().refusedOrderCount(),
         run.failureReason());
   }

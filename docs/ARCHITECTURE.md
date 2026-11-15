@@ -1367,7 +1367,7 @@ flowchart LR
     Placer --> Orders["OrderService<br/>demo account"]
 ```
 
-### 16.6 Editing settings (`areParametersEditable`)
+### 16.6 Editing settings
 
 ```mermaid
 stateDiagram-v2
@@ -1386,9 +1386,9 @@ stateDiagram-v2
     }
 ```
 
-- **The status responses carry `areParametersEditable`:**
-  - Training: `false` while a run is executing, `true` otherwise.
-  - Live bot: `true` while it runs.
+- **Whether settings can be edited follows from the status, with no flag of its own:**
+  - Training: locked while `running` is true in `GET /training`.
+  - Live bot: editable while it runs, i.e. while `runId` is set in `GET /bot`.
 - **A saved live change:**
   1. Checks the values (`@Valid`, then `resolveSettings`).
   2. Rebuilds the signal generator, warmed up from the recent candles.
@@ -1406,9 +1406,9 @@ stateDiagram-v2
 |---|---|---|
 | GET | `/algorithms` | Algorithms and their setting definitions |
 | POST | `/brokers/{broker}/training/runs` | Run a training (409 outside `TRAINING` or while one runs) |
-| GET | `/brokers/{broker}/training` | `areParametersEditable`, and the running training run if there is one |
+| GET | `/brokers/{broker}/training` | `running` while a training run goes on |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
-| GET | `/brokers/{broker}/bot` | Live bot status, `currentParameters`, `areParametersEditable`, counts |
+| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |

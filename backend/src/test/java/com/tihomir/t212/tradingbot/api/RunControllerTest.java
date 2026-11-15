@@ -118,13 +118,12 @@ class RunControllerTest {
 
   @Test
   void tellsWhetherTheSettingsCanBeEdited() throws Exception {
-    when(trainingService.areParametersEditable()).thenReturn(false);
+    when(trainingService.isTrainingRunning()).thenReturn(true);
 
     mockMvc
         .perform(get("/api/brokers/binance/training"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.running").value(true))
-        .andExpect(jsonPath("$.areParametersEditable").value(false));
+        .andExpect(jsonPath("$.running").value(true));
   }
 
   @Test

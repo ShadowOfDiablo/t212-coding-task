@@ -228,7 +228,7 @@ curl -X POST localhost:8080/api/brokers/binance/training/runs -H "Content-Type: 
 - **Orders:** every signal goes through the order checks, then fills at the next candle's open with Binance's 0.1% fee.
 - **Recorded runs:** every run is stored with the settings it used at start and at the end. Identical settings are stored once.
   - `GET /api/brokers/binance/runs` and `GET /api/brokers/binance/runs/{id}`
-  - `GET /api/brokers/binance/training` tells whether a run is going (`areParametersEditable` is false while it does)
+  - `GET /api/brokers/binance/training` tells whether a run is going (`running` is true while it does)
 
 In `TRADING` mode a training run is refused with 409, and so is a second run while one is going.
 

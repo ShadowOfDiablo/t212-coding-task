@@ -88,9 +88,9 @@ public class TrainingService {
     }
   }
 
-  /** False while a training run goes on: its settings can't change until it ends. */
-  public boolean areParametersEditable() {
-    return !trainingRunning.get();
+  /** True while a training run goes on: its settings can't change until it ends. */
+  public boolean isTrainingRunning() {
+    return trainingRunning.get();
   }
 
   private long recordedTraining(TrainingSetup setup) {

@@ -41,8 +41,7 @@ public class RunController {
 
   @GetMapping("/training")
   public TrainingStatusResponse getTrainingStatus() {
-    boolean editable = trainingService.areParametersEditable();
-    return new TrainingStatusResponse(!editable, editable);
+    return new TrainingStatusResponse(trainingService.isTrainingRunning());
   }
 
   @GetMapping("/runs")

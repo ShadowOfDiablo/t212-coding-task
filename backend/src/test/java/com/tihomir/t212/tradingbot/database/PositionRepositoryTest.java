@@ -2,6 +2,7 @@ package com.tihomir.t212.tradingbot.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
@@ -104,6 +105,19 @@ class PositionRepositoryTest {
         .extracting(StoredPosition::position)
         .extracting(Position::openedAt)
         .containsExactly(FIRST_BUY, SECOND_BUY);
+  }
+
+  @Test
+  void listsEveryPositionOfTheRunNewestFirst() {
+    repository.savePosition(write(runId, FIRST_BUY, PositionStatus.CLOSED, LOSS));
+    repository.savePosition(write(runId, SECOND_BUY, PositionStatus.OPEN, NO_PNL));
+
+    assertThat(repository.getPositions(runId).positions())
+        .extracting(StoredPosition::position)
+        .extracting(Position::openedAt, Position::status)
+        .containsExactly(
+            tuple(SECOND_BUY, PositionStatus.OPEN), tuple(FIRST_BUY, PositionStatus.CLOSED));
+    assertThat(repository.getPositions(MISSING_RUN_ID).positions()).isEmpty();
   }
 
   @Test

@@ -1,7 +1,7 @@
 import './Panels.css'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { api } from '../api.js'
-import { defaultSettings, settingsFromResponse, settingsToBody } from '../settings.js'
+import { defaultSettings, settingsFromResponse, settingsToBody, tickerOptions } from '../settings.js'
 import {
   checkFromInstant,
   defaultTuning,
@@ -11,6 +11,8 @@ import {
   withDefaults,
   withTuned,
 } from '../tuning.js'
+import { DateTimePicker } from './DateTimePicker.jsx'
+import { Dropdown } from './Dropdown.jsx'
 import { RunDetails } from './RunDetails.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
 import { TuningComparison } from './TuningComparison.jsx'
@@ -36,6 +38,9 @@ function statusText(running, tuning) {
 }
 
 export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
+  const tickerId = useId()
+  const fromId = useId()
+  const toId = useId()
   const [ticker, setTicker] = useState('')
   const [from, setFrom] = useState(DEFAULT_FROM)
   const [to, setTo] = useState(DEFAULT_TO)
@@ -136,24 +141,12 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
         )}
         <fieldset className="date-fields" disabled={busy}>
-          <label className="field">
-            <span className="field-label">Ticker</span>
-            <select value={chosenTicker} onChange={(event) => setTicker(event.target.value)}>
-              {(tickers ?? []).map(({ ticker: option }) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field-label">From (UTC)</span>
-            <input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">To (UTC)</span>
-            <input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} />
-          </label>
+          <div className="field">
+            <label className="field-label" htmlFor={tickerId}>
+              Ticker
+            </label>
+            <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+          </div>
           <label className="field">
             <span className="field-label">Starting balance (USDT)</span>
             <input
@@ -163,6 +156,18 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
               onChange={(event) => setBalance(event.target.value)}
             />
           </label>
+          <div className="field">
+            <label className="field-label" htmlFor={fromId}>
+              From (UTC)
+            </label>
+            <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor={toId}>
+              To (UTC)
+            </label>
+            <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
+          </div>
         </fieldset>
         <SettingsForm
           algorithms={algorithms}

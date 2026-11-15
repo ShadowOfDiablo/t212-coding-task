@@ -9,6 +9,11 @@ export const TIMEFRAMES = [
 
 export const UPDATE_TIME_SECONDS = 'updateTimeSeconds'
 
+export const TIMEFRAME_OPTIONS = TIMEFRAMES.map(({ id, label }) => ({ value: id, label }))
+
+export const tickerOptions = (tickers) =>
+  (tickers ?? []).map(({ ticker }) => ({ value: ticker, label: ticker }))
+
 const SHARED_SETTINGS = [
   'timePeriod',
   UPDATE_TIME_SECONDS,

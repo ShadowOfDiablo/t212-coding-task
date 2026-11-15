@@ -1,16 +1,20 @@
+import { BrokerMenu } from './BrokerMenu.jsx'
 import { Logo } from './Logo.jsx'
 import { ModeSwitch } from './ModeSwitch.jsx'
 import { ThemeToggle } from './ThemeToggle.jsx'
 
-export function Header({ theme, onToggleTheme, connected, botMode }) {
+export function Header({ theme, onToggleTheme, connected, botMode, broker, brokerLabel, onSelectBroker }) {
   return (
     <header className="header">
-      <div className="brand">
-        <Logo />
-        <div>
-          <h1>Trading Bot 212</h1>
-          <p className="subtitle">Binance demo account</p>
+      <div className="header-start">
+        <div className="brand">
+          <Logo />
+          <div>
+            <h1>Trading Bot 212</h1>
+            <p className="subtitle">{brokerLabel} demo account</p>
+          </div>
         </div>
+        <BrokerMenu broker={broker} onSelect={onSelectBroker} />
       </div>
       <div className="header-actions">
         <span className={`live ${connected ? 'is-live' : 'is-offline'}`}>

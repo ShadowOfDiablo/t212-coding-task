@@ -1,5 +1,5 @@
 import './Tuning.css'
-import { formatPrice, formatTime } from '../format.js'
+import { formatPrice, formatUtcDateTime } from '../format.js'
 import { timeframeLabel } from '../settings.js'
 import { LineChart } from './LineChart.jsx'
 
@@ -42,8 +42,8 @@ export function TuningComparison({ tuning, oldSettings }) {
   return (
     <div className="tuning-comparison">
       <p className="small">
-        <strong>Tuned settings applied.</strong> Both runs cover {formatTime(run.from)} →{' '}
-        {formatTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}
+        <strong>Tuned settings applied.</strong> Both runs cover {formatUtcDateTime(run.from)} →{' '}
+        {formatUtcDateTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}
         {signedPercent(Number(tuning.bestTuneReturnPercent))}.
       </p>
       <table className="comparison-table small">
@@ -83,7 +83,7 @@ export function TuningComparison({ tuning, oldSettings }) {
       </table>
       <LineChart points={points} comparePoints={baseRun?.points} baseline={run.startingValue} />
       <p className="muted small comparison-legend">
-        <span className={`legend-tuned ${tunedReturn < 0 ? 'legend-down' : ''}`}>Tuned ({signedPercent(tunedReturn)})</span>
+        <span className="legend-tuned">Tuned ({signedPercent(tunedReturn)})</span>
         <span className="legend-old">Old settings, dashed</span>
       </p>
     </div>

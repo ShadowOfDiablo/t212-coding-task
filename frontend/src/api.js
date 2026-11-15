@@ -30,6 +30,7 @@ export const api = {
   getOrderHistory: () => request(`${BROKER_PATH}/orders/history`),
   getRejectedOrders: () => request(`${BROKER_PATH}/orders/rejected`),
   getOpenOrders: () => request(`${BROKER_PATH}/orders/open`),
+  placeOrder: (order) => send('POST', `${BROKER_PATH}/orders`, order),
   getBotMode: () => request('/api/bot/mode'),
   setBotMode: (mode) => send('PUT', '/api/bot/mode', { mode }),
   getAlgorithms: () => request('/api/algorithms'),

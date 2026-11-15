@@ -1,4 +1,4 @@
-import { formatPrice, formatTime } from '../format.js'
+import { formatPrice, formatUtcDateTime } from '../format.js'
 import { timeframeLabel } from '../settings.js'
 import { LineChart } from './LineChart.jsx'
 
@@ -36,7 +36,7 @@ export function RunDetails({ details }) {
         {run.from && (
           <span className="muted">
             {' '}
-            · {formatTime(run.from)} → {formatTime(run.to)}
+            · {formatUtcDateTime(run.from)} → {formatUtcDateTime(run.to)}
           </span>
         )}
       </p>

@@ -1,6 +1,7 @@
 import './SettingsForm.css'
 import { useId } from 'react'
-import { defaultSettings, TIMEFRAMES, UPDATE_TIME_SECONDS } from '../settings.js'
+import { defaultSettings, TIMEFRAME_OPTIONS, UPDATE_TIME_SECONDS } from '../settings.js'
+import { Dropdown } from './Dropdown.jsx'
 import { TuneToggle } from './TuneToggle.jsx'
 
 const TIMEFRAME = 'timeframe'
@@ -55,6 +56,7 @@ function SettingField({ definition, value, disabled, onChange, tuning }) {
  */
 export function SettingsForm({ algorithms, value, onChange, disabled = false, tuning = null }) {
   const timeframeId = useId()
+  const algorithmId = useId()
   if (!algorithms || !value) {
     return [0, 1, 2].map((row) => <p key={row} className="skeleton skeleton-line" />)
   }
@@ -69,35 +71,34 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false, tu
 
   return (
     <fieldset className="settings-form" disabled={disabled}>
-      <label className="field field-wide">
-        <span className="field-label">Algorithm</span>
-        <select value={value.algorithmType} onChange={(event) => selectAlgorithm(event.target.value)}>
-          {algorithms.map((candidate) => (
-            <option key={candidate.type} value={candidate.type}>
-              {candidate.displayName}
-            </option>
-          ))}
-        </select>
+      <div className="field field-wide">
+        <label className="field-label" htmlFor={algorithmId}>
+          Algorithm
+        </label>
+        <Dropdown
+          id={algorithmId}
+          value={value.algorithmType}
+          options={algorithms.map((candidate) => ({ value: candidate.type, label: candidate.displayName }))}
+          onChange={selectAlgorithm}
+          disabled={disabled}
+        />
         <span className="field-hint">{algorithm?.name}</span>
-      </label>
+      </div>
       <div className="field">
         <FieldLabel inputId={timeframeId} label="Timeframe" tuning={tuning} name={TIMEFRAME} />
-        <select
+        <Dropdown
           id={timeframeId}
           value={value.timeframe}
-          onChange={(event) => onChange({ ...value, timeframe: event.target.value })}
-        >
-          {TIMEFRAMES.map((timeframe) => (
-            <option key={timeframe.id} value={timeframe.id}>
-              {timeframe.label}
-            </option>
-          ))}
-        </select>
+          options={TIMEFRAME_OPTIONS}
+          onChange={(timeframe) => onChange({ ...value, timeframe })}
+          disabled={disabled}
+        />
         <span className="field-hint">Candle size</span>
       </div>
       <label className="field field-check">
         <input
           type="checkbox"
+          className="switch"
           checked={value.liveOnTick}
           onChange={(event) => onChange({ ...value, liveOnTick: event.target.checked })}
         />

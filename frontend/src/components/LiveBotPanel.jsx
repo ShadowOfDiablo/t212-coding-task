@@ -2,11 +2,45 @@ import './Panels.css'
 import { useState } from 'react'
 import { api } from '../api.js'
 import { usePolling } from '../hooks/usePolling.js'
-import { defaultSettings, settingsFromResponse, settingsToBody, timeframeLabel } from '../settings.js'
+import {
+  defaultSettings,
+  settingsFromResponse,
+  settingsToBody,
+  tickerOptions,
+  timeframeLabel,
+} from '../settings.js'
+import { Dropdown } from './Dropdown.jsx'
 import { LineChart } from './LineChart.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
 
 const BOT_REFRESH_MS = 2000
+
+const CHART_RANGES = [
+  { id: 'all', label: 'All live runs' },
+  { id: 'run', label: 'This run' },
+]
+
+const byTime = (left, right) => new Date(left.time) - new Date(right.time)
+
+/** Every live run as its start and end value, then the running run's own points. */
+function allLiveRunPoints(runs, status) {
+  const finishedRuns = (runs ?? []).filter((run) => run.mode !== 'TRAINING' && run.id !== status?.runId)
+  const runEnds = finishedRuns.flatMap((run) => [
+    { time: run.startedAt, value: run.startingValue },
+    ...(run.finishedAt && run.finalValue != null ? [{ time: run.finishedAt, value: run.finalValue }] : []),
+  ])
+  return [...runEnds, ...(status?.points ?? [])].sort(byTime)
+}
+
+function chartEmptyText(chartRange, running) {
+  if (chartRange === 'all') {
+    return 'No live runs yet. Start the bot to record the first one.'
+  }
+  if (running) {
+    return 'The first point appears with the first live price.'
+  }
+  return 'Start the bot to see its portfolio value.'
+}
 
 function Counts({ bot }) {
   const counts = [
@@ -32,8 +66,9 @@ function Counts({ bot }) {
  * The live bot. Stopped: pick a ticker and settings, then start. Running: the settings are read
  * only until Edit; Save asks for confirmation before they reach the running bot.
  */
-export function LiveBotPanel({ algorithms, tickers, mode }) {
+export function LiveBotPanel({ algorithms, tickers, mode, runs }) {
   const bot = usePolling(api.getBot, BOT_REFRESH_MS)
+  const [chartRange, setChartRange] = useState('all')
   const [ticker, setTicker] = useState('')
   const [draft, setDraft] = useState(null)
   const [editStep, setEditStep] = useState('readOnly')
@@ -44,6 +79,7 @@ export function LiveBotPanel({ algorithms, tickers, mode }) {
   const running = status?.runId != null
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const startForm = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
+  const chartPoints = chartRange === 'all' ? allLiveRunPoints(runs, status) : status?.points
   const shownSettings =
     running && editStep === 'readOnly' ? settingsFromResponse(status.currentParameters) : draft
 
@@ -103,16 +139,10 @@ export function LiveBotPanel({ algorithms, tickers, mode }) {
             {running ? 'yes' : 'no'}.
           </p>
         ) : (
-          <label className="field">
+          <div className="field">
             <span className="field-label">Ticker</span>
-            <select value={chosenTicker} onChange={(event) => setTicker(event.target.value)}>
-              {(tickers ?? []).map(({ ticker: option }) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Dropdown ariaLabel="Ticker" value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+          </div>
         )}
         <SettingsForm
           algorithms={algorithms}
@@ -191,16 +221,31 @@ export function LiveBotPanel({ algorithms, tickers, mode }) {
       <section className="card">
         <div className="card-head">
           <h2>How the bot is doing</h2>
-          <span className="muted small">portfolio value, USDT</span>
+          <div
+            className={`segmented segmented-small ${chartRange === 'run' ? 'is-second' : ''}`}
+            role="radiogroup"
+            aria-label="Chart range"
+          >
+            <span className="segmented-thumb" aria-hidden="true" />
+            {CHART_RANGES.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={chartRange === id}
+                className={chartRange === id ? 'is-active' : ''}
+                onClick={() => setChartRange(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <LineChart
-          points={status?.points}
-          baseline={status?.points?.[0]?.value ?? null}
-          emptyText={
-            running
-              ? 'The first point appears with the first live price.'
-              : 'Start the bot to see its portfolio value.'
-          }
+          key={chartRange}
+          points={chartPoints}
+          baseline={chartPoints?.[0]?.value ?? null}
+          emptyText={chartEmptyText(chartRange, running)}
         />
         {running && <Counts bot={status} />}
       </section>

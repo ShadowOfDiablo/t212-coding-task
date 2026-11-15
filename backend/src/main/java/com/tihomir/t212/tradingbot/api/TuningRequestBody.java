@@ -25,8 +25,7 @@ public record TuningRequestBody(
     @NotNull @Positive BigDecimal startingBalance,
     List<@NotNull @Valid TunedSettingRangeBody> settingRanges,
     List<@NotNull CandleInterval> timeframes,
-    @NotNull @Positive @Max(TuningRequestBody.MAX_TRIALS) Integer maxTrials,
-    Long randomSeed) {
+    @NotNull @Positive @Max(TuningRequestBody.MAX_TRIALS) Integer maxTrials) {
 
   static final long MAX_TRIALS = 200;
 
@@ -52,7 +51,6 @@ public record TuningRequestBody(
             .map(TunedSettingRangeBody::toTunedSettingRange)
             .toList(),
         Optional.ofNullable(timeframes).orElse(List.of()),
-        maxTrials,
-        Optional.ofNullable(randomSeed));
+        maxTrials);
   }
 }

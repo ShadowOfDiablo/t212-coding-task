@@ -30,7 +30,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
@@ -48,7 +47,6 @@ class TuningServiceTest {
   private static final BigDecimal STARTING_BALANCE = new BigDecimal("1000");
   private static final BigDecimal BASE_ORDER_SIZE_PERCENT = new BigDecimal("50");
   private static final long TICKER_ID = 1;
-  private static final long RANDOM_SEED = 7;
   private static final int TRIAL_COUNT = 30;
   private static final int CHECK_FROM_INDEX = 20;
   private static final int CANDLE_COUNT = 30;
@@ -61,6 +59,12 @@ class TuningServiceTest {
   private static final int FULL_PERCENT = 100;
   private static final TunedSettingRange TIME_PERIOD_RANGE =
       new TunedSettingRange(TradingAlgorithm.TIME_PERIOD, BigDecimal.TWO, new BigDecimal("19"));
+  private static final List<TunedSettingRange> STOP_RANGES =
+      List.of(
+          TIME_PERIOD_RANGE,
+          new TunedSettingRange(TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.ONE, BigDecimal.TEN),
+          new TunedSettingRange(
+              TradingAlgorithm.TAKE_PROFIT_PERCENT, BigDecimal.ONE, BigDecimal.TEN));
 
   private final FakeExchangeTradingGateway liveGateway = new FakeExchangeTradingGateway();
   private final FakeCandleStore candleStore = new FakeCandleStore();
@@ -97,6 +101,26 @@ class TuningServiceTest {
     assertThat(result.baseRun()).hasValueSatisfying(this::isReplayedOnTheCheckRange);
     assertThat(runStore.getRuns(BROKER).runs()).hasSize(1);
     assertThat(trainingService.isTrainingRunning()).isFalse();
+  }
+
+  @Test
+  void tunesTheSameRequestTheSameWayEveryTime() {
+    PeriodSellingTestAlgorithm firstAlgorithm = new PeriodSellingTestAlgorithm(ALWAYS_WORKING);
+    PeriodSellingTestAlgorithm secondAlgorithm = new PeriodSellingTestAlgorithm(ALWAYS_WORKING);
+
+    TuningResult first =
+        tuningService(trainingService(firstAlgorithm)).runTuning(request(STOP_RANGES, List.of()));
+    TuningResult second =
+        tuningService(trainingService(secondAlgorithm)).runTuning(request(STOP_RANGES, List.of()));
+
+    RunDetails firstRun = runDetails(first.runId());
+    RunDetails secondRun = runDetails(second.runId());
+    assertThat(secondAlgorithm.seenSettings()).isEqualTo(firstAlgorithm.seenSettings());
+    assertThat(second.runId()).isNotEqualTo(first.runId());
+    assertThat(second.bestTuneReturnPercent()).isEqualTo(first.bestTuneReturnPercent());
+    assertThat(secondRun.settings()).isEqualTo(firstRun.settings());
+    assertThat(secondRun.run().finalValue()).isEqualTo(firstRun.run().finalValue());
+    assertThat(secondRun.points()).isEqualTo(firstRun.points());
   }
 
   @Test
@@ -141,15 +165,8 @@ class TuningServiceTest {
   @Test
   void triesTheStopLossAndTheTakeProfitEachOnAndOff() {
     PeriodSellingTestAlgorithm algorithm = new PeriodSellingTestAlgorithm(ALWAYS_WORKING);
-    List<TunedSettingRange> ranges =
-        List.of(
-            TIME_PERIOD_RANGE,
-            new TunedSettingRange(
-                TradingAlgorithm.STOP_LOSS_PERCENT, BigDecimal.ONE, BigDecimal.TEN),
-            new TunedSettingRange(
-                TradingAlgorithm.TAKE_PROFIT_PERCENT, BigDecimal.ONE, BigDecimal.TEN));
 
-    tuningService(trainingService(algorithm)).runTuning(request(ranges, List.of()));
+    tuningService(trainingService(algorithm)).runTuning(request(STOP_RANGES, List.of()));
 
     List<AlgorithmSettings> seen = algorithm.seenSettings();
     assertThat(seen).anyMatch(settings -> settings.stopLossPercent().isPresent());
@@ -264,8 +281,7 @@ class TuningServiceTest {
         openTime(CHECK_FROM_INDEX),
         ranges,
         timeframes,
-        TRIAL_COUNT,
-        Optional.of(RANDOM_SEED));
+        TRIAL_COUNT);
   }
 
   private static TunedSettingRange range(String name, int minimum, int maximum) {

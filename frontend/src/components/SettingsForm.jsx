@@ -1,7 +1,8 @@
 import './SettingsForm.css'
 import { useId } from 'react'
-import { defaultSettings, TIMEFRAME_OPTIONS, UPDATE_TIME_SECONDS } from '../settings.js'
+import { defaultSettings, settingsFromResponse, TIMEFRAME_OPTIONS, UPDATE_TIME_SECONDS } from '../settings.js'
 import { Dropdown } from './Dropdown.jsx'
+import { SavedSettingsPicker } from './SavedSettingsPicker.jsx'
 import { TuneToggle } from './TuneToggle.jsx'
 
 const TIMEFRAME = 'timeframe'
@@ -52,9 +53,22 @@ function SettingField({ definition, value, disabled, onChange, tuning }) {
 /**
  * The settings of an algorithm, built from its setting definitions. `value` is the form state
  * (see settings.js); every change is passed up whole through `onChange`. With `tuning`
- * ({ isTuned, onToggle, disabled }), each tunable setting gets a round checkbox beside its label.
+ * ({ isTuned, onToggle, disabled }), each tunable setting gets a round checkbox beside its label. With
+ * `saved` (see useSavedAlgorithms), a "Saved settings" picker on top fills the form with one of
+ * them, or with `current` (another form's settings) when given; `onPickSaved` hears which entry was
+ * picked, and `children` show right under the picker.
  */
-export function SettingsForm({ algorithms, value, onChange, disabled = false, tuning = null }) {
+export function SettingsForm({
+  algorithms,
+  value,
+  onChange,
+  disabled = false,
+  tuning = null,
+  saved = null,
+  current = null,
+  onPickSaved = () => {},
+  children = null,
+}) {
   const timeframeId = useId()
   const algorithmId = useId()
   if (!algorithms || !value) {
@@ -71,6 +85,23 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false, tu
 
   return (
     <fieldset className="settings-form" disabled={disabled}>
+      {saved && (
+        <div className="field field-wide">
+          <span className="field-label">Saved settings</span>
+          <SavedSettingsPicker
+            saved={saved}
+            form={value}
+            current={current}
+            disabled={disabled}
+            onPickSaved={(entry) => {
+              onChange(settingsFromResponse(entry.settings))
+              onPickSaved(entry)
+            }}
+            onPickCurrent={(form) => onChange({ ...form, values: { ...form.values } })}
+          />
+          {children}
+        </div>
+      )}
       <div className="field field-wide">
         <label className="field-label" htmlFor={algorithmId}>
           Algorithm
@@ -82,7 +113,7 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false, tu
           onChange={selectAlgorithm}
           disabled={disabled}
         />
-        <span className="field-hint">{algorithm?.name}</span>
+        <span className="field-hint">{algorithm?.description}</span>
       </div>
       <div className="field">
         <FieldLabel inputId={timeframeId} label="Timeframe" tuning={tuning} name={TIMEFRAME} />

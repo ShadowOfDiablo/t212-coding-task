@@ -174,15 +174,22 @@
   padding: 12px 14px;
   border-radius: var(--radius-small);
   background: var(--brand-soft);
+  transition: background-color 0.3s var(--ease);
 }
 
-.apply-tuned-done {
-  color: var(--up);
+.apply-tuned.is-kept {
+  background: var(--up-soft);
 }
 
-.apply-tuned-actions {
+.keep-tuned {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.keep-tuned > span {
+  display: grid;
 }
 
 .settings-preview {
@@ -234,4 +241,45 @@
 .preview-table tr.is-changed .preview-after {
   color: var(--brand);
   font-weight: 700;
+}
+
+.apply-tuned-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-tuned {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.3s var(--ease);
+}
+
+.save-tuned.is-saved {
+  border-color: var(--up);
+}
+
+.save-tuned-name {
+  display: flex;
+  gap: 8px;
+  animation: rise 0.25s var(--ease) both;
+}
+
+.save-tuned-name input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.save-tuned-name input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }

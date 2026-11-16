@@ -4,6 +4,7 @@ import { timeframeLabel } from '../settings.js'
 import { useState } from 'react'
 import { LineChart } from './LineChart.jsx'
 import { RunTrades } from './RunTrades.jsx'
+import { SaveTunedSettings } from './SaveTunedSettings.jsx'
 import { SettingsPreview } from './SettingsPreview.jsx'
 
 const PERCENT = 100
@@ -31,7 +32,7 @@ function settingsText(settings) {
  * The tuned run next to the old settings, both on the same check range. The form keeps the old
  * settings until Apply settings is clicked.
  */
-export function TuningComparison({ tuning, oldSettings, applied, disabled, onApply }) {
+export function TuningComparison({ tuning, oldSettings, applied, disabled, onApply, saved }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const { run, settings, points } = tuning.run
   const tunedReturn = returnPercent(run.finalValue, run.startingValue)
@@ -48,33 +49,46 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
 
   return (
     <div className="tuning-comparison">
-      <div className="apply-tuned">
-        {applied ? (
-          <p className="small apply-tuned-done">
-            <strong>Tuned settings applied.</strong> The form now holds them; run a training to use them.
-          </p>
-        ) : (
-          <>
-            <p className="small">
-              <strong>Your settings are unchanged.</strong> Apply the tuned ones to put them in the form.
-            </p>
-            <div className="apply-tuned-actions">
-              <button
-                type="button"
-                className="button"
-                aria-expanded={previewOpen}
-                onClick={() => setPreviewOpen(!previewOpen)}
-              >
-                {previewOpen ? 'Hide preview' : 'Preview'}
-              </button>
-              <button type="button" className="button button-primary" disabled={disabled} onClick={onApply}>
-                Apply settings
-              </button>
-            </div>
-          </>
-        )}
+      <div className={`apply-tuned ${applied ? 'is-kept' : ''}`}>
+        <p className="small">
+          {applied ? (
+            <>
+              <strong>Tuned settings applied.</strong> The form now holds them.
+            </>
+          ) : (
+            <>
+              <strong>Your settings are unchanged.</strong> Apply the tuned ones to put them in the
+              form.
+            </>
+          )}
+        </p>
+        <div className="apply-tuned-actions">
+          <button
+            type="button"
+            className="button"
+            aria-expanded={previewOpen}
+            onClick={() => setPreviewOpen(!previewOpen)}
+          >
+            {previewOpen ? 'Hide preview' : 'Preview'}
+          </button>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={disabled || applied}
+            onClick={onApply}
+          >
+            {applied ? 'Applied' : 'Apply settings'}
+          </button>
+        </div>
       </div>
-      {previewOpen && !applied && <SettingsPreview oldSettings={oldSettings} tunedSettings={settings} />}
+      <SaveTunedSettings
+        algorithmId={run.algorithmId}
+        settings={settings}
+        defaultName={`Tuned ${run.ticker} ${timeframeLabel(settings.timeframe)}`}
+        saved={saved}
+        disabled={disabled}
+      />
+      {previewOpen && <SettingsPreview oldSettings={oldSettings} tunedSettings={settings} />}
       <p className="small">
         Both runs cover {formatUtcDateTime(run.from)} →{' '}
         {formatUtcDateTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}

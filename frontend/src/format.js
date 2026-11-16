@@ -38,6 +38,19 @@ const utcDateTimeFormat = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 })
 
+const utcDateFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+const utcClockFormat = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'UTC',
+})
+
 const axisFormats = {
   seconds: new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
@@ -65,8 +78,11 @@ export const formatTime = (iso) => (iso ? timeFormat.format(new Date(iso)) : '�
 /** Date, year and time in UTC, the zone training ranges are chosen in. */
 export const formatUtcDateTime = (iso) => (iso ? `${utcDateTimeFormat.format(new Date(iso))} UTC` : '—')
 
-/** The same without the zone, for tables whose header already says UTC. */
-export const formatUtcDateTimeShort = (iso) => (iso ? utcDateTimeFormat.format(new Date(iso)) : '—')
+/** The UTC date alone, "29 Oct 2025", for tables whose header already says UTC. */
+export const formatUtcDate = (iso) => utcDateFormat.format(new Date(iso))
+
+/** The UTC time of day alone, "16:00". */
+export const formatUtcClock = (iso) => utcClockFormat.format(new Date(iso))
 
 /** An axis label that fits the span the chart covers: times for a day, days for a month, and so on. */
 export function formatAxisTime(time, spanMs) {

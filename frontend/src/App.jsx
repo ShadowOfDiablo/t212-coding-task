@@ -11,6 +11,7 @@ import { TestOrderCard } from './components/TestOrderCard.jsx'
 import { TickerStrip } from './components/TickerStrip.jsx'
 import { TrainingPanel } from './components/TrainingPanel.jsx'
 import { useBotMode } from './hooks/useBotMode.js'
+import { useSavedAlgorithms } from './hooks/useSavedAlgorithms.js'
 import { usePolling } from './hooks/usePolling.js'
 import { useTheme } from './hooks/useTheme.js'
 import './styles.css'
@@ -52,6 +53,8 @@ function App() {
   const [section, setSection] = useState('live')
   const [broker, setBroker] = useState(BROKERS[0].id)
   const [algorithms, setAlgorithms] = useState(null)
+  const saved = useSavedAlgorithms()
+  const [trainingForm, setTrainingForm] = useState(null)
   const tickers = usePolling(api.getTickers, TICKER_REFRESH_MS)
   const balances = usePolling(api.getBalances, ACCOUNT_REFRESH_MS)
   const history = usePolling(api.getOrderHistory, ACCOUNT_REFRESH_MS)
@@ -108,23 +111,29 @@ function App() {
         <main className="layout">
           <TickerStrip tickers={tickerList} onFollowed={tickers.refresh} />
           <SectionTabs section={section} onSelect={setSection} />
-          {section === 'live' && (
+          <div hidden={section !== 'live'}>
             <LiveBotPanel
               algorithms={algorithms}
               tickers={tickerList}
               mode={botMode.mode}
               runs={runs.data?.runs}
+              saved={saved}
+              currentSettings={trainingForm}
             />
-          )}
-          {section === 'training' && (
+          </div>
+          <div hidden={section !== 'training'}>
             <TrainingPanel
               algorithms={algorithms}
               tickers={tickerList}
               mode={botMode.mode}
               onRunRecorded={runs.refresh}
+              saved={saved}
+              onFormChange={setTrainingForm}
             />
-          )}
-          {section === 'runs' && <RunsPanel runs={runs} />}
+          </div>
+          <div hidden={section !== 'runs'}>
+            <RunsPanel runs={runs} />
+          </div>
           <div className="columns">
             <OrdersCard history={history} rejected={rejected} open={open} />
             <div className="side-column">

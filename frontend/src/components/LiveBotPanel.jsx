@@ -66,7 +66,7 @@ function Counts({ bot }) {
  * The live bot. Stopped: pick a ticker and settings, then start. Running: the settings are read
  * only until Edit; Save asks for confirmation before they reach the running bot.
  */
-export function LiveBotPanel({ algorithms, tickers, mode, runs }) {
+export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSettings }) {
   const bot = usePolling(api.getBot, BOT_REFRESH_MS)
   const [chartRange, setChartRange] = useState('all')
   const [ticker, setTicker] = useState('')
@@ -149,6 +149,8 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs }) {
           value={running ? shownSettings : startForm}
           onChange={setDraft}
           disabled={busy || (running && editStep !== 'editing')}
+          saved={saved}
+          current={currentSettings}
         />
         {editStep === 'confirm' && (
           <p className="notice">

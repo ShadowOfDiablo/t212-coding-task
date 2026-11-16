@@ -14,6 +14,7 @@ import {
 import { DateTimePicker } from './DateTimePicker.jsx'
 import { Dropdown } from './Dropdown.jsx'
 import { RunDetails } from './RunDetails.jsx'
+import { SaveCurrentSettings } from './SaveCurrentSettings.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
 import { TuningComparison } from './TuningComparison.jsx'
 import { TuningFields } from './TuningFields.jsx'
@@ -37,7 +38,7 @@ function statusText(running, tuning) {
   return 'Settings editable'
 }
 
-export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
+export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved, onFormChange }) {
   const tickerId = useId()
   const fromId = useId()
   const toId = useId()
@@ -46,6 +47,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
   const [to, setTo] = useState(DEFAULT_TO)
   const [balance, setBalance] = useState(DEFAULT_BALANCE)
   const [draft, setDraft] = useState(null)
+  const [pickedEntryId, setPickedEntryId] = useState(null)
   const [tuningDraft, setTuningDraft] = useState(null)
   const [running, setRunning] = useState(false)
   const [tuning, setTuning] = useState(false)
@@ -56,6 +58,11 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
 
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const form = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
+  const formKey = JSON.stringify(form)
+
+  useEffect(() => {
+    onFormChange(JSON.parse(formKey))
+  }, [formKey, onFormChange])
   const algorithm = algorithms?.find((candidate) => candidate.type === form?.algorithmType)
   const tuningForm =
     tuningDraft?.algorithmType === form?.algorithmType ? tuningDraft : algorithm && defaultTuning(algorithm)
@@ -179,7 +186,13 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           onChange={setDraft}
           disabled={busy}
           tuning={tuningControls}
-        />
+          saved={saved}
+          onPickSaved={(entry) => setPickedEntryId(entry.id)}
+        >
+          {form && (
+            <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
+          )}
+        </SettingsForm>
         <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
         {error && (
           <p className="form-error" role="alert">
@@ -219,6 +232,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
             applied={tuningResult.applied}
             disabled={busy}
             onApply={applyTunedSettings}
+            saved={saved}
           />
         )}
         {!tuningResult && result && <RunDetails details={result} />}

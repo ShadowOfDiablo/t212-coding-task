@@ -62,7 +62,7 @@
   top: calc(100% + 8px);
   left: 0;
   z-index: 30;
-  width: 300px;
+  width: 316px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -204,6 +204,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
@@ -216,7 +217,7 @@
 }
 
 .picker-clock .dropdown {
-  width: 64px;
+  width: 74px;
 }
 
 .picker-clock .dropdown-list {

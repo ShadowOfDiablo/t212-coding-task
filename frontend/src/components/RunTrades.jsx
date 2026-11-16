@@ -1,7 +1,19 @@
 import './RunTrades.css'
 import { useState } from 'react'
 import { api } from '../api.js'
-import { formatDuration, formatPrice, formatUtcDateTimeShort } from '../format.js'
+import { formatDuration, formatPrice, formatUtcClock, formatUtcDate } from '../format.js'
+import { HeaderHint } from './HeaderHint.jsx'
+
+const TRADES_PER_PAGE = 10
+
+function TradeTime({ iso }) {
+  return (
+    <span className="trade-stack">
+      <span>{formatUtcDate(iso)}</span>
+      <span className="trade-clock">{formatUtcClock(iso)}</span>
+    </span>
+  )
+}
 
 const pnlClass = (value) => (value >= 0 ? 'change-up' : 'change-down')
 
@@ -10,10 +22,52 @@ function signed(value, suffix = '') {
   return `${sign}${formatPrice(value)}${suffix}`
 }
 
-function TradesTable({ positions }) {
+function Pager({ page, pageCount, total, onPage }) {
+  const first = page * TRADES_PER_PAGE + 1
+  const last = Math.min(total, first + TRADES_PER_PAGE - 1)
+  return (
+    <div className="pager">
+      <span className="muted small">
+        {first}–{last} of {total}
+      </span>
+      <div className="pager-buttons">
+        <button type="button" className="button" disabled={page === 0} onClick={() => onPage(page - 1)}>
+          Newer
+        </button>
+        <span className="small">
+          {page + 1} / {pageCount}
+        </span>
+        <button
+          type="button"
+          className="button"
+          disabled={page === pageCount - 1}
+          onClick={() => onPage(page + 1)}
+        >
+          Older
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TradesPage({ positions }) {
+  const [page, setPage] = useState(0)
   if (positions.length === 0) {
     return <p className="empty">This run made no trades.</p>
   }
+  const pageCount = Math.ceil(positions.length / TRADES_PER_PAGE)
+  const start = page * TRADES_PER_PAGE
+  return (
+    <>
+      <TradesTable positions={positions.slice(start, start + TRADES_PER_PAGE)} />
+      {pageCount > 1 && (
+        <Pager page={page} pageCount={pageCount} total={positions.length} onPage={setPage} />
+      )}
+    </>
+  )
+}
+
+function TradesTable({ positions }) {
   return (
     <div className="table-wrap">
       <table className="trades-table small">
@@ -24,22 +78,34 @@ function TradesTable({ positions }) {
             <th scope="col">Held</th>
             <th scope="col" className="numeric">Cost</th>
             <th scope="col" className="numeric">P&amp;L</th>
-            <th scope="col" className="numeric">MAE</th>
-            <th scope="col" className="numeric">MFE</th>
+            <HeaderHint className="numeric" label="MAE" title="Maximum adverse excursion">
+              The worst the trade stood while open: its lowest unrealised P&amp;L, measured from the
+              entry price on every price seen. It shows how much loss the trade sat through before
+              it closed, and helps set a stop loss.
+            </HeaderHint>
+            <HeaderHint className="numeric" label="MFE" title="Maximum favourable excursion">
+              The best the trade stood while open: its highest unrealised P&amp;L. Compare it with
+              the P&amp;L to see how much profit was given back before the sell, and to set a take
+              profit.
+            </HeaderHint>
           </tr>
         </thead>
         <tbody>
           {positions.map((position) => (
             <tr key={position.id}>
-              <td>{formatUtcDateTimeShort(position.openedAt)}</td>
               <td>
-                {position.closedAt ? formatUtcDateTimeShort(position.closedAt) : <span className="trade-open">open</span>}
+                <TradeTime iso={position.openedAt} />
+              </td>
+              <td>
+                {position.closedAt ? <TradeTime iso={position.closedAt} /> : <span className="trade-open">open</span>}
               </td>
               <td>{formatDuration(position.durationSeconds)}</td>
               <td className="numeric">{formatPrice(position.cost)}</td>
               <td className={`numeric ${pnlClass(position.realisedPnl)}`}>
-                {signed(position.realisedPnl)}
-                <span className="trade-percent"> {signed(position.realisedPnlPercent, '%')}</span>
+                <span className="trade-stack">
+                  <span>{signed(position.realisedPnl)}</span>
+                  <span className="trade-percent">{signed(position.realisedPnlPercent, '%')}</span>
+                </span>
               </td>
               <td className="numeric change-down">{formatPrice(position.mae)}</td>
               <td className="numeric change-up">{formatPrice(position.mfe)}</td>
@@ -81,7 +147,7 @@ export function RunTrades({ runId }) {
         <div className="run-trades-body">
           {error && <p className="form-error small">Could not load the trades: {error.message}</p>}
           {!error && !positions && <p className="skeleton skeleton-line" />}
-          {positions && <TradesTable positions={positions} />}
+          {positions && <TradesPage positions={positions} />}
         </div>
       )}
     </div>

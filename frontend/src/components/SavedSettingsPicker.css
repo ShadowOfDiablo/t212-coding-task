@@ -1,0 +1,144 @@
+.saved-list {
+  max-height: 300px;
+  display: grid;
+  gap: 2px;
+}
+
+.saved-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  transition: background-color 0.15s var(--ease);
+}
+
+.saved-row:hover {
+  background: var(--surface-raised);
+}
+
+.saved-pick {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.saved-pick strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.saved-delete {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+
+.saved-delete:hover,
+.saved-delete:focus-visible {
+  outline: none;
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.saved-row.is-confirming {
+  justify-content: space-between;
+  padding: 6px 8px 6px 10px;
+  background: var(--down-soft);
+}
+
+.saved-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.saved-small {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.saved-row.is-selected {
+  background: var(--brand-soft);
+}
+
+.saved-row.is-selected .saved-pick strong {
+  color: var(--brand);
+}
+
+.saved-hint {
+  display: block;
+  margin-top: 4px;
+}
+
+.saved-current {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+}
+
+.save-current-open {
+  justify-self: start;
+  margin-top: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.save-current-note {
+  margin-top: 6px;
+  color: var(--up);
+}
+
+.save-current {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  animation: rise 0.25s var(--ease) both;
+}
+
+.save-current input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.save-current input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.save-current-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.save-current-actions .button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}

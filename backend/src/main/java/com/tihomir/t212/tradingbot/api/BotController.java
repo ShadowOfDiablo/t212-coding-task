@@ -1,7 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.api.request.AlgorithmSettingsBody;
-import com.tihomir.t212.tradingbot.api.request.LiveRunRequestBody;
+import com.tihomir.t212.tradingbot.api.response.LiveBotStatusListResponse;
 import com.tihomir.t212.tradingbot.api.response.LiveBotStatusResponse;
 import com.tihomir.t212.tradingbot.api.response.RunDetailsResponse;
 import com.tihomir.t212.tradingbot.bot.live.TradingBotService;
@@ -17,8 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/** The live bots of a broker, one per ticker, each trading with its ticker's settings. */
 @RestController
-@RequestMapping("/api/brokers/{broker}/bot")
+@RequestMapping("/api/brokers/{broker}/bots")
 public class BotController {
 
   private final TradingBotService tradingBotService;
@@ -30,38 +31,50 @@ public class BotController {
   }
 
   @GetMapping
-  public LiveBotStatusResponse getBotStatus(@PathVariable String broker) {
-    return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker));
+  public LiveBotStatusListResponse getBotStatuses(@PathVariable String broker) {
+    return LiveBotStatusListResponse.of(tradingBotService.getBotStatuses(broker));
   }
 
-  @PostMapping("/start")
+  @PostMapping("/start-all")
+  public LiveBotStatusListResponse startAllBots(@PathVariable String broker) {
+    return LiveBotStatusListResponse.of(tradingBotService.startAllBots(broker));
+  }
+
+  @PostMapping("/stop-all")
+  public LiveBotStatusListResponse stopAllBots(@PathVariable String broker) {
+    tradingBotService.stopAllBots(broker);
+    return LiveBotStatusListResponse.of(tradingBotService.getBotStatuses(broker));
+  }
+
+  @PostMapping("/{ticker}/start")
   @ResponseStatus(HttpStatus.CREATED)
-  public LiveBotStatusResponse startBot(
-      @PathVariable String broker, @Valid @RequestBody LiveRunRequestBody body) {
-    tradingBotService.startBot(body.toLiveRunRequest(broker));
-    return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker));
+  public LiveBotStatusResponse startBot(@PathVariable String broker, @PathVariable String ticker) {
+    tradingBotService.startBot(broker, ticker);
+    return LiveBotStatusResponse.of(tradingBotService.getBotStatus(broker, ticker));
   }
 
-  @PostMapping("/stop")
-  public RunDetailsResponse stopBot(@PathVariable String broker) {
-    long runId = tradingBotService.stopBot(broker);
+  @PostMapping("/{ticker}/stop")
+  public RunDetailsResponse stopBot(@PathVariable String broker, @PathVariable String ticker) {
+    long runId = tradingBotService.stopBot(broker, ticker);
     return RunDetailsResponse.of(runService.getRun(broker, runId));
   }
 
-  @PostMapping("/pause")
-  public LiveBotStatusResponse pauseBot(@PathVariable String broker) {
-    return LiveBotStatusResponse.running(tradingBotService.pauseBot(broker));
+  @PostMapping("/{ticker}/pause")
+  public LiveBotStatusResponse pauseBot(@PathVariable String broker, @PathVariable String ticker) {
+    return LiveBotStatusResponse.running(tradingBotService.pauseBot(broker, ticker));
   }
 
-  @PostMapping("/resume")
-  public LiveBotStatusResponse resumeBot(@PathVariable String broker) {
-    return LiveBotStatusResponse.running(tradingBotService.resumeBot(broker));
+  @PostMapping("/{ticker}/resume")
+  public LiveBotStatusResponse resumeBot(@PathVariable String broker, @PathVariable String ticker) {
+    return LiveBotStatusResponse.running(tradingBotService.resumeBot(broker, ticker));
   }
 
-  @PutMapping("/current-parameters")
+  @PutMapping("/{ticker}/current-parameters")
   public LiveBotStatusResponse updateCurrentParameters(
-      @PathVariable String broker, @Valid @RequestBody AlgorithmSettingsBody body) {
+      @PathVariable String broker,
+      @PathVariable String ticker,
+      @Valid @RequestBody AlgorithmSettingsBody body) {
     return LiveBotStatusResponse.running(
-        tradingBotService.updateCurrentParameters(broker, body.toSettingsRequest()));
+        tradingBotService.updateCurrentParameters(broker, ticker, body.toSettingsRequest()));
   }
 }

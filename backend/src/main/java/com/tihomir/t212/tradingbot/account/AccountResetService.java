@@ -56,10 +56,10 @@ public class AccountResetService {
    * Sells every free balance except USDT, USDC included, then closes the positions still open. A
    * sell that fails keeps its balance and the others go on; the orders already executed stay.
    *
-   * @throws LiveBotRunningException while the broker's live bot runs
+   * @throws LiveBotRunningException while any live bot of the broker runs
    */
   public EmptiedAccount emptyAccount(String broker) {
-    if (tradingBotService.getBotStatus(broker).isPresent()) {
+    if (tradingBotService.isAnyBotRunning(broker)) {
       throw new LiveBotRunningException(broker);
     }
     List<AssetBalance> sellable =

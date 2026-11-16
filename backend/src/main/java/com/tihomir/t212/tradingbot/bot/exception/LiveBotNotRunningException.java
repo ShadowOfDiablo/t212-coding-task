@@ -7,4 +7,8 @@ public class LiveBotNotRunningException extends RuntimeException {
   public LiveBotNotRunningException(String broker) {
     super("The live bot of " + broker + " is not running");
   }
+
+  public LiveBotNotRunningException(String broker, String ticker) {
+    super("The live bot of " + ticker + " on " + broker + " is not running");
+  }
 }

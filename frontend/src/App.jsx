@@ -114,7 +114,6 @@ function App() {
           <div hidden={section !== 'live'}>
             <LiveBotPanel
               algorithms={algorithms}
-              tickers={tickerList}
               mode={botMode.mode}
               runs={runs.data?.runs}
               saved={saved}

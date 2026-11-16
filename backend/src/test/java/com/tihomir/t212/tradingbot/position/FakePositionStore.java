@@ -80,7 +80,8 @@ public final class FakePositionStore implements PositionStore {
             position.cost(),
             position.realisedPnl(),
             position.mae(),
-            position.mfe()));
+            position.mfe(),
+            position.prices()));
   }
 
   public synchronized void failWrites() {

@@ -21,9 +21,12 @@ import com.tihomir.t212.tradingbot.bot.exception.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.model.PortfolioPoint;
 import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.run.PortfolioPointList;
+import com.tihomir.t212.tradingbot.bot.run.PricePoint;
+import com.tihomir.t212.tradingbot.bot.run.PricePointList;
 import com.tihomir.t212.tradingbot.bot.run.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.run.RunCounts;
 import com.tihomir.t212.tradingbot.bot.run.RunDetails;
+import com.tihomir.t212.tradingbot.bot.run.RunPriceService;
 import com.tihomir.t212.tradingbot.bot.run.RunStatus;
 import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.run.UnrecordedRun;
@@ -36,6 +39,7 @@ import com.tihomir.t212.tradingbot.bot.tuning.TuningService;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionPrices;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.StoredPosition;
 import com.tihomir.t212.tradingbot.position.StoredPositionList;
@@ -86,6 +90,7 @@ class RunControllerTest {
   @MockitoBean TrainingService trainingService;
   @MockitoBean TuningService tuningService;
   @MockitoBean AlgorithmRunService runService;
+  @MockitoBean RunPriceService runPriceService;
 
   @Test
   void runsATrainingAndAnswersWithTheRecordedRun() throws Exception {
@@ -215,8 +220,25 @@ class RunControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.positions[0].id").value(11))
         .andExpect(jsonPath("$.positions[0].status").value("CLOSED"))
-        .andExpect(jsonPath("$.positions[0].realisedPnl").value(-5));
+        .andExpect(jsonPath("$.positions[0].realisedPnl").value(-5))
+        .andExpect(jsonPath("$.positions[0].quantity").value(1))
+        .andExpect(jsonPath("$.positions[0].entryPrice").value(100))
+        .andExpect(jsonPath("$.positions[0].exitPrice").value(95));
     mockMvc.perform(get(RUNS + "/8/positions")).andExpect(status().isNotFound());
+  }
+
+  @Test
+  void answersWithThePricesOfARunAndNotFoundForAnUnknownRun() throws Exception {
+    when(runPriceService.getRunPrices("binance", 7))
+        .thenReturn(new PricePointList(List.of(new PricePoint(FROM, new BigDecimal("64790.9")))));
+    when(runPriceService.getRunPrices("binance", 8)).thenThrow(new RunNotFoundException(8));
+
+    mockMvc
+        .perform(get(RUNS + "/7/candles"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.points[0].time").value(FROM.toString()))
+        .andExpect(jsonPath("$.points[0].price").value(64790.9));
+    mockMvc.perform(get(RUNS + "/8/candles")).andExpect(status().isNotFound());
   }
 
   @Test
@@ -259,7 +281,10 @@ class RunControllerTest {
         new BigDecimal("100"),
         new BigDecimal("-5"),
         new BigDecimal("-8"),
-        new BigDecimal("2"));
+        new BigDecimal("2"),
+        Optional.of(
+            new PositionPrices(
+                BigDecimal.ONE, new BigDecimal("100"), Optional.of(new BigDecimal("95")))));
   }
 
   private void expectBadRequest(String body, String message) throws Exception {

@@ -31,6 +31,10 @@ public final class PositionTracker {
   private final String baseAsset;
   private BigDecimal heldQuantity = BigDecimal.ZERO;
   private BigDecimal heldCost = BigDecimal.ZERO;
+  private BigDecimal boughtQuantity = BigDecimal.ZERO;
+  private BigDecimal boughtCost = BigDecimal.ZERO;
+  private BigDecimal soldQuantity = BigDecimal.ZERO;
+  private BigDecimal soldAmount = BigDecimal.ZERO;
   private Optional<Position> openPosition = Optional.empty();
   private Optional<Long> runId = Optional.empty();
 
@@ -96,8 +100,13 @@ public final class PositionTracker {
     }
     heldQuantity = heldQuantity.add(received);
     heldCost = heldCost.add(spent);
+    boughtQuantity = boughtQuantity.add(received);
+    boughtCost = boughtCost.add(spent);
     Position position =
-        openPosition.map(open -> withCost(open, spent)).orElse(opened(order.transactTime(), spent));
+        withPrices(
+            openPosition
+                .map(open -> withCost(open, spent))
+                .orElse(opened(order.transactTime(), spent)));
     openPosition = Optional.of(position);
     return Optional.of(new PositionWrite(position));
   }
@@ -107,15 +116,41 @@ public final class PositionTracker {
       log.warn("{} {}: sell {} while no position is held", broker, ticker, order.exchangeOrderId());
       return Optional.empty();
     }
-    Position afterSell = withRealisedPnl(openPosition.get(), sellAtAverageCost(order));
+    Position afterSell = withPrices(withRealisedPnl(openPosition.get(), sellAtAverageCost(order)));
     if (isSellable(order.averagePrice())) {
       openPosition = Optional.of(afterSell);
       return Optional.of(new PositionWrite(afterSell));
     }
     heldQuantity = BigDecimal.ZERO;
     heldCost = BigDecimal.ZERO;
+    boughtQuantity = BigDecimal.ZERO;
+    boughtCost = BigDecimal.ZERO;
+    soldQuantity = BigDecimal.ZERO;
+    soldAmount = BigDecimal.ZERO;
     openPosition = Optional.empty();
     return Optional.of(new PositionWrite(closed(afterSell, order.transactTime())));
+  }
+
+  /** Coins bought and their average price; the average sell price once something was sold. */
+  private Position withPrices(Position position) {
+    BigDecimal entryPrice = boughtCost.divide(boughtQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN);
+    Optional<BigDecimal> exitPrice = Optional.empty();
+    if (soldQuantity.signum() > 0) {
+      exitPrice =
+          Optional.of(soldAmount.divide(soldQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN));
+    }
+    return new Position(
+        position.runId(),
+        position.broker(),
+        position.ticker(),
+        position.status(),
+        position.openedAt(),
+        position.closedAt(),
+        position.cost(),
+        position.realisedPnl(),
+        position.mae(),
+        position.mfe(),
+        Optional.of(new PositionPrices(boughtQuantity, entryPrice, exitPrice)));
   }
 
   /**
@@ -125,11 +160,13 @@ public final class PositionTracker {
    */
   private BigDecimal sellAtAverageCost(ExecutedOrder order) {
     BigDecimal exitPrice = order.averagePrice();
+    BigDecimal sold = order.executedQuantity().min(heldQuantity);
+    soldQuantity = soldQuantity.add(sold);
+    soldAmount = soldAmount.add(exitPrice.multiply(sold));
     BigDecimal fee =
         fees(order, QUOTE_ASSET)
             .add(fees(order, baseAsset).multiply(exitPrice))
             .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
-    BigDecimal sold = order.executedQuantity().min(heldQuantity);
     BigDecimal soldCost =
         heldCost.multiply(sold).divide(heldQuantity, AMOUNT_SCALE, RoundingMode.HALF_EVEN);
     heldQuantity = heldQuantity.subtract(sold);
@@ -164,7 +201,8 @@ public final class PositionTracker {
         position.cost(),
         position.realisedPnl(),
         position.mae().min(unrealisedPnl),
-        position.mfe().max(unrealisedPnl));
+        position.mfe().max(unrealisedPnl),
+        position.prices());
   }
 
   private Position opened(Instant openedAt, BigDecimal cost) {
@@ -192,7 +230,8 @@ public final class PositionTracker {
         position.cost().add(addedCost),
         position.realisedPnl(),
         position.mae(),
-        position.mfe());
+        position.mfe(),
+        position.prices());
   }
 
   /** True while what is left is worth at least the minimum order value at this price. */
@@ -211,7 +250,8 @@ public final class PositionTracker {
         position.cost(),
         position.realisedPnl().add(addedPnl),
         position.mae(),
-        position.mfe());
+        position.mfe(),
+        position.prices());
   }
 
   private static Position closed(Position position, Instant closedAt) {
@@ -225,7 +265,8 @@ public final class PositionTracker {
         position.cost(),
         position.realisedPnl(),
         position.mae(),
-        position.mfe());
+        position.mfe(),
+        position.prices());
   }
 
   private long currentRunId() {

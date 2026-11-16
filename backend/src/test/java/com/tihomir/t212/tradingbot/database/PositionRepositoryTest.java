@@ -13,6 +13,7 @@ import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
 import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionPrices;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.PositionWrite;
 import com.tihomir.t212.tradingbot.position.StoredPosition;
@@ -43,6 +44,9 @@ class PositionRepositoryTest {
   private static final Instant FIRST_BUY = Instant.parse("2026-01-01T10:00:00Z");
   private static final Instant SECOND_BUY = Instant.parse("2026-01-01T11:00:00Z");
   private static final Instant SELL = Instant.parse("2026-01-01T12:00:00Z");
+  private static final BigDecimal QUANTITY = new BigDecimal("0.015");
+  private static final BigDecimal ENTRY_PRICE = new BigDecimal("64790.90");
+  private static final BigDecimal EXIT_PRICE = new BigDecimal("65100.00");
   private static final Instant RESET = Instant.parse("2026-01-02T09:00:00Z");
   private static final long MISSING_RUN_ID = Long.MAX_VALUE;
   private static final int ONE_POSITION = 1;
@@ -122,6 +126,26 @@ class PositionRepositoryTest {
   }
 
   @Test
+  void storesTheQuantityAndPricesAndReadsNoneForAnOlderPosition() {
+    Position open = write(runId, FIRST_BUY, PositionStatus.OPEN, NO_PNL).position();
+    PositionPrices prices = new PositionPrices(QUANTITY, ENTRY_PRICE, Optional.of(EXIT_PRICE));
+    repository.savePosition(new PositionWrite(withPrices(open, prices)));
+    repository.savePosition(write(runId, SECOND_BUY, PositionStatus.OPEN, NO_PNL));
+
+    assertThat(repository.getPositions(runId).positions())
+        .extracting(stored -> stored.position().prices())
+        .satisfiesExactly(
+            withoutPrices -> assertThat(withoutPrices).isEmpty(),
+            stored ->
+                assertThat(stored)
+                    .hasValueSatisfying(read -> {
+                      assertThat(read.quantity()).isEqualByComparingTo(QUANTITY);
+                      assertThat(read.entryPrice()).isEqualByComparingTo(ENTRY_PRICE);
+                      assertThat(read.exitPrice()).contains(EXIT_PRICE);
+                    }));
+  }
+
+  @Test
   void closesTheOpenPositionsOfTheBrokerKeepingTheirPnl() {
     repository.savePosition(write(runId, FIRST_BUY, PositionStatus.CLOSED, LOSS));
     repository.savePosition(write(runId, SECOND_BUY, PositionStatus.OPEN, LATER_PNL));
@@ -144,6 +168,21 @@ class PositionRepositoryTest {
             repository.savePosition(write(MISSING_RUN_ID, FIRST_BUY, PositionStatus.OPEN, NO_PNL)))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(count("position")).isZero();
+  }
+
+  private static Position withPrices(Position position, PositionPrices prices) {
+    return new Position(
+        position.runId(),
+        position.broker(),
+        position.ticker(),
+        position.status(),
+        position.openedAt(),
+        position.closedAt(),
+        position.cost(),
+        position.realisedPnl(),
+        position.mae(),
+        position.mfe(),
+        Optional.of(prices));
   }
 
   private long count(String table) {

@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.api.response;
 
 import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionPrices;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.StoredPosition;
 import java.math.BigDecimal;
@@ -27,7 +28,10 @@ public record PositionResponse(
     BigDecimal realisedPnl,
     BigDecimal realisedPnlPercent,
     BigDecimal mae,
-    BigDecimal mfe) {
+    BigDecimal mfe,
+    Optional<BigDecimal> quantity,
+    Optional<BigDecimal> entryPrice,
+    Optional<BigDecimal> exitPrice) {
 
   private static final BigDecimal PERCENT = BigDecimal.valueOf(100);
   private static final int PERCENT_SCALE = 4;
@@ -48,7 +52,10 @@ public record PositionResponse(
         position.realisedPnl(),
         percentOfCost(position),
         position.mae(),
-        position.mfe());
+        position.mfe(),
+        position.prices().map(PositionPrices::quantity),
+        position.prices().map(PositionPrices::entryPrice),
+        position.prices().flatMap(PositionPrices::exitPrice));
   }
 
   private static BigDecimal percentOfCost(Position position) {

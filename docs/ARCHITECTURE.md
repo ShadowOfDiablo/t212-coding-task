@@ -1531,3 +1531,18 @@ sequenceDiagram
 - **Tune automatically** below the form holds **Tune on the first (% of the range)** (default 70) and **Tries** (default 50).
 - While it runs, every field and both buttons are disabled, and the panel shows "Tuning in progress. Currently X% done, please wait" over a progress bar that moves smoothly between polls.
 - When it ends, the tuned settings replace the form's settings, and the result card shows **old vs tuned**: final value, return and buys/sells of both on the check range, and one chart with the tuned line and the old settings dashed.
+
+### 16.8 Trade history and price chart
+
+The run's positions table is the trade history. Every position is a **buy** at Opened and a **sell** at Closed, and it already carries the dates, P&L, MAE and MFE. V12 adds what a trade still needs (plain `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, NULL for older rows):
+
+| Column | Meaning |
+|---|---|
+| `quantity` | coins bought over all the position's buys |
+| `entry_price` | their average price in USDT, buy fees included |
+| `exit_price` | average price of its sells so far; NULL before the first sell |
+
+- `PositionTracker` adds up what it bought and sold and puts them on every position it writes as `PositionPrices`, so live and training runs both get them, in the same write as the rest of the position.
+- `GET /brokers/{broker}/runs/{id}/positions` returns `quantity`, `entryPrice` and `exitPrice` (null for older positions).
+- **Price chart:** `GET /brokers/{broker}/runs/{id}/candles` returns `{"points": [{time, price}]}`: the closing prices of the run's ticker on its timeframe, from the candle store, over the replayed range of a training run or from start to end (or now) of a live run. Thinned evenly to at most 1,000 points, the last one always kept.
+- **Dashboard:** the run's positions table shows Quantity, Entry price and Exit price. A price chart above it has a **Show trades** checkbox, off by default: ticked, a green ▲ marks each position's open and a red ▼ its close, at that time and price.

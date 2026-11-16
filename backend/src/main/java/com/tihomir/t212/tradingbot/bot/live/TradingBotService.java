@@ -8,6 +8,8 @@ import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.TradingModeRequiredException;
+import com.tihomir.t212.tradingbot.bot.live.queue.EvaluationWorkerPool;
+import com.tihomir.t212.tradingbot.bot.live.queue.LiveEvaluationQueue;
 import com.tihomir.t212.tradingbot.bot.model.LiveBotStatus;
 import com.tihomir.t212.tradingbot.bot.model.LiveRunRequest;
 import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunStore;
@@ -42,6 +44,7 @@ import org.springframework.stereotype.Service;
 public class TradingBotService {
 
   private static final Logger log = LoggerFactory.getLogger(TradingBotService.class);
+  private static final int MIN_EVALUATION_WORKERS = 2;
 
   private final BotModeService botModeService;
   private final AlgorithmRegistryService algorithms;
@@ -52,6 +55,8 @@ public class TradingBotService {
   private final PositionStore positionStore;
   private final Clock clock;
   private final Map<String, LiveTradingBot> runningBots = new ConcurrentHashMap<>();
+  private final Map<String, LiveEvaluationQueue> evaluationQueues = new ConcurrentHashMap<>();
+  private final Map<String, EvaluationWorkerPool> workerPools = new ConcurrentHashMap<>();
 
   public TradingBotService(
       BotModeService botModeService,
@@ -109,7 +114,15 @@ public class TradingBotService {
                 SettingsSource.MANUAL));
     account.startRun(runId);
     LiveTradingBot bot =
-        new LiveTradingBot(broker, runId, account, orderChecker, signalSource, algorithmId, clock);
+        new LiveTradingBot(
+            broker,
+            runId,
+            account,
+            orderChecker,
+            signalSource,
+            algorithmId,
+            evaluationQueue(broker.name()),
+            clock);
     runningBots.put(broker.name(), bot);
     bot.startListening();
     log.info(
@@ -202,10 +215,30 @@ public class TradingBotService {
   @PreDestroy
   public synchronized void stopAllBots() {
     List.copyOf(runningBots.keySet()).forEach(this::stopBotOnShutdown);
+    workerPools.values().forEach(EvaluationWorkerPool::close);
+    workerPools.clear();
   }
 
   Optional<LiveTradingBot> findRunningBot(String broker) {
     return Optional.ofNullable(runningBots.get(broker));
+  }
+
+  /** The broker's worker pool, started with its queue on the first bot. */
+  EvaluationWorkerPool evaluationWorkerPool(String broker) {
+    evaluationQueue(broker);
+    return workerPools.get(broker);
+  }
+
+  private LiveEvaluationQueue evaluationQueue(String broker) {
+    return evaluationQueues.computeIfAbsent(broker, this::startEvaluationQueue);
+  }
+
+  private LiveEvaluationQueue startEvaluationQueue(String broker) {
+    LiveEvaluationQueue queue = new LiveEvaluationQueue(broker);
+    int workerCount = Math.max(MIN_EVALUATION_WORKERS, Runtime.getRuntime().availableProcessors());
+    workerPools.put(broker, new EvaluationWorkerPool(queue, workerCount));
+    log.info("{}: evaluating live prices on {} workers", broker, workerCount);
+    return queue;
   }
 
   private void stopBotOnShutdown(String broker) {

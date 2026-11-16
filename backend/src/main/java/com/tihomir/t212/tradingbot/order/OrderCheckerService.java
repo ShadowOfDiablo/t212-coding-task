@@ -38,7 +38,9 @@ public class OrderCheckerService {
   /**
    * Checks a live signal and places the order on the exchange only when the checks approve it.
    *
-   * @return the executed order; empty when the checks refused it or the exchange rejected it
+   * @return the executed order; empty when the checks refused it
+   * @throws ExchangeRejectedRequestException the exchange rejected it and executed nothing, so the
+   *     caller may try again
    */
   public Optional<ExecutedOrder> placeCheckedOrder(
       String brokerName,
@@ -56,17 +58,7 @@ public class OrderCheckerService {
           check.refusal().orElseThrow());
       return Optional.empty();
     }
-    try {
-      return Optional.of(orderService.placeMarketOrder(brokerName, check.order().orElseThrow()));
-    } catch (ExchangeRejectedRequestException e) {
-      log.warn(
-          "{} {}: live {} rejected by the exchange: {}",
-          brokerName,
-          account.ticker(),
-          signal,
-          e.getMessage());
-      return Optional.empty();
-    }
+    return Optional.of(orderService.placeMarketOrder(brokerName, check.order().orElseThrow()));
   }
 
   public OrderCheck checkOrder(

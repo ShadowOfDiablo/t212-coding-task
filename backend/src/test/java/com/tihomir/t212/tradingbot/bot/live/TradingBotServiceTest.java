@@ -16,6 +16,8 @@ import com.tihomir.t212.tradingbot.bot.ScriptedTestAlgorithm;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.TradingModeRequiredException;
+import com.tihomir.t212.tradingbot.bot.live.queue.EvaluationRetryPolicy;
+import com.tihomir.t212.tradingbot.bot.live.queue.PriceMessage;
 import com.tihomir.t212.tradingbot.bot.model.LiveBotStatus;
 import com.tihomir.t212.tradingbot.bot.model.LiveRunRequest;
 import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
@@ -50,11 +52,13 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class TradingBotServiceTest {
@@ -86,8 +90,14 @@ class TradingBotServiceTest {
   private final FakePositionStore positionStore = new FakePositionStore();
   private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
   private final AtomicInteger evaluatedPrices = new AtomicInteger();
+  private final List<TradingBotService> services = new ArrayList<>();
   private final AlgorithmSettingsService settingsService =
       new AlgorithmSettingsService(new FakeAlgorithmStore(1), Clock.fixed(NOW, ZoneOffset.UTC));
+
+  @AfterEach
+  void stopTheWorkers() {
+    services.forEach(TradingBotService::stopAllBots);
+  }
 
   @Test
   void buysAndSellsOnLiveTicksAndRecordsTheStop() {
@@ -195,21 +205,59 @@ class TradingBotServiceTest {
   }
 
   @Test
-  void countsRefusedAndRejectedOrdersAndKeepsGoingAfterAFailure() {
-    TradingBotService service =
-        service(TradingSignal.SELL, TradingSignal.BUY, TradingSignal.BUY, TradingSignal.BUY);
+  void discardsAPriceOlderThanTheLastOneEvaluated() {
+    TradingBotService service = service(TradingSignal.BUY, TradingSignal.SELL);
     service.startBot(request(true, Map.of()));
     LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
 
-    bot.evaluate(BigDecimal.ONE, NOW);
-    gateway.failBalanceRequests(new ExchangeUnavailableException("timed out"), 1);
-    bot.evaluate(BigDecimal.ONE, NOW);
-    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "Not enough USDT"));
-    bot.evaluate(BigDecimal.ONE, NOW);
+    bot.evaluatePriceMessage(PriceMessage.firstAttempt(TICKER, BigDecimal.ONE, NOW));
+    bot.evaluatePriceMessage(
+        PriceMessage.firstAttempt(TICKER, BigDecimal.ONE, NOW.minusSeconds(1)));
+    service.stopBot(BROKER);
 
-    assertThat(service.getBotStatus(BROKER).orElseThrow().counts())
-        .isEqualTo(new RunCounts(0, 0, 0, 0, 2));
-    assertThat(evaluatedPrices).hasValue(WARM_UP.size() + 3);
+    assertThat(gateway.placedOrders())
+        .extracting(MarketOrderRequest::side)
+        .containsExactly(OrderSide.BUY);
+    assertThat(evaluatedPrices).hasValue(WARM_UP.size() + 1);
+  }
+
+  @Test
+  void countsAnOrderTheChecksRefuse() {
+    TradingBotService service = service(TradingSignal.SELL);
+    long runId = service.startBot(request(true, Map.of()));
+
+    service.findRunningBot(BROKER).orElseThrow().onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    service.stopBot(BROKER);
+
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(0, 0, 0, 0, 1));
+  }
+
+  @Test
+  void retriesAPriceWhoseBalanceReadFailedAndThenBuys() {
+    TradingBotService service = service(TradingSignal.BUY, TradingSignal.BUY);
+    long runId = service.startBot(request(true, Map.of()));
+    gateway.failBalanceRequests(new ExchangeUnavailableException("timed out"), 1);
+
+    service.findRunningBot(BROKER).orElseThrow().onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    service.stopBot(BROKER);
+
+    assertThat(gateway.placedOrders())
+        .extracting(MarketOrderRequest::side)
+        .containsExactly(OrderSide.BUY);
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 0, 0, 0, 0));
+  }
+
+  @Test
+  void retriesAnOrderTheExchangeRejectsThenCountsItOnce() {
+    TradingBotService service = service(TradingSignal.BUY, TradingSignal.BUY, TradingSignal.BUY);
+    long runId = service.startBot(request(true, Map.of()));
+    gateway.failOrders(new ExchangeRejectedRequestException(-2010, "Not enough USDT"));
+
+    service.findRunningBot(BROKER).orElseThrow().onCandleUpdate(tick(TICKER, BigDecimal.ONE));
+    service.stopBot(BROKER);
+
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(0, 0, 0, 0, 1));
+    assertThat(evaluatedPrices).hasValue(WARM_UP.size() + EvaluationRetryPolicy.MAX_ATTEMPTS);
   }
 
   @Test
@@ -356,16 +404,19 @@ class TradingBotServiceTest {
     BrokerRegistryService brokers = new BrokerRegistryService(List.of(broker));
     List<TradingSignal> script =
         Stream.concat(WARM_UP.stream(), List.of(signals).stream()).toList();
-    return new TradingBotService(
-        botModeService,
-        new AlgorithmRegistryService(
-            List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet))),
-        settingsService,
-        new CandleHistoryService(brokers, candleStore, CLOCK),
-        new OrderCheckerService(new OrderService(brokers, new FakeOrderStore(), CLOCK)),
-        runStore,
-        positionStore,
-        CLOCK);
+    TradingBotService service =
+        new TradingBotService(
+            botModeService,
+            new AlgorithmRegistryService(
+                List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet))),
+            settingsService,
+            new CandleHistoryService(brokers, candleStore, CLOCK),
+            new OrderCheckerService(new OrderService(brokers, new FakeOrderStore(), CLOCK)),
+            runStore,
+            positionStore,
+            CLOCK);
+    services.add(service);
+    return service;
   }
 
   private void storeWarmUpCandles() {

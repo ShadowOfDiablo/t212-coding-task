@@ -90,8 +90,7 @@ public class TradingBotService {
     Broker broker = candleHistory.tradingBroker(request.broker(), request.ticker());
     PositionTracker positionTracker = new PositionTracker(broker.name(), request.ticker());
     LiveTradingAccount account =
-        new LiveTradingAccount(
-            request.ticker(), broker.tradingGateway(), positionTracker, positionStore);
+        new LiveTradingAccount(request.ticker(), broker, positionTracker, positionStore);
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
     BigDecimal startingValue = currentValue(broker, account);

@@ -25,6 +25,11 @@ function emptiedText(emptied) {
   return `${sold}${kept} Closed ${emptied.closedPositionCount} open positions. Reset the account on Binance now.`
 }
 
+const CHART_RANGES = [
+  { id: 'all', label: 'All live runs' },
+  { id: 'run', label: 'This run' },
+]
+
 const byTime = (left, right) => new Date(left.time) - new Date(right.time)
 
 /** Every live run of the ticker as its start and end value, then the running run's own points. */
@@ -39,14 +44,17 @@ function allLiveRunPoints(runs, ticker, status) {
   return [...runEnds, ...(status?.points ?? [])].sort(byTime)
 }
 
-function chartEmptyText(chartRange, running) {
+function chartEmptyText(chartRange, timeRange, running) {
+  if (timeRange !== DEFAULT_TIME_RANGE) {
+    return 'Nothing recorded in this time range.'
+  }
+  if (chartRange === 'all') {
+    return 'No live runs yet. Start the bot to record the first one.'
+  }
   if (running) {
     return 'The first point appears with the first live price.'
   }
-  if (chartRange === 'MAX') {
-    return 'No live runs yet. Start the bot to record the first one.'
-  }
-  return 'No live runs in this time range.'
+  return 'Start the bot to see its portfolio value.'
 }
 
 function storedForm(tickerSettings, algorithms) {
@@ -87,7 +95,8 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
   const bots = usePolling(api.getBots, BOT_REFRESH_MS)
   const resets = usePolling(api.getAccountResets, RESETS_REFRESH_MS)
   const [resetResult, setResetResult] = useState(null)
-  const [chartRange, setChartRange] = useState(DEFAULT_TIME_RANGE)
+  const [chartRange, setChartRange] = useState('all')
+  const [timeRange, setTimeRange] = useState(DEFAULT_TIME_RANGE)
   const [ticker, setTicker] = useState('')
   const [draft, setDraft] = useState(null)
   const [budgetDraft, setBudgetDraft] = useState(null)
@@ -105,7 +114,10 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
   const trading = mode === 'TRADING'
   const stoppedForm = draft ?? storedForm(chosenSettings, algorithms)
   const budget = budgetDraft ?? chosenSettings?.budget ?? ''
-  const chartPoints = pointsInRange(allLiveRunPoints(runs, chosenTicker, status), chartRange)
+  const chartPoints = pointsInRange(
+    chartRange === 'all' ? allLiveRunPoints(runs, chosenTicker, status) : status?.points,
+    timeRange,
+  )
   const shownSettings =
     running && editStep === 'readOnly' ? settingsFromResponse(status.currentParameters) : draft
 
@@ -321,15 +333,34 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
       <section className="card">
         <div className="card-head">
           <h2>How {chosenTicker || 'the bot'} is doing</h2>
-          <TimeRangePicker value={chartRange} onChange={setChartRange} />
+          <div
+            className={`segmented segmented-small ${chartRange === 'run' ? 'is-second' : ''}`}
+            role="radiogroup"
+            aria-label="Chart range"
+          >
+            <span className="segmented-thumb" aria-hidden="true" />
+            {CHART_RANGES.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={chartRange === id}
+                className={chartRange === id ? 'is-active' : ''}
+                onClick={() => setChartRange(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <LineChart
-          key={`${chosenTicker}-${chartRange}`}
+          key={`${chosenTicker}-${chartRange}-${timeRange}`}
           points={chartPoints}
           baseline={chartPoints?.[0]?.value ?? null}
           markers={(resets.data?.resetTimes ?? []).map((time) => ({ time, label: 'Reset' }))}
-          emptyText={chartEmptyText(chartRange, running)}
+          emptyText={chartEmptyText(chartRange, timeRange, running)}
         />
+        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         {running && <Counts bot={status} />}
       </section>
     </div>

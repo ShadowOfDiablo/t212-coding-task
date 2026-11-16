@@ -1546,3 +1546,62 @@ The run's positions table is the trade history. Every position is a **buy** at O
 - `GET /brokers/{broker}/runs/{id}/positions` returns `quantity`, `entryPrice` and `exitPrice` (null for older positions).
 - **Price chart:** `GET /brokers/{broker}/runs/{id}/candles` returns `{"points": [{time, price}]}`: the closing prices of the run's ticker on its timeframe, from the candle store, over the replayed range of a training run or from start to end (or now) of a live run. Thinned evenly to at most 1,000 points, the last one always kept.
 - **Dashboard:** the run's positions table shows Quantity, Entry price and Exit price. A price chart above it has a **Show trades** checkbox, off by default: ticked, a green ▲ marks each position's open and a red ▼ its close, at that time and price.
+
+### 16.9 One live bot per ticker (planned)
+
+Every followed ticker can trade at the same time, each with its own settings and its own money.
+
+**Ticker settings (V13).** `active_algorithm` (ticker → variant) becomes the ticker's assigned settings. V13 adds, with plain `ALTER TABLE … ADD COLUMN IF NOT EXISTS`:
+
+| Column | Meaning |
+|---|---|
+| `settings_source` | `MANUAL` (picked by hand) or `AUTOMATIC` (found by auto-tune); NULL on older rows reads as `MANUAL` |
+| `budget` | the ticker's money in USDT; its bot spends only this and keeps its profit or loss |
+| `tuned_run_id` | the run of the last successful auto-tune, the result the next auto-tune must beat |
+
+- `GET /brokers/{broker}/ticker-settings` lists every followed ticker with its settings, budget, source and tuned run (empty when it has none).
+- `PUT /brokers/{broker}/ticker-settings/{ticker}` with `{settings, budget}` assigns settings by hand (`MANUAL`). Without a budget the ticker keeps its own, or gets free USDT ÷ number of followed tickers. A ticker that isn't followed is refused (400).
+- Starting a bot still records the variant it trades with, and never changes the budget or source.
+
+**Shared evaluation queue (`bot/live/queue`).** One queue and one worker pool per broker replace a worker thread per bot:
+
+```mermaid
+flowchart LR
+    Feeder["CandleFeeder dispatcher"] -- offerLast --> Deque["LinkedBlockingDeque<br/>bounded, 1,000"]
+    Timers["bot timers"] -- offerLast --> Deque
+    Deque -- takeFirst --> W1["worker 1"]
+    Deque -- takeFirst --> W2["worker N"]
+    W1 --> Bot["LiveTradingBot.evaluate<br/>locked per ticker"]
+    W2 --> Bot
+    Bot -- "failed, nothing executed<br/>offerFirst, at most 3 tries" --> Deque
+```
+
+- Producers never block: a full queue drops the price with a warning.
+- **Locking:** `evaluate` is locked per bot, so one ticker is never evaluated twice at once. Different tickers run in parallel.
+- **Stale prices:** a price no newer than the last evaluated one for its ticker is discarded.
+- **Retries:** a failed evaluation goes back to the front of the queue, at most 3 tries:
+  - an exchange rejection (nothing was executed)
+  - a failure before any order was sent
+- **Never retried:** an order with an unknown status, because it may have executed.
+
+**Bots per ticker.**
+- `TradingBotService` keys running bots by broker and ticker. Endpoints, under `/brokers/{broker}/bots`:
+  - `GET`
+  - `POST /{ticker}/start|stop|pause|resume`
+  - `PUT /{ticker}/current-parameters`
+  - `POST /start-all`, `POST /stop-all`
+- A ticker without settings can't start (409).
+- **Budget:** each bot's cash starts at its budget and changes only with its own orders. It is never more than the real free USDT. When a run ends, the budget becomes the bot's value, cash plus coins at the last price.
+- Each bot's chart shows its own value. The whole account stays in Holdings.
+
+**Auto-tune (`bot/tuning/autotune`).**
+- `POST /brokers/{broker}/ticker-settings/{ticker}/auto-tune` tunes the ticker over and over, on the request thread, under the training lock. At most 20 rounds.
+- Each round starts from the best settings so far, and its `attempt` number is part of the tuning seed, so every round searches differently.
+- **Goal:** the first time, a profitable run (final value above starting value). After that, a run that beats `tuned_run_id`.
+- **Found:** the settings are assigned as `AUTOMATIC` and `tuned_run_id` is updated.
+- **Not found:** the ticker keeps its settings, and the answer says so, with the best result tried.
+
+**Dashboard.**
+- **Settings needed for trading:** a screen over the live panel lists the followed tickers without settings. A toggle "Count hand-picked settings" decides whether only tuned settings take a ticker off the list.
+  - Each row has a settings picker, a budget field and **Auto-tune**, which warns that it may take much longer than a normal tuning.
+- **Live panel:** one card per ticker, with its status, budget, value, Pause, Resume and Stop. **Start all** and **Stop all** sit on top.

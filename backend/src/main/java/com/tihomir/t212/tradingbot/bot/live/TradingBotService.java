@@ -90,8 +90,7 @@ public class TradingBotService {
     Broker broker = candleHistory.tradingBroker(request.broker(), request.ticker());
     PositionTracker positionTracker = new PositionTracker(broker.name(), request.ticker());
     LiveTradingAccount account =
-        new LiveTradingAccount(
-            request.ticker(), broker.tradingGateway(), positionTracker, positionStore);
+        new LiveTradingAccount(request.ticker(), broker, positionTracker, positionStore);
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
     BigDecimal startingValue = currentValue(broker, account);
@@ -165,6 +164,25 @@ public class TradingBotService {
     return bot.status();
   }
 
+  /**
+   * Stops placing orders, stop loss and take profit included, until resumed. Pausing a paused bot
+   * changes nothing.
+   *
+   * @throws LiveBotNotRunningException if the broker's bot doesn't run
+   */
+  public synchronized LiveBotStatus pauseBot(String broker) {
+    return setBotPaused(broker, true);
+  }
+
+  /**
+   * Places orders again from the next price. Resuming a running bot changes nothing.
+   *
+   * @throws LiveBotNotRunningException if the broker's bot doesn't run
+   */
+  public synchronized LiveBotStatus resumeBot(String broker) {
+    return setBotPaused(broker, false);
+  }
+
   public Optional<LiveBotStatus> getBotStatus(String broker) {
     return findRunningBot(broker).map(LiveTradingBot::status);
   }
@@ -196,6 +214,13 @@ public class TradingBotService {
     } catch (RuntimeException e) {
       log.error("{}: stopping the live bot on shutdown failed", broker, e);
     }
+  }
+
+  private LiveBotStatus setBotPaused(String broker, boolean paused) {
+    LiveTradingBot bot = runningBot(broker);
+    bot.setPaused(paused);
+    log.info("{} {}: live run {} paused: {}", broker, bot.ticker(), bot.runId(), paused);
+    return bot.status();
   }
 
   private LiveTradingBot runningBot(String broker) {

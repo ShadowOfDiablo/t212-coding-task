@@ -1,5 +1,8 @@
 package com.tihomir.t212.tradingbot.bot.live;
 
+import com.tihomir.t212.tradingbot.broker.Broker;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
+import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.order.AccountView;
 import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
 import com.tihomir.t212.tradingbot.order.gateway.ExchangeTradingGateway;
@@ -11,6 +14,8 @@ import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,14 +34,14 @@ final class LiveTradingAccount implements AccountView {
   private final ExchangeTradingGateway gateway;
   private final PositionTracker positionTracker;
   private final PositionStore positionStore;
+  private final TickerPriceReader tickerPrices;
+  private final Set<String> unpricedAssets = ConcurrentHashMap.newKeySet();
 
   LiveTradingAccount(
-      String ticker,
-      ExchangeTradingGateway gateway,
-      PositionTracker positionTracker,
-      PositionStore positionStore) {
+      String ticker, Broker broker, PositionTracker positionTracker, PositionStore positionStore) {
     this.ticker = ticker;
-    this.gateway = gateway;
+    this.gateway = broker.tradingGateway();
+    this.tickerPrices = broker.tickerPrices();
     this.positionTracker = positionTracker;
     this.positionStore = positionStore;
   }
@@ -77,10 +82,33 @@ final class LiveTradingAccount implements AccountView {
     positionTracker.startRun(runId);
   }
 
+  /**
+   * The whole account in the quote asset: every balance, free and locked, at its last quote price.
+   * The traded ticker's base asset is valued at {@code price}. A balance without a price is left
+   * out and logged once.
+   */
   BigDecimal portfolioValue(BigDecimal price) {
-    return cash()
-        .add(baseQuantity().multiply(price))
+    return gateway.accountBalances().balances().stream()
+        .map(balance -> balanceValue(balance, price))
+        .flatMap(Optional::stream)
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
         .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
+  }
+
+  private Optional<BigDecimal> balanceValue(AssetBalance balance, BigDecimal tradedPrice) {
+    BigDecimal quantity = balance.free().add(balance.locked());
+    if (balance.asset().equals(QUOTE_ASSET)) {
+      return Optional.of(quantity);
+    }
+    String assetTicker = balance.asset() + QUOTE_ASSET;
+    if (assetTicker.equals(ticker)) {
+      return Optional.of(quantity.multiply(tradedPrice));
+    }
+    Optional<BigDecimal> lastPrice = tickerPrices.get(assetTicker).map(TickerQuote::lastPrice);
+    if (lastPrice.isEmpty() && unpricedAssets.add(balance.asset())) {
+      log.warn("{}: {} has no price yet, the account value leaves it out", ticker, assetTicker);
+    }
+    return lastPrice.map(quantity::multiply);
   }
 
   private void savePosition(ExecutedOrder order, PositionWrite write) {

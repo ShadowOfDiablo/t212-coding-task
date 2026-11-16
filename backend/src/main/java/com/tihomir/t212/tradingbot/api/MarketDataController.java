@@ -36,7 +36,7 @@ public class MarketDataController {
   @ResponseStatus(HttpStatus.CREATED)
   public TickerPriceListResponse followTicker(
       @PathVariable String broker, @Valid @RequestBody FollowTickerRequestBody body) {
-    followedTickerService.followTicker(broker, body.ticker());
+    followedTickerService.followTicker(broker, body.getNormalizedTicker());
     return getTickerPrices(broker);
   }
 }

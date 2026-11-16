@@ -115,10 +115,28 @@ class BotControllerTest {
     mockMvc.perform(post(BOT + "/stop")).andExpect(status().isConflict());
   }
 
+  @Test
+  void pausesTheBotAndAnswersConflictWhenNothingRuns() throws Exception {
+    when(tradingBotService.pauseBot("binance")).thenReturn(runningBot(true));
+    when(tradingBotService.resumeBot("binance"))
+        .thenThrow(new LiveBotNotRunningException("binance"));
+
+    mockMvc
+        .perform(post(BOT + "/pause"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.paused").value(true));
+    mockMvc.perform(post(BOT + "/resume")).andExpect(status().isConflict());
+  }
+
   private static LiveBotStatus runningBot() {
+    return runningBot(false);
+  }
+
+  private static LiveBotStatus runningBot(boolean paused) {
     return new LiveBotStatus(
         4,
         "BTCUSDT",
+        paused,
         new AlgorithmSettings(
             AlgorithmType.SIMPLE_MOVING_AVERAGE,
             50,

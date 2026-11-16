@@ -221,7 +221,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved,
         </div>
         {tuning && <TuningProgress percent={progress} />}
       </section>
-      <section className="card">
+      <section className={`card ${!tuningResult && !result ? 'card-fill' : ''}`}>
         <div className="card-head">
           <h2>{tuningResult ? 'Old vs tuned settings' : 'Result'}</h2>
           <span className="muted small">portfolio value, USDT</span>

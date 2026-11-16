@@ -1,9 +1,27 @@
-/* Each card is as tall as its content, so a short card leaves no empty block beside a long one. */
 .panel-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* A short card that follows the scroll beside a long one, instead of leaving it empty. */
+.panel-grid > .card.card-sticky {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+}
+
+/* An empty card fills its height with its message, centred. */
+.panel-grid > .card.card-fill {
+  grid-template-rows: auto 1fr;
+  align-content: stretch;
+}
+
+.card-fill > .chart-empty {
+  display: grid;
+  place-items: center;
+  margin: 0;
 }
 
 @media (max-width: 900px) {

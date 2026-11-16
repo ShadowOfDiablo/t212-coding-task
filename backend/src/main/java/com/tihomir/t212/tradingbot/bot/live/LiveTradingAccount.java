@@ -1,28 +1,27 @@
 package com.tihomir.t212.tradingbot.bot.live;
 
 import com.tihomir.t212.tradingbot.broker.Broker;
-import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
-import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.order.AccountView;
 import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
 import com.tihomir.t212.tradingbot.order.gateway.ExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.gateway.VirtualTradingGateway;
 import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.OrderFill;
+import com.tihomir.t212.tradingbot.order.model.OrderSide;
 import com.tihomir.t212.tradingbot.position.PositionStore;
 import com.tihomir.t212.tradingbot.position.PositionTracker;
 import com.tihomir.t212.tradingbot.position.PositionWrite;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The live bot's view of the exchange account. Cash is the account's free quote balance; the
- * position is only what this bot bought, kept by its {@link PositionTracker}, so it never sells
- * coins the account held before.
+ * One ticker's own money on the shared exchange account. Its cash starts at the ticker's budget and
+ * changes only with this bot's orders, and is never more than the account's free USDT. The position
+ * is only what this bot bought, kept by its {@link PositionTracker}, so it never sells coins the
+ * account held before.
  */
 final class LiveTradingAccount implements AccountView {
 
@@ -34,16 +33,19 @@ final class LiveTradingAccount implements AccountView {
   private final ExchangeTradingGateway gateway;
   private final PositionTracker positionTracker;
   private final PositionStore positionStore;
-  private final TickerPriceReader tickerPrices;
-  private final Set<String> unpricedAssets = ConcurrentHashMap.newKeySet();
+  private BigDecimal ownCash;
 
   LiveTradingAccount(
-      String ticker, Broker broker, PositionTracker positionTracker, PositionStore positionStore) {
+      String ticker,
+      Broker broker,
+      PositionTracker positionTracker,
+      PositionStore positionStore,
+      BigDecimal budget) {
     this.ticker = ticker;
     this.gateway = broker.tradingGateway();
-    this.tickerPrices = broker.tickerPrices();
     this.positionTracker = positionTracker;
     this.positionStore = positionStore;
+    this.ownCash = budget;
   }
 
   @Override
@@ -51,9 +53,10 @@ final class LiveTradingAccount implements AccountView {
     return ticker;
   }
 
+  /** The bot's own cash, but never more than the account really has free. */
   @Override
-  public BigDecimal cash() {
-    return freeCash(gateway);
+  public synchronized BigDecimal cash() {
+    return ownCash.min(freeCash(gateway));
   }
 
   @Override
@@ -67,10 +70,16 @@ final class LiveTradingAccount implements AccountView {
   }
 
   /**
-   * Applies the order to the position and stores the change. The order did happen: a failed write
-   * is logged and the position stays in memory.
+   * Moves the order's USDT in or out of the bot's cash, applies it to the position and stores the
+   * change. The order did happen: a failed write is logged and the position stays in memory.
    */
-  void recordExecutedOrder(ExecutedOrder order) {
+  synchronized void recordExecutedOrder(ExecutedOrder order) {
+    BigDecimal quoteFee = quoteFee(order);
+    if (order.side() == OrderSide.BUY) {
+      ownCash = ownCash.subtract(order.quoteAmount()).subtract(quoteFee);
+    } else {
+      ownCash = ownCash.add(order.quoteAmount()).subtract(quoteFee);
+    }
     positionTracker.recordExecutedOrder(order).ifPresent(write -> savePosition(order, write));
   }
 
@@ -82,33 +91,15 @@ final class LiveTradingAccount implements AccountView {
     positionTracker.startRun(runId);
   }
 
-  /**
-   * The whole account in the quote asset: every balance, free and locked, at its last quote price.
-   * The traded ticker's base asset is valued at {@code price}. A balance without a price is left
-   * out and logged once.
-   */
-  BigDecimal portfolioValue(BigDecimal price) {
-    return gateway.accountBalances().balances().stream()
-        .map(balance -> balanceValue(balance, price))
-        .flatMap(Optional::stream)
-        .reduce(BigDecimal.ZERO, BigDecimal::add)
+  /** The bot's own money: its cash plus its coins at this price. */
+  synchronized BigDecimal portfolioValue(BigDecimal price) {
+    return ownCash
+        .add(positionTracker.quantity().multiply(price))
         .setScale(AMOUNT_SCALE, RoundingMode.HALF_EVEN);
   }
 
-  private Optional<BigDecimal> balanceValue(AssetBalance balance, BigDecimal tradedPrice) {
-    BigDecimal quantity = balance.free().add(balance.locked());
-    if (balance.asset().equals(QUOTE_ASSET)) {
-      return Optional.of(quantity);
-    }
-    String assetTicker = balance.asset() + QUOTE_ASSET;
-    if (assetTicker.equals(ticker)) {
-      return Optional.of(quantity.multiply(tradedPrice));
-    }
-    Optional<BigDecimal> lastPrice = tickerPrices.get(assetTicker).map(TickerQuote::lastPrice);
-    if (lastPrice.isEmpty() && unpricedAssets.add(balance.asset())) {
-      log.warn("{}: {} has no price yet, the account value leaves it out", ticker, assetTicker);
-    }
-    return lastPrice.map(quantity::multiply);
+  synchronized BigDecimal ownCash() {
+    return ownCash;
   }
 
   private void savePosition(ExecutedOrder order, PositionWrite write) {
@@ -123,7 +114,14 @@ final class LiveTradingAccount implements AccountView {
     }
   }
 
-  static BigDecimal freeCash(ExchangeTradingGateway gateway) {
+  private static BigDecimal quoteFee(ExecutedOrder order) {
+    return order.fills().stream()
+        .filter(fill -> QUOTE_ASSET.equals(fill.feeCurrency()))
+        .map(OrderFill::feeAmount)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+  }
+
+  private static BigDecimal freeCash(ExchangeTradingGateway gateway) {
     return gateway.accountBalances().balances().stream()
         .filter(balance -> balance.asset().equals(QUOTE_ASSET))
         .map(AssetBalance::free)

@@ -99,8 +99,9 @@ final class LiveTradingBot implements CandleUpdateListener, PriceMessageHandler 
     return broker.name();
   }
 
+  /** The bot's own cash, what its ticker's budget becomes when no price is known. */
   BigDecimal cash() {
-    return account.cash();
+    return account.ownCash();
   }
 
   String ticker() {

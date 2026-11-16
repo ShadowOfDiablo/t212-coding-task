@@ -1,9 +1,4 @@
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'position_status') THEN
-        CREATE TYPE position_status AS ENUM ('OPEN', 'CLOSED');
-    END IF;
-END $$;
+CREATE TYPE position_status AS ENUM ('OPEN', 'CLOSED');
 
 -- Positions at average cost. Found again by the run they opened in and the time of the first buy,
 -- so a position written twice is updated, not duplicated.

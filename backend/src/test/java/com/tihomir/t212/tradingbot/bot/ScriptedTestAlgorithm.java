@@ -1,21 +1,21 @@
 package com.tihomir.t212.tradingbot.bot;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingDefinitionList;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
 import com.tihomir.t212.tradingbot.algorithm.SignalGenerator;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinitionList;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.util.Iterator;
 import java.util.List;
 
 /** Gives the listed signals one per price, then HOLD, and runs a hook on every price. */
-final class ScriptedTestAlgorithm extends TradingAlgorithm {
+public final class ScriptedTestAlgorithm extends TradingAlgorithm {
 
   private final List<TradingSignal> signals;
   private final Runnable onEveryPrice;
 
-  ScriptedTestAlgorithm(List<TradingSignal> signals, Runnable onEveryPrice) {
+  public ScriptedTestAlgorithm(List<TradingSignal> signals, Runnable onEveryPrice) {
     super(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-scripted",

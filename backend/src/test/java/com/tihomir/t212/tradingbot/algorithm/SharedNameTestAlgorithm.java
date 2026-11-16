@@ -1,11 +1,14 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinition;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinitionList;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.util.List;
 
 /** Wrongly names one of its own settings like a shared one. */
 final class SharedNameTestAlgorithm extends TradingAlgorithm {
 
-  SharedNameTestAlgorithm() {
+  public SharedNameTestAlgorithm() {
     super(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-shared-name",

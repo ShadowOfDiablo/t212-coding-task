@@ -2,8 +2,8 @@ package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
 import com.tihomir.t212.tradingbot.broker.RequestSigner;
-import com.tihomir.t212.tradingbot.order.AccountBalanceSynchronizer;
-import com.tihomir.t212.tradingbot.order.BalanceCachingTradingGateway;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSynchronizer;
+import com.tihomir.t212.tradingbot.order.balance.BalanceCachingTradingGateway;
 import java.nio.file.Path;
 import java.time.Clock;
 import org.slf4j.Logger;

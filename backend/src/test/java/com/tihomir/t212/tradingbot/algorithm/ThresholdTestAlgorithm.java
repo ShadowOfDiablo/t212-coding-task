@@ -1,5 +1,9 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinition;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinitionList;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -10,7 +14,7 @@ final class ThresholdTestAlgorithm extends TradingAlgorithm {
   static final String THRESHOLD = "threshold";
   static final int MIN_WINDOW_WITH_THRESHOLD = 3;
 
-  ThresholdTestAlgorithm() {
+  public ThresholdTestAlgorithm() {
     super(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-threshold",

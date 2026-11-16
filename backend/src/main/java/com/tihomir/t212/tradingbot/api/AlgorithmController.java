@@ -1,7 +1,12 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmService;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithmService;
+import com.tihomir.t212.tradingbot.api.request.ReplaceSavedSettingsRequestBody;
+import com.tihomir.t212.tradingbot.api.request.SaveAlgorithmRequestBody;
+import com.tihomir.t212.tradingbot.api.response.AlgorithmListResponse;
+import com.tihomir.t212.tradingbot.api.response.SavedAlgorithmListResponse;
+import com.tihomir.t212.tradingbot.api.response.SavedAlgorithmResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;

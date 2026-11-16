@@ -3,6 +3,8 @@ package com.tihomir.t212.tradingbot.algorithm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.UnknownAlgorithmException;
+import com.tihomir.t212.tradingbot.algorithm.indicator.SimpleMovingAverageAlgorithm;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

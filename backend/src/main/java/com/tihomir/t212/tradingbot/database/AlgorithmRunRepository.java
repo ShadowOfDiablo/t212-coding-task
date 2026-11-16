@@ -1,16 +1,16 @@
 package com.tihomir.t212.tradingbot.database;
 
-import com.tihomir.t212.tradingbot.bot.AlgorithmRunStore;
-import com.tihomir.t212.tradingbot.bot.PortfolioPoint;
-import com.tihomir.t212.tradingbot.bot.PortfolioPointList;
-import com.tihomir.t212.tradingbot.bot.RecordedRun;
-import com.tihomir.t212.tradingbot.bot.RecordedRunList;
-import com.tihomir.t212.tradingbot.bot.RunCounts;
-import com.tihomir.t212.tradingbot.bot.RunEnd;
-import com.tihomir.t212.tradingbot.bot.RunStart;
-import com.tihomir.t212.tradingbot.bot.RunStatus;
-import com.tihomir.t212.tradingbot.bot.SettingsSource;
-import com.tihomir.t212.tradingbot.bot.StoredRunDetails;
+import com.tihomir.t212.tradingbot.bot.model.PortfolioPoint;
+import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunStore;
+import com.tihomir.t212.tradingbot.bot.run.PortfolioPointList;
+import com.tihomir.t212.tradingbot.bot.run.RecordedRun;
+import com.tihomir.t212.tradingbot.bot.run.RecordedRunList;
+import com.tihomir.t212.tradingbot.bot.run.RunCounts;
+import com.tihomir.t212.tradingbot.bot.run.RunEnd;
+import com.tihomir.t212.tradingbot.bot.run.RunStart;
+import com.tihomir.t212.tradingbot.bot.run.RunStatus;
+import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
+import com.tihomir.t212.tradingbot.bot.run.StoredRunDetails;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;

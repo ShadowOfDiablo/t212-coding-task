@@ -3,9 +3,9 @@ package com.tihomir.t212.tradingbot.database;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingValues;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
 import java.math.BigDecimal;

@@ -1,5 +1,11 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinition;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinitionList;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingValues;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingsRequest;
 import java.util.List;
 
 /**
@@ -23,7 +29,7 @@ public abstract class TradingAlgorithm {
   private static final int MIN_UPDATE_TIME_SECONDS = 1;
   private static final int MAX_UPDATE_TIME_SECONDS = 86_400;
 
-  static final AlgorithmSettingDefinitionList SHARED_DEFINITIONS =
+  public static final AlgorithmSettingDefinitionList SHARED_DEFINITIONS =
       new AlgorithmSettingDefinitionList(
           List.of(
               AlgorithmSettingDefinition.requiredWholeNumber(

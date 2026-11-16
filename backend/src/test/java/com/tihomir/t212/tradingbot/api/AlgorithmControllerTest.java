@@ -14,15 +14,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithm;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmList;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmNotFoundException;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmService;
-import com.tihomir.t212.tradingbot.algorithm.SettingsAlreadySavedException;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithmList;
+import com.tihomir.t212.tradingbot.algorithm.exception.SavedAlgorithmNotFoundException;
+import com.tihomir.t212.tradingbot.algorithm.exception.SettingsAlreadySavedException;
+import com.tihomir.t212.tradingbot.algorithm.indicator.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithmList;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithmService;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import java.time.Instant;
 import java.util.List;

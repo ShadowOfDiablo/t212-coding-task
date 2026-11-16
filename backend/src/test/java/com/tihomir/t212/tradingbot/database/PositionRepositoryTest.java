@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
-import com.tihomir.t212.tradingbot.bot.RunStart;
-import com.tihomir.t212.tradingbot.bot.SettingsSource;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingValues;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.bot.run.RunStart;
+import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;

@@ -3,11 +3,11 @@ package com.tihomir.t212.tradingbot.database;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithm;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.indicator.SimpleMovingAverageAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.mode.BrokerStartupRunner;
 import java.time.Instant;

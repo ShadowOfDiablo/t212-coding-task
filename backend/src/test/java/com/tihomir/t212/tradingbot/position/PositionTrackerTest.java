@@ -3,9 +3,9 @@ package com.tihomir.t212.tradingbot.position;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.tihomir.t212.tradingbot.order.ExecutedOrder;
-import com.tihomir.t212.tradingbot.order.OrderFill;
-import com.tihomir.t212.tradingbot.order.OrderSide;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.OrderFill;
+import com.tihomir.t212.tradingbot.order.model.OrderSide;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;

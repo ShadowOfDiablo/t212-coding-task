@@ -1017,31 +1017,40 @@ com.tihomir.t212.tradingbot
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
 ├── mode             BotMode, BotModeService, BrokerStartupRunner
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
-├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmType, AlgorithmStore,
-│   │                AlgorithmRegistryService, SignalGenerator, TradingSignal, SimpleMovingAverageAlgorithm,
-│   │                SavedAlgorithm(List), SavedAlgorithmStore, SavedAlgorithmService
-│   └── indicator    SimpleMovingAverage
-├── bot              TradingBotService, TrainingService, TrainingLock, AlgorithmRunStore, RunStatus, SettingsSource,
-│                    TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange, TuningTrial, TuningResult
+├── algorithm        TradingAlgorithm(List), AlgorithmType, SignalGenerator, TradingSignal,
+│   │                AlgorithmRegistryService, AlgorithmSettingsService, AlgorithmStore
+│   ├── settings     AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmSettingValues,
+│   │                AlgorithmSettingsRequest
+│   ├── saved        SavedAlgorithm(List), SavedAlgorithmStore, SavedAlgorithmService
+│   ├── indicator    SimpleMovingAverage, SimpleMovingAverageAlgorithm, SimpleMovingAverageSignalGenerator
+│   └── exception    the algorithm and saved-settings exceptions
+├── bot
+│   ├── live         TradingBotService, LiveTradingBot, LiveTradingAccount, LiveSignalSource
+│   ├── training     TrainingService, TrainingLock, TrainingReplay, TrainingSetup, TrainingRunRequest
+│   ├── tuning       TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange,
+│   │                TuningDimension(Kind), TuningDimensionValueDrawer, TuningPoint, TuningProgress,
+│   │                TuningTrial, TuningResult
+│   ├── run          AlgorithmRunService, AlgorithmRunStore, RecordedRun(List), RunCounts, RunDetails,
+│   │                RunEnd, RunStart, RunStatus, SettingsSource, StoredRunDetails, UnrecordedRun,
+│   │                UnfinishedRunCleanup, PortfolioPointList
+│   ├── model        LiveBotStatus, LiveRunRequest, PortfolioPoint
+│   └── exception    the bot, training and tuning exceptions
 ├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
-├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
-│                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
-│                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
-│                    OrderStore, OpenOrder, OpenOrderList, OpenOrderStatus, OrderHistory, OrderHistoryEntry,
-│                    RejectedOrder, RejectedOrderList, AccountBalanceList,
-│                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
-│                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
-│                    TradingNotConfiguredException
-│                    OrderCheckerService, OrderCheck, RejectionReason, AccountView, VirtualTradingGateway
-│                    (planned) OrderExecutionService
-│   └── fee          (planned) FeeService
+├── order            OrderService, OrderStore, OrderCheckerService, OrderCheck, RejectionReason, AccountView
+│   ├── model        ExecutedOrder, OpenOrder(List), OpenOrderStatus, OrderSide, OrderAmountType, OrderFee,
+│   │                OrderFill, OrderHistory(Entry), RejectedOrder(List), MarketOrderRequest,
+│   │                TickerTradingRules
+│   ├── balance      AccountBalanceCache, AccountBalanceList, AccountBalanceSnapshot,
+│   │                AccountBalanceSynchronizer, AssetBalance, CachedAssetBalance,
+│   │                BalanceCachingTradingGateway
+│   ├── gateway      ExchangeTradingGateway, VirtualTradingGateway
+│   └── exception    the order and exchange exceptions
 ├── position         PositionTracker, PositionStore, Position, PositionStatus (§8)
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    PositionRepository (position)
-└── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
-                     RejectedOrderListResponse, MarketDataController, TickerPriceListResponse,
-                     BotModeController, BotModeSetting, ApiExceptionHandler
-                     (planned) bot controls and read endpoints
+└── api              the controllers and ApiExceptionHandler
+    ├── request      the request bodies (*Body)
+    └── response     the response DTOs (*Response) and BotModeSetting
 ```
 
 ## 15. Frontend (dashboard built)
@@ -1390,13 +1399,17 @@ flowchart LR
   - **Lot step:** the smallest amount a coin quantity can change by, from the ticker's `LOT_SIZE` filter. Binance only takes base quantities that are a multiple of it: for BTCUSDT the step is 0.00001 BTC, so 0.123456 BTC is sent as 0.12345 BTC. `BinanceTradingGateway` reads the step once per ticker from `/api/v3/exchangeInfo` and rounds a base quantity down to it; if the step can't be read, nothing is sent. A sell closes the bot's position, and the rest below one step stays in the account.
   - **Stop** removes the listener, lets queued prices finish (up to 10 seconds) and records the end as `STOPPED`, with the final value at the latest price. On shutdown, running bots are stopped the same way.
   - **Mode switch:** refused with 409 while a bot runs.
+  - **Pause and resume:** the bot keeps a `paused` flag in memory. While paused, it places **no orders at all**, not even a stop loss or take profit. Prices are still evaluated for the parts that don't trade: MAE and MFE, and the portfolio chart (the coins held still change in value). Signals are not computed. The run stays `STARTED` in the database, so no migration is needed. Pausing a paused bot or resuming a running one changes nothing. A settings change while paused keeps the bot paused. Stop works from either state. A restart forgets the flag, which is fine because running bots are stopped on shutdown.
+  - **Reset:** Binance's demo account has no reset endpoint ("You can reset your balance whenever you want via the UI", Demo Mode docs). The dashboard's Reset button stops the bot if it runs, then opens Binance's demo wallet page in a new tab, where the user resets the balance. No backend change.
 
 ```mermaid
 flowchart LR
     Feeder["CandleFeeder<br/>1-minute updates"] -- "liveOnTick" --> Queue["bounded queue"]
     Timer["timer<br/>every updateTimeSeconds"] -- "latest price" --> Queue
     Queue --> Worker["LiveTradingBot<br/>worker thread"]
-    Worker --> Stop{"stop loss<br/>reached?"}
+    Worker --> Paused{"paused?"}
+    Paused -- yes --> Track["MAE / MFE<br/>portfolio point<br/>no orders"]
+    Paused -- no --> Stop{"stop loss<br/>reached?"}
     Stop -- yes --> Placer["OrderCheckerService<br/>checks, then places"]
     Stop -- no --> Source["LiveSignalSource<br/>closed candles from the store<br/>+ forming candle"]
     Source -- "BUY / SELL" --> Placer
@@ -1449,8 +1462,9 @@ stateDiagram-v2
 | POST | `/brokers/{broker}/training/tunings` | Tune settings automatically and record the best one as a training run (§16.7). Same 409s as a training run |
 | GET | `/brokers/{broker}/training` | `running` while a training run or a tuning goes on; `tuningProgressPercent` while a tuning runs |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
-| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `currentParameters`, counts |
+| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `paused`, `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
+| POST | `/brokers/{broker}/bot/pause`, `/bot/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
 

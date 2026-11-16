@@ -1,6 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.bot.TradingBotService;
+import com.tihomir.t212.tradingbot.api.response.BotModeSetting;
+import com.tihomir.t212.tradingbot.bot.live.TradingBotService;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;

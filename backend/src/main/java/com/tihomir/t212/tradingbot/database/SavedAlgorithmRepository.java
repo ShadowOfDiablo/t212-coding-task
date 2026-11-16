@@ -1,8 +1,8 @@
 package com.tihomir.t212.tradingbot.database;
 
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithm;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmList;
-import com.tihomir.t212.tradingbot.algorithm.SavedAlgorithmStore;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithm;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithmList;
+import com.tihomir.t212.tradingbot.algorithm.saved.SavedAlgorithmStore;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;

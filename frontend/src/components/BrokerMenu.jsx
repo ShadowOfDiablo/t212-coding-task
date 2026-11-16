@@ -11,7 +11,7 @@ function BrokerBadge({ broker }) {
   return (
     <span className="broker-badge" style={brokerStyle(broker)} aria-hidden="true">
       {broker.logoPath ? (
-        <svg className="broker-logo" viewBox="0 0 24 24">
+        <svg className="broker-logo" viewBox={broker.logoViewBox}>
           <path d={broker.logoPath} />
         </svg>
       ) : (

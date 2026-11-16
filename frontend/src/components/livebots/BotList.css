@@ -1,23 +1,14 @@
 .bot-list {
   display: grid;
   gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.bot-list li {
+.bot-card {
   display: grid;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid transparent;
   border-radius: var(--radius-small);
   background: var(--surface-raised);
-  cursor: pointer;
-}
-
-.bot-list li.is-selected {
-  border-color: var(--brand);
 }
 
 .bot-list-head {

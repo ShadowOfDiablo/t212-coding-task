@@ -34,7 +34,9 @@
   justify-content: space-between;
 }
 
+/* The round blue checkbox; .dot-checkbox is the same look for checkboxes outside tuning. */
 .tune-toggle,
+.dot-checkbox,
 .tune-toggle-sample {
   appearance: none;
   flex: none;
@@ -58,22 +60,26 @@
   cursor: default;
 }
 
-.tune-toggle:checked {
+.tune-toggle:checked,
+.dot-checkbox:checked {
   background: var(--brand);
   box-shadow: inset 0 0 0 3px var(--surface);
 }
 
-.tune-toggle:hover:not(:disabled) {
+.tune-toggle:hover:not(:disabled),
+.dot-checkbox:hover:not(:disabled) {
   box-shadow: 0 0 0 4px var(--brand-soft);
 }
 
-.tune-toggle:checked:hover:not(:disabled) {
+.tune-toggle:checked:hover:not(:disabled),
+.dot-checkbox:checked:hover:not(:disabled) {
   box-shadow:
     inset 0 0 0 3px var(--surface),
     0 0 0 4px var(--brand-soft);
 }
 
-.tune-toggle:focus-visible {
+.tune-toggle:focus-visible,
+.dot-checkbox:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }

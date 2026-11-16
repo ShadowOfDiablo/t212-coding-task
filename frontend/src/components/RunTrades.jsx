@@ -1,3 +1,4 @@
+import './Tuning.css'
 import './RunTrades.css'
 import { useState } from 'react'
 import { api } from '../api.js'
@@ -82,7 +83,12 @@ function PriceChart({ prices, positions }) {
       <div className="run-price-chart-head">
         <h3 className="small">Instrument price over time</h3>
         <label className="check-label small">
-          <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)} />
+          <input
+            type="checkbox"
+            className="dot-checkbox"
+            checked={showTrades}
+            onChange={(event) => setShowTrades(event.target.checked)}
+          />
           Show trades
         </label>
       </div>

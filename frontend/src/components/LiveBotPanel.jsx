@@ -221,7 +221,6 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
         />
         {chosenTicker && (
           <>
-            <h3>{chosenTicker}</h3>
             {running ? (
               <p className="muted small">
                 Trading on {timeframeLabel(status.currentParameters.timeframe)} candles with its own{' '}

@@ -4,6 +4,31 @@ A simulated crypto trading bot: a Java Spring Boot backend that runs the trading
 
 The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with diagrams of how each part works.
 
+## Quick start
+
+You need Java 21, Node.js 20.19+, Docker (running) and Git. Maven comes with the project (`mvnw`).
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/ShadowOfDiablo/t212-coding-task.git
+   cd t212-coding-task
+   ```
+2. Optional, for trading on the Binance demo account: create a demo API key and set `BINANCE_DEMO_API_KEY` and `BINANCE_DEMO_PRIVATE_KEY_PATH`, as described in [Trade on the demo account](#trade-on-the-demo-account). Without them, market data and backtests still work.
+3. Start the backend. It starts PostgreSQL in Docker by itself and runs on http://localhost:8080:
+   ```bash
+   cd backend
+   ./mvnw spring-boot:run        # Windows: .mvnw.cmd spring-boot:run
+   ```
+4. In a second terminal, start the dashboard:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+5. Open http://localhost:5173. Use the Training switch at the top to run backtests and tunings, and Trading to run the live bots.
+
+Run the tests with `./mvnw verify` in `backend/` (Docker must be running for the database tests).
+
 ## Status
 
 | Part | Status |

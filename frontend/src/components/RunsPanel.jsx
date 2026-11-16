@@ -2,12 +2,15 @@ import './Panels.css'
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { formatPrice, formatTime } from '../format.js'
+import { usePage } from '../hooks/usePage.js'
+import { Pagination } from './pagination/Pagination.jsx'
 import { RunDetails } from './RunDetails.jsx'
 
 export function RunsPanel({ runs }) {
   const [selectedId, setSelectedId] = useState(null)
   const [details, setDetails] = useState(null)
   const [error, setError] = useState(null)
+  const { page, pageCount, pageRows, setPage } = usePage(runs.data?.runs)
 
   useEffect(() => {
     if (selectedId == null) {
@@ -55,7 +58,7 @@ export function RunsPanel({ runs }) {
                 </tr>
               </thead>
               <tbody>
-                {runs.data.runs.map((run) => (
+                {pageRows.map((run) => (
                   <tr
                     key={run.id}
                     className={run.id === selectedId ? 'is-selected' : ''}
@@ -71,6 +74,7 @@ export function RunsPanel({ runs }) {
                 ))}
               </tbody>
             </table>
+            <Pagination page={page} pageCount={pageCount} onChange={setPage} />
           </div>
         )}
       </section>

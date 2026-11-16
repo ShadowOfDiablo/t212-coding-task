@@ -1,6 +1,8 @@
 import './OrdersCard.css'
 import { useState } from 'react'
 import { formatPrice, formatQuantity, formatTime } from '../format.js'
+import { usePage } from '../hooks/usePage.js'
+import { Pagination } from './pagination/Pagination.jsx'
 
 const TABS = [
   { id: 'history', label: 'Executed' },
@@ -131,7 +133,12 @@ export function OrdersCard({ history, rejected, open }) {
     open: { state: open, rows: open.data?.openOrders },
   }
   const active = sources[tab]
+  const { page, pageCount, pageRows, setPage } = usePage(active.rows)
   const activeIndex = TABS.findIndex((candidate) => candidate.id === tab)
+  const selectTab = (id) => {
+    setTab(id)
+    setPage(0)
+  }
 
   return (
     <section className="card orders">
@@ -146,7 +153,7 @@ export function OrdersCard({ history, rejected, open }) {
               role="tab"
               aria-selected={tab === id}
               className={tab === id ? 'is-active' : ''}
-              onClick={() => setTab(id)}
+              onClick={() => selectTab(id)}
             >
               {label}
               <span className="count">{sources[id].rows?.length ?? '·'}</span>
@@ -162,13 +169,14 @@ export function OrdersCard({ history, rejected, open }) {
         ) : active.rows.length === 0 ? (
           <p className="empty">{EMPTY_TEXT[tab]}</p>
         ) : tab === 'history' ? (
-          <ExecutedTable orders={active.rows} />
+          <ExecutedTable orders={pageRows} />
         ) : tab === 'rejected' ? (
-          <RejectedTable orders={active.rows} />
+          <RejectedTable orders={pageRows} />
         ) : (
-          <OpenTable orders={active.rows} />
+          <OpenTable orders={pageRows} />
         )}
       </div>
+      <Pagination page={page} pageCount={pageCount} onChange={setPage} />
     </section>
   )
 }

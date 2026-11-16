@@ -17,6 +17,19 @@ function signedPercent(value) {
   return `${sign}${value.toFixed(2)}%`
 }
 
+/** The return from the first point at or after `checkFrom` to the end: data the tuner never saw. */
+function checkReturnPercent(points, checkFrom, finalValue) {
+  const checkStart = points?.find((point) => new Date(point.time) >= new Date(checkFrom))
+  return checkStart ? returnPercent(finalValue, checkStart.value) : null
+}
+
+function returnCell(value) {
+  if (value == null) {
+    return <td className="muted">—</td>
+  }
+  return <td className={value >= 0 ? 'change-up' : 'change-down'}>{signedPercent(value)}</td>
+}
+
 function settingsText(settings) {
   const parts = [timeframeLabel(settings.timeframe), `period ${settings.timePeriod}`, `buy ${settings.orderSizePercent}%`]
   if (settings.stopLossPercent != null) {
@@ -29,10 +42,10 @@ function settingsText(settings) {
 }
 
 /**
- * The tuned run next to the old settings, both on the same check range. The form keeps the old
- * settings until Apply settings is clicked.
+ * The tuned run next to the old settings, both over the whole range; a marker shows where the data
+ * the tuner never saw begins. The form keeps the old settings until Apply settings is clicked.
  */
-export function TuningComparison({ tuning, oldSettings, applied, disabled, onApply, saved }) {
+export function TuningComparison({ tuning, oldSettings, checkFrom, applied, disabled, onApply, saved }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const { run, settings, points } = tuning.run
   const tunedReturn = returnPercent(run.finalValue, run.startingValue)
@@ -42,9 +55,16 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
       name: 'Old settings',
       settings: oldSettings,
       finalValue: baseRun?.finalValue,
+      checkReturn: baseRun && checkReturnPercent(baseRun.points, checkFrom, baseRun.finalValue),
       counts: baseRun,
     },
-    { name: 'Tuned settings', settings, finalValue: run.finalValue, counts: run },
+    {
+      name: 'Tuned settings',
+      settings,
+      finalValue: run.finalValue,
+      checkReturn: checkReturnPercent(points, checkFrom, run.finalValue),
+      counts: run,
+    },
   ]
 
   return (
@@ -90,9 +110,9 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
       />
       {previewOpen && <SettingsPreview oldSettings={oldSettings} tunedSettings={settings} />}
       <p className="small">
-        Both runs cover {formatUtcDateTime(run.from)} →{' '}
-        {formatUtcDateTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}
-        {signedPercent(Number(tuning.bestTuneReturnPercent))}.
+        Both runs cover {formatUtcDateTime(run.from)} → {formatUtcDateTime(run.to)}. The tuner only
+        saw the data before {formatUtcDateTime(checkFrom)}; the part after it is new to the settings.{' '}
+        {tuning.trialCount} tries, best tune return {signedPercent(Number(tuning.bestTuneReturnPercent))}.
       </p>
       <table className="comparison-table small">
         <thead>
@@ -100,6 +120,7 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
             <th scope="col">Run</th>
             <th scope="col">Final value</th>
             <th scope="col">Return</th>
+            <th scope="col">Return on new data</th>
             <th scope="col">Buys / sells</th>
           </tr>
         </thead>
@@ -111,15 +132,14 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
                 <span className="muted comparison-settings">{settingsText(row.settings)}</span>
               </th>
               {row.finalValue == null ? (
-                <td colSpan="3" className="muted">
+                <td colSpan="4" className="muted">
                   Not available
                 </td>
               ) : (
                 <>
                   <td>{formatPrice(row.finalValue)} USDT</td>
-                  <td className={returnPercent(row.finalValue, run.startingValue) >= 0 ? 'change-up' : 'change-down'}>
-                    {signedPercent(returnPercent(row.finalValue, run.startingValue))}
-                  </td>
+                  {returnCell(returnPercent(row.finalValue, run.startingValue))}
+                  {returnCell(row.checkReturn)}
                   <td>
                     {row.counts.buyCount} / {row.counts.sellCount}
                   </td>
@@ -129,7 +149,12 @@ export function TuningComparison({ tuning, oldSettings, applied, disabled, onApp
           ))}
         </tbody>
       </table>
-      <LineChart points={points} comparePoints={baseRun?.points} baseline={run.startingValue} />
+      <LineChart
+        points={points}
+        comparePoints={baseRun?.points}
+        baseline={run.startingValue}
+        markers={[{ time: checkFrom, label: 'New data' }]}
+      />
       <p className="muted small comparison-legend">
         <span className="legend-tuned">Tuned ({signedPercent(tunedReturn)})</span>
         <span className="legend-old">Old settings, dashed</span>

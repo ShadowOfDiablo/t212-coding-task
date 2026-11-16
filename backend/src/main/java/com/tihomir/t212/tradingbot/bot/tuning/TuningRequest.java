@@ -13,8 +13,8 @@ import java.util.stream.Collectors;
 
 /**
  * A tuning to run, built from a request body already checked with {@code @Valid}. The tries are
- * scored on {@code [training.from, checkFrom)}; the best one is recorded on {@code [checkFrom,
- * training.to)}.
+ * scored on {@code [training.from, checkFrom)}; the best one is recorded on the whole {@code
+ * [training.from, training.to)}, so its return from {@code checkFrom} on shows unseen data.
  *
  * @param training the range, the base settings and the starting balance; settings that aren't tuned
  *     keep their base value

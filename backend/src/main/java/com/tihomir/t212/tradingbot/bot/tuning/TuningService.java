@@ -24,8 +24,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Finds good settings automatically: replays many tries in memory on the tune range, chosen with
- * TPE, and records only the best one, replayed on the check range, as a training run with AUTOMATIC
- * settings. Shares the training lock, so it never runs beside a training run.
+ * TPE, and records only the best one, replayed over the whole range, as a training run with
+ * AUTOMATIC settings. Shares the training lock, so it never runs beside a training run.
  */
 @Service
 public class TuningService {
@@ -100,7 +100,7 @@ public class TuningService {
             .orElseThrow(() -> new NoSuccessfulTuningTrialException(trials.size()));
     long runId =
         trainingService.recordTrainingRun(
-            session.checkSetup(best.settings()), SettingsSource.AUTOMATIC);
+            session.fullRangeSetup(best.settings()), SettingsSource.AUTOMATIC);
     BigDecimal bestTuneReturnPercent =
         BigDecimal.valueOf(best.score())
             .multiply(PERCENT)
@@ -118,14 +118,14 @@ public class TuningService {
   }
 
   /**
-   * The base settings replayed on the check range, to compare the tuned run with. A failure only
+   * The base settings replayed over the whole range, to compare the tuned run with. A failure only
    * loses the comparison: the tuned run is already recorded.
    */
   private Optional<UnrecordedRun> baseRun(TuningRequest request, TuningSession session) {
     try {
       return Optional.of(
           trainingService.replayWithoutRecording(
-              session.checkSetup(request.training().settings())));
+              session.fullRangeSetup(request.training().settings())));
     } catch (RuntimeException e) {
       log.warn(
           "Tuning {} {}: replaying the base settings for the comparison failed: {}",

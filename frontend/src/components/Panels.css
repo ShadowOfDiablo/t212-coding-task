@@ -1,8 +1,9 @@
+/* Each card is as tall as its content, so a short card leaves no empty block beside a long one. */
 .panel-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 20px;
-  align-items: stretch;
+  align-items: start;
 }
 
 @media (max-width: 900px) {

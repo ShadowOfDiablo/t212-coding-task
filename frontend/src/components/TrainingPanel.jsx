@@ -1,7 +1,7 @@
 import './Panels.css'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { api } from '../api.js'
-import { defaultSettings, settingsFromResponse, settingsToBody } from '../settings.js'
+import { defaultSettings, settingsFromResponse, settingsToBody, tickerOptions } from '../settings.js'
 import {
   checkFromInstant,
   defaultTuning,
@@ -11,7 +11,10 @@ import {
   withDefaults,
   withTuned,
 } from '../tuning.js'
+import { DateTimePicker } from './DateTimePicker.jsx'
+import { Dropdown } from './Dropdown.jsx'
 import { RunDetails } from './RunDetails.jsx'
+import { SaveCurrentSettings } from './SaveCurrentSettings.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
 import { TuningComparison } from './TuningComparison.jsx'
 import { TuningFields } from './TuningFields.jsx'
@@ -35,12 +38,16 @@ function statusText(running, tuning) {
   return 'Settings editable'
 }
 
-export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
+export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved, onFormChange }) {
+  const tickerId = useId()
+  const fromId = useId()
+  const toId = useId()
   const [ticker, setTicker] = useState('')
   const [from, setFrom] = useState(DEFAULT_FROM)
   const [to, setTo] = useState(DEFAULT_TO)
   const [balance, setBalance] = useState(DEFAULT_BALANCE)
   const [draft, setDraft] = useState(null)
+  const [pickedEntryId, setPickedEntryId] = useState(null)
   const [tuningDraft, setTuningDraft] = useState(null)
   const [running, setRunning] = useState(false)
   const [tuning, setTuning] = useState(false)
@@ -51,6 +58,11 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
 
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const form = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
+  const formKey = JSON.stringify(form)
+
+  useEffect(() => {
+    onFormChange(JSON.parse(formKey))
+  }, [formKey, onFormChange])
   const algorithm = algorithms?.find((candidate) => candidate.type === form?.algorithmType)
   const tuningForm =
     tuningDraft?.algorithmType === form?.algorithmType ? tuningDraft : algorithm && defaultTuning(algorithm)
@@ -78,6 +90,11 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
     }, PROGRESS_POLL_MS)
     return () => clearInterval(timer)
   }, [tuning])
+
+  const applyTunedSettings = () => {
+    setDraft(settingsFromResponse(tuningResult.tuned.run.settings))
+    setTuningResult({ ...tuningResult, applied: true })
+  }
 
   const candles = () => ({ ticker: chosenTicker, from: toInstant(from), to: toInstant(to) })
 
@@ -114,8 +131,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
         ...tuningToBody(tuningForm, algorithm),
       })
       setProgress(DONE_PERCENT)
-      setDraft(settingsFromResponse(tuned.run.settings))
-      setTuningResult({ tuned, oldSettings })
+      setTuningResult({ tuned, oldSettings, applied: false })
       setResult(null)
       onRunRecorded()
     } catch (failure) {
@@ -136,24 +152,12 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
         )}
         <fieldset className="date-fields" disabled={busy}>
-          <label className="field">
-            <span className="field-label">Ticker</span>
-            <select value={chosenTicker} onChange={(event) => setTicker(event.target.value)}>
-              {(tickers ?? []).map(({ ticker: option }) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field-label">From (UTC)</span>
-            <input type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">To (UTC)</span>
-            <input type="datetime-local" value={to} onChange={(event) => setTo(event.target.value)} />
-          </label>
+          <div className="field">
+            <label className="field-label" htmlFor={tickerId}>
+              Ticker
+            </label>
+            <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+          </div>
           <label className="field">
             <span className="field-label">Starting balance (USDT)</span>
             <input
@@ -163,6 +167,18 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
               onChange={(event) => setBalance(event.target.value)}
             />
           </label>
+          <div className="field">
+            <label className="field-label" htmlFor={fromId}>
+              From (UTC)
+            </label>
+            <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor={toId}>
+              To (UTC)
+            </label>
+            <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
+          </div>
         </fieldset>
         <SettingsForm
           algorithms={algorithms}
@@ -170,7 +186,13 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           onChange={setDraft}
           disabled={busy}
           tuning={tuningControls}
-        />
+          saved={saved}
+          onPickSaved={(entry) => setPickedEntryId(entry.id)}
+        >
+          {form && (
+            <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
+          )}
+        </SettingsForm>
         <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
         {error && (
           <p className="form-error" role="alert">
@@ -204,7 +226,14 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded }) {
           <span className="muted small">portfolio value, USDT</span>
         </div>
         {tuningResult && (
-          <TuningComparison tuning={tuningResult.tuned} oldSettings={tuningResult.oldSettings} />
+          <TuningComparison
+            tuning={tuningResult.tuned}
+            oldSettings={tuningResult.oldSettings}
+            applied={tuningResult.applied}
+            disabled={busy}
+            onApply={applyTunedSettings}
+            saved={saved}
+          />
         )}
         {!tuningResult && result && <RunDetails details={result} />}
         {!tuningResult && !result && (

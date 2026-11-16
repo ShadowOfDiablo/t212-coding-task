@@ -3,9 +3,18 @@
   gap: 10px;
   margin: 16px 0 0;
   padding: 14px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-small);
+  background: var(--surface-raised);
   min-width: 0;
+}
+
+.tuning-fields legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-size: 0.86rem;
+  color: var(--text);
 }
 
 .tuning-fields:disabled {
@@ -149,13 +158,128 @@
   width: 18px;
   margin-right: 6px;
   vertical-align: middle;
-  border-top: 2px solid var(--up);
+  border-top: 2.5px solid var(--brand);
 }
 
 .legend-old::before {
   border-top: 2px dashed var(--text-muted);
 }
 
-.legend-tuned.legend-down::before {
-  border-top-color: var(--down);
+.apply-tuned {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-small);
+  background: var(--brand-soft);
+  transition: background-color 0.3s var(--ease);
+}
+
+.apply-tuned.is-kept {
+  background: var(--up-soft);
+}
+
+.keep-tuned {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.keep-tuned > span {
+  display: grid;
+}
+
+.settings-preview {
+  display: grid;
+  gap: 8px;
+  animation: rise 0.3s var(--ease) both;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.preview-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.preview-table tbody th {
+  font-weight: 500;
+}
+
+.preview-arrow {
+  width: 1px;
+  color: var(--text-muted);
+}
+
+.preview-before {
+  color: var(--text-muted);
+}
+
+.preview-table tr.is-changed {
+  background: var(--brand-soft);
+}
+
+.preview-table tr.is-changed .preview-before {
+  text-decoration: line-through;
+}
+
+.preview-table tr.is-changed .preview-after {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.apply-tuned-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-tuned {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  transition: border-color 0.3s var(--ease);
+}
+
+.save-tuned.is-saved {
+  border-color: var(--up);
+}
+
+.save-tuned-name {
+  display: flex;
+  gap: 8px;
+  animation: rise 0.25s var(--ease) both;
+}
+
+.save-tuned-name input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.save-tuned-name input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }

@@ -1,7 +1,11 @@
 import './Tuning.css'
-import { formatPrice, formatTime } from '../format.js'
+import { formatPrice, formatUtcDateTime } from '../format.js'
 import { timeframeLabel } from '../settings.js'
+import { useState } from 'react'
 import { LineChart } from './LineChart.jsx'
+import { RunTrades } from './RunTrades.jsx'
+import { SaveTunedSettings } from './SaveTunedSettings.jsx'
+import { SettingsPreview } from './SettingsPreview.jsx'
 
 const PERCENT = 100
 
@@ -24,8 +28,12 @@ function settingsText(settings) {
   return parts.join(' · ')
 }
 
-/** The tuned run next to the old settings, both on the same check range. */
-export function TuningComparison({ tuning, oldSettings }) {
+/**
+ * The tuned run next to the old settings, both on the same check range. The form keeps the old
+ * settings until Apply settings is clicked.
+ */
+export function TuningComparison({ tuning, oldSettings, applied, disabled, onApply, saved }) {
+  const [previewOpen, setPreviewOpen] = useState(false)
   const { run, settings, points } = tuning.run
   const tunedReturn = returnPercent(run.finalValue, run.startingValue)
   const baseRun = tuning.baseRun
@@ -41,9 +49,49 @@ export function TuningComparison({ tuning, oldSettings }) {
 
   return (
     <div className="tuning-comparison">
+      <div className={`apply-tuned ${applied ? 'is-kept' : ''}`}>
+        <p className="small">
+          {applied ? (
+            <>
+              <strong>Tuned settings applied.</strong> The form now holds them.
+            </>
+          ) : (
+            <>
+              <strong>Your settings are unchanged.</strong> Apply the tuned ones to put them in the
+              form.
+            </>
+          )}
+        </p>
+        <div className="apply-tuned-actions">
+          <button
+            type="button"
+            className="button"
+            aria-expanded={previewOpen}
+            onClick={() => setPreviewOpen(!previewOpen)}
+          >
+            {previewOpen ? 'Hide preview' : 'Preview'}
+          </button>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={disabled || applied}
+            onClick={onApply}
+          >
+            {applied ? 'Applied' : 'Apply settings'}
+          </button>
+        </div>
+      </div>
+      <SaveTunedSettings
+        algorithmId={run.algorithmId}
+        settings={settings}
+        defaultName={`Tuned ${run.ticker} ${timeframeLabel(settings.timeframe)}`}
+        saved={saved}
+        disabled={disabled}
+      />
+      {previewOpen && <SettingsPreview oldSettings={oldSettings} tunedSettings={settings} />}
       <p className="small">
-        <strong>Tuned settings applied.</strong> Both runs cover {formatTime(run.from)} →{' '}
-        {formatTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}
+        Both runs cover {formatUtcDateTime(run.from)} →{' '}
+        {formatUtcDateTime(run.to)}, which the tuner never saw. {tuning.trialCount} tries, best tune return{' '}
         {signedPercent(Number(tuning.bestTuneReturnPercent))}.
       </p>
       <table className="comparison-table small">
@@ -83,9 +131,10 @@ export function TuningComparison({ tuning, oldSettings }) {
       </table>
       <LineChart points={points} comparePoints={baseRun?.points} baseline={run.startingValue} />
       <p className="muted small comparison-legend">
-        <span className={`legend-tuned ${tunedReturn < 0 ? 'legend-down' : ''}`}>Tuned ({signedPercent(tunedReturn)})</span>
+        <span className="legend-tuned">Tuned ({signedPercent(tunedReturn)})</span>
         <span className="legend-old">Old settings, dashed</span>
       </p>
+      <RunTrades key={run.id} runId={run.id} />
     </div>
   )
 }

@@ -1,6 +1,8 @@
 import './SettingsForm.css'
 import { useId } from 'react'
-import { defaultSettings, TIMEFRAMES, UPDATE_TIME_SECONDS } from '../settings.js'
+import { defaultSettings, settingsFromResponse, TIMEFRAME_OPTIONS, UPDATE_TIME_SECONDS } from '../settings.js'
+import { Dropdown } from './Dropdown.jsx'
+import { SavedSettingsPicker } from './SavedSettingsPicker.jsx'
 import { TuneToggle } from './TuneToggle.jsx'
 
 const TIMEFRAME = 'timeframe'
@@ -51,10 +53,24 @@ function SettingField({ definition, value, disabled, onChange, tuning }) {
 /**
  * The settings of an algorithm, built from its setting definitions. `value` is the form state
  * (see settings.js); every change is passed up whole through `onChange`. With `tuning`
- * ({ isTuned, onToggle, disabled }), each tunable setting gets a round checkbox beside its label.
+ * ({ isTuned, onToggle, disabled }), each tunable setting gets a round checkbox beside its label. With
+ * `saved` (see useSavedAlgorithms), a "Saved settings" picker on top fills the form with one of
+ * them, or with `current` (another form's settings) when given; `onPickSaved` hears which entry was
+ * picked, and `children` show right under the picker.
  */
-export function SettingsForm({ algorithms, value, onChange, disabled = false, tuning = null }) {
+export function SettingsForm({
+  algorithms,
+  value,
+  onChange,
+  disabled = false,
+  tuning = null,
+  saved = null,
+  current = null,
+  onPickSaved = () => {},
+  children = null,
+}) {
   const timeframeId = useId()
+  const algorithmId = useId()
   if (!algorithms || !value) {
     return [0, 1, 2].map((row) => <p key={row} className="skeleton skeleton-line" />)
   }
@@ -69,35 +85,51 @@ export function SettingsForm({ algorithms, value, onChange, disabled = false, tu
 
   return (
     <fieldset className="settings-form" disabled={disabled}>
-      <label className="field field-wide">
-        <span className="field-label">Algorithm</span>
-        <select value={value.algorithmType} onChange={(event) => selectAlgorithm(event.target.value)}>
-          {algorithms.map((candidate) => (
-            <option key={candidate.type} value={candidate.type}>
-              {candidate.displayName}
-            </option>
-          ))}
-        </select>
-        <span className="field-hint">{algorithm?.name}</span>
-      </label>
+      {saved && (
+        <div className="field field-wide">
+          <span className="field-label">Saved settings</span>
+          <SavedSettingsPicker
+            saved={saved}
+            form={value}
+            current={current}
+            disabled={disabled}
+            onPickSaved={(entry) => {
+              onChange(settingsFromResponse(entry.settings))
+              onPickSaved(entry)
+            }}
+            onPickCurrent={(form) => onChange({ ...form, values: { ...form.values } })}
+          />
+          {children}
+        </div>
+      )}
+      <div className="field field-wide">
+        <label className="field-label" htmlFor={algorithmId}>
+          Algorithm
+        </label>
+        <Dropdown
+          id={algorithmId}
+          value={value.algorithmType}
+          options={algorithms.map((candidate) => ({ value: candidate.type, label: candidate.displayName }))}
+          onChange={selectAlgorithm}
+          disabled={disabled}
+        />
+        <span className="field-hint">{algorithm?.description}</span>
+      </div>
       <div className="field">
         <FieldLabel inputId={timeframeId} label="Timeframe" tuning={tuning} name={TIMEFRAME} />
-        <select
+        <Dropdown
           id={timeframeId}
           value={value.timeframe}
-          onChange={(event) => onChange({ ...value, timeframe: event.target.value })}
-        >
-          {TIMEFRAMES.map((timeframe) => (
-            <option key={timeframe.id} value={timeframe.id}>
-              {timeframe.label}
-            </option>
-          ))}
-        </select>
+          options={TIMEFRAME_OPTIONS}
+          onChange={(timeframe) => onChange({ ...value, timeframe })}
+          disabled={disabled}
+        />
         <span className="field-hint">Candle size</span>
       </div>
       <label className="field field-check">
         <input
           type="checkbox"
+          className="switch"
           checked={value.liveOnTick}
           onChange={(event) => onChange({ ...value, liveOnTick: event.target.checked })}
         />

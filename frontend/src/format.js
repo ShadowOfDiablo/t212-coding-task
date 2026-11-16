@@ -1,7 +1,18 @@
 const QUOTE_ASSET = 'USDT'
 
+const SECOND_MS = 1000
+const MINUTE_MS = 60 * SECOND_MS
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+const YEAR_MS = 365 * DAY_MS
+
 const priceFormat = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+const compactPriceFormat = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
   maximumFractionDigits: 2,
 })
 
@@ -18,9 +29,98 @@ const timeFormat = new Intl.DateTimeFormat('en-GB', {
   second: '2-digit',
 })
 
+const utcDateTimeFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'UTC',
+})
+
+const utcDateFormat = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+const utcClockFormat = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'UTC',
+})
+
+const axisFormats = {
+  seconds: new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'UTC',
+  }),
+  time: new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }),
+  dayTime: new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }),
+  day: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }),
+  month: new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+}
+
 export const formatPrice = (value) => (value == null ? '—' : priceFormat.format(value))
+export const formatCompactPrice = (value) => (value == null ? '—' : compactPriceFormat.format(value))
 export const formatQuantity = (value) => (value == null ? '—' : quantityFormat.format(value))
 export const formatTime = (iso) => (iso ? timeFormat.format(new Date(iso)) : '—')
+
+/** Date, year and time in UTC, the zone training ranges are chosen in. */
+export const formatUtcDateTime = (iso) => (iso ? `${utcDateTimeFormat.format(new Date(iso))} UTC` : '—')
+
+/** The UTC date alone, "29 Oct 2025", for tables whose header already says UTC. */
+export const formatUtcDate = (iso) => utcDateFormat.format(new Date(iso))
+
+/** The UTC time of day alone, "16:00". */
+export const formatUtcClock = (iso) => utcClockFormat.format(new Date(iso))
+
+/** An axis label that fits the span the chart covers: times for a day, days for a month, and so on. */
+export function formatAxisTime(time, spanMs) {
+  if (spanMs <= HOUR_MS) {
+    return axisFormats.seconds.format(time)
+  }
+  if (spanMs <= DAY_MS) {
+    return axisFormats.time.format(time)
+  }
+  if (spanMs <= 3 * DAY_MS) {
+    return axisFormats.dayTime.format(time)
+  }
+  if (spanMs <= YEAR_MS) {
+    return axisFormats.day.format(time)
+  }
+  return axisFormats.month.format(time)
+}
+
+/** "3d 4h", "2h 15m" or "45m"; seconds only under a minute. */
+export function formatDuration(seconds) {
+  if (seconds == null) {
+    return '—'
+  }
+  const milliseconds = seconds * SECOND_MS
+  const days = Math.floor(milliseconds / DAY_MS)
+  const hours = Math.floor((milliseconds % DAY_MS) / HOUR_MS)
+  const minutes = Math.floor((milliseconds % HOUR_MS) / MINUTE_MS)
+  if (days > 0) {
+    return `${days}d ${hours}h`
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+  if (minutes > 0) {
+    return `${minutes}m`
+  }
+  return `${seconds}s`
+}
 
 export const baseAsset = (ticker) =>
   ticker.endsWith(QUOTE_ASSET) ? ticker.slice(0, -QUOTE_ASSET.length) : ticker

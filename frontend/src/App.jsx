@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import { api } from './api.js'
+import { BROKERS } from './brokers.js'
+import { BrokerUnavailable } from './components/BrokerUnavailable.jsx'
 import { Header } from './components/Header.jsx'
 import { HoldingsCard } from './components/HoldingsCard.jsx'
 import { LiveBotPanel } from './components/LiveBotPanel.jsx'
 import { OrdersCard } from './components/OrdersCard.jsx'
 import { RunsPanel } from './components/RunsPanel.jsx'
+import { TestOrderCard } from './components/TestOrderCard.jsx'
 import { TickerStrip } from './components/TickerStrip.jsx'
 import { TrainingPanel } from './components/TrainingPanel.jsx'
 import { useBotMode } from './hooks/useBotMode.js'
+import { useSavedAlgorithms } from './hooks/useSavedAlgorithms.js'
 import { usePolling } from './hooks/usePolling.js'
 import { useTheme } from './hooks/useTheme.js'
 import './styles.css'
@@ -47,7 +51,10 @@ function App() {
   const { theme, toggleTheme } = useTheme()
   const botMode = useBotMode()
   const [section, setSection] = useState('live')
+  const [broker, setBroker] = useState(BROKERS[0].id)
   const [algorithms, setAlgorithms] = useState(null)
+  const saved = useSavedAlgorithms()
+  const [trainingForm, setTrainingForm] = useState(null)
   const tickers = usePolling(api.getTickers, TICKER_REFRESH_MS)
   const balances = usePolling(api.getBalances, ACCOUNT_REFRESH_MS)
   const history = usePolling(api.getOrderHistory, ACCOUNT_REFRESH_MS)
@@ -70,8 +77,14 @@ function App() {
     },
   }
 
-  const connected = tickers.data !== null && tickers.error === null
   const tickerList = tickers.data?.tickers
+  const brokerInfo = BROKERS.find((candidate) => candidate.id === broker)
+  const connected = brokerInfo.connected && tickers.data !== null && tickers.error === null
+  const refreshAccount = () => {
+    balances.refresh()
+    history.refresh()
+    rejected.refresh()
+  }
 
   return (
     <div className="app">
@@ -80,33 +93,56 @@ function App() {
         onToggleTheme={toggleTheme}
         connected={connected}
         botMode={switchModeAndSection}
+        broker={broker}
+        brokerLabel={brokerInfo.label}
+        onSelectBroker={setBroker}
       />
-      {tickers.error && (
+      {brokerInfo.connected && tickers.error && (
         <p className="banner" role="alert">
           The backend is not reachable. Start it with <code>./mvnw spring-boot:run</code> in{' '}
           <code>backend/</code>; the dashboard reconnects by itself.
         </p>
       )}
-      <main className="layout">
-        <TickerStrip tickers={tickerList} onFollowed={tickers.refresh} />
-        <SectionTabs section={section} onSelect={setSection} />
-        {section === 'live' && (
-          <LiveBotPanel algorithms={algorithms} tickers={tickerList} mode={botMode.mode} />
-        )}
-        {section === 'training' && (
-          <TrainingPanel
-            algorithms={algorithms}
-            tickers={tickerList}
-            mode={botMode.mode}
-            onRunRecorded={runs.refresh}
-          />
-        )}
-        {section === 'runs' && <RunsPanel runs={runs} />}
-        <div className="columns">
-          <OrdersCard history={history} rejected={rejected} open={open} />
-          <HoldingsCard balances={balances} tickers={tickerList} />
-        </div>
-      </main>
+      {!brokerInfo.connected ? (
+        <main className="layout">
+          <BrokerUnavailable label={brokerInfo.label} onBack={() => setBroker(BROKERS[0].id)} />
+        </main>
+      ) : (
+        <main className="layout">
+          <TickerStrip tickers={tickerList} onFollowed={tickers.refresh} />
+          <SectionTabs section={section} onSelect={setSection} />
+          <div hidden={section !== 'live'}>
+            <LiveBotPanel
+              algorithms={algorithms}
+              tickers={tickerList}
+              mode={botMode.mode}
+              runs={runs.data?.runs}
+              saved={saved}
+              currentSettings={trainingForm}
+            />
+          </div>
+          <div hidden={section !== 'training'}>
+            <TrainingPanel
+              algorithms={algorithms}
+              tickers={tickerList}
+              mode={botMode.mode}
+              onRunRecorded={runs.refresh}
+              saved={saved}
+              onFormChange={setTrainingForm}
+            />
+          </div>
+          <div hidden={section !== 'runs'}>
+            <RunsPanel runs={runs} />
+          </div>
+          <div className="columns">
+            <OrdersCard history={history} rejected={rejected} open={open} />
+            <div className="side-column">
+              <HoldingsCard balances={balances} tickers={tickerList} />
+              <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
+            </div>
+          </div>
+        </main>
+      )}
     </div>
   )
 }

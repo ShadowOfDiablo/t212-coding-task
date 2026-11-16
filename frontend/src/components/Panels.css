@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (max-width: 900px) {
@@ -13,6 +13,8 @@
 
 .panel-grid > .card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: 16px;
 }
 
@@ -28,6 +30,11 @@
 .pill-on {
   background: var(--up-soft);
   color: var(--up);
+}
+
+.pill-paused {
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .counts {
@@ -107,6 +114,16 @@
 
 .date-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+@media (max-width: 520px) {
+  .date-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

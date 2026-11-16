@@ -9,6 +9,11 @@ export const TIMEFRAMES = [
 
 export const UPDATE_TIME_SECONDS = 'updateTimeSeconds'
 
+export const TIMEFRAME_OPTIONS = TIMEFRAMES.map(({ id, label }) => ({ value: id, label }))
+
+export const tickerOptions = (tickers) =>
+  (tickers ?? []).map(({ ticker }) => ({ value: ticker, label: ticker }))
+
 const SHARED_SETTINGS = [
   'timePeriod',
   UPDATE_TIME_SECONDS,
@@ -68,3 +73,25 @@ export function settingsToBody(form) {
 }
 
 export const timeframeLabel = (id) => TIMEFRAMES.find((timeframe) => timeframe.id === id)?.label ?? id
+
+/** True when the form holds exactly these settings (as the API returns them). */
+export function formMatchesSettings(form, settings) {
+  const asBody = (value) => JSON.stringify(settingsToBody(value))
+  return asBody(form) === asBody(settingsFromResponse(settings))
+}
+
+/** One line about saved or returned settings: "1 hour · period 135 · buy 29.44% · stop loss 2%". */
+export function settingsSummary(settings) {
+  const parts = [
+    timeframeLabel(settings.timeframe),
+    `period ${settings.timePeriod}`,
+    `buy ${Number(settings.orderSizePercent)}%`,
+  ]
+  if (settings.stopLossPercent != null) {
+    parts.push(`stop loss ${Number(settings.stopLossPercent)}%`)
+  }
+  if (settings.takeProfitPercent != null) {
+    parts.push(`take profit ${Number(settings.takeProfitPercent)}%`)
+  }
+  return parts.join(' · ')
+}

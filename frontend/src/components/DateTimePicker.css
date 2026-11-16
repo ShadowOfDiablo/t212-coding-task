@@ -1,0 +1,235 @@
+.picker {
+  position: relative;
+}
+
+.picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+
+.picker-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.picker-trigger:focus-visible,
+.picker.is-open .picker-trigger {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.picker-trigger:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.picker-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--brand);
+}
+
+.picker-date {
+  font-weight: 500;
+}
+
+.picker-time {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.picker-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  width: 316px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.97);
+  transform-origin: top left;
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.3s var(--ease),
+    visibility 0s linear 0.3s;
+}
+
+.picker.is-open .picker-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.3s var(--ease);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.picker-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.92rem;
+  animation: fade 0.3s var(--ease) both;
+}
+
+.picker-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+
+.picker-nav:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.picker-nav svg {
+  width: 14px;
+  height: 14px;
+}
+
+.picker-nav svg + svg {
+  margin-left: -9px;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  animation: fade 0.3s var(--ease) both;
+}
+
+.picker-weekday {
+  padding: 4px 0 6px;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.picker-day {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease),
+    transform 0.15s var(--ease);
+}
+
+.picker-day:hover {
+  background: var(--surface-raised);
+}
+
+.picker-day:active {
+  transform: scale(0.92);
+}
+
+.picker-day.is-outside {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.picker-day.is-today::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.picker-day.is-selected {
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 167, 225, 0.35);
+}
+
+.picker-day.is-selected::after {
+  background: #fff;
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-clock {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.picker-clock .dropdown {
+  width: 74px;
+}
+
+.picker-clock .dropdown-list {
+  max-height: 180px;
+}
+
+.picker-colon {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.picker-done {
+  margin-left: auto;
+  padding: 6px 14px;
+}

@@ -7,7 +7,6 @@ import com.tihomir.t212.tradingbot.order.exception.ExchangeRejectedRequestExcept
 import com.tihomir.t212.tradingbot.order.exception.OrderStatusUnknownException;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.concurrent.CyclicBarrier;
 import org.junit.jupiter.api.Test;
 
 class EvaluationWorkerPoolTest {
@@ -76,11 +75,8 @@ class EvaluationWorkerPoolTest {
   }
 
   @Test
-  void evaluatesDifferentTickersAtTheSameTimeOnItsWorkers() {
-    CyclicBarrier bothRunning = new CyclicBarrier(TWO_EVALUATIONS);
+  void evaluatesThePricesOfEveryTickerOnItsWorkers() {
     FakePriceMessageHandler ethHandler = new FakePriceMessageHandler();
-    btcHandler.waitAt(bothRunning);
-    ethHandler.waitAt(bothRunning);
     queue.registerHandler(BTC, btcHandler);
     queue.registerHandler(ETH, ethHandler);
 

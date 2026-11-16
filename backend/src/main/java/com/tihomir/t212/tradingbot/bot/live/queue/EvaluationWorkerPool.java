@@ -9,8 +9,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Worker threads that take prices from one broker's queue and hand each to its ticker's handler.
- * Different tickers are evaluated in parallel; a handler is locked per ticker, so one ticker never
- * runs twice at once. A worker never stops on a failure.
+ * One message is handled at a time. A worker never stops on a failure.
  */
 public final class EvaluationWorkerPool implements AutoCloseable {
 
@@ -33,7 +32,7 @@ public final class EvaluationWorkerPool implements AutoCloseable {
    * Evaluates one message as a worker does. A retryable failure goes back to the front of the queue
    * while attempts are left; any other outcome finishes the message.
    */
-  public void handleMessage(PriceMessage message) {
+  public synchronized void handleMessage(PriceMessage message) {
     Optional<PriceMessageHandler> handler = queue.handlerOf(message.ticker());
     if (handler.isEmpty()) {
       log.debug("{} {}: no running bot, dropped a price", queue.broker(), message.ticker());

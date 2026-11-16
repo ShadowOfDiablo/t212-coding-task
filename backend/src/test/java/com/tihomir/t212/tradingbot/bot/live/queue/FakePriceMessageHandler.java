@@ -1,27 +1,16 @@
 package com.tihomir.t212.tradingbot.bot.live.queue;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
-/**
- * Records what a worker asks of it. It can fail a number of times, or wait at a barrier so a test
- * can see two evaluations running at once.
- */
+/** Records what a worker asks of it. It can fail a number of times. */
 public final class FakePriceMessageHandler implements PriceMessageHandler {
-
-  private static final Duration BARRIER_TIMEOUT = Duration.ofSeconds(5);
 
   private final List<PriceMessage> evaluated = new ArrayList<>();
   private final List<RuntimeException> failures = new ArrayList<>();
   private Optional<RuntimeException> failure = Optional.empty();
   private int remainingFailures;
-  private Optional<CyclicBarrier> barrier = Optional.empty();
   private int finishedCount;
 
   public synchronized void failEvaluations(RuntimeException newFailure, int times) {
@@ -29,20 +18,13 @@ public final class FakePriceMessageHandler implements PriceMessageHandler {
     remainingFailures = times;
   }
 
-  public void waitAt(CyclicBarrier newBarrier) {
-    barrier = Optional.of(newBarrier);
-  }
-
   @Override
-  public void evaluatePriceMessage(PriceMessage message) {
-    barrier.ifPresent(FakePriceMessageHandler::await);
-    synchronized (this) {
-      if (remainingFailures > 0) {
-        remainingFailures--;
-        throw failure.orElseThrow();
-      }
-      evaluated.add(message);
+  public synchronized void evaluatePriceMessage(PriceMessage message) {
+    if (remainingFailures > 0) {
+      remainingFailures--;
+      throw failure.orElseThrow();
     }
+    evaluated.add(message);
   }
 
   @Override
@@ -65,16 +47,5 @@ public final class FakePriceMessageHandler implements PriceMessageHandler {
 
   public synchronized int finishedCount() {
     return finishedCount;
-  }
-
-  private static void await(CyclicBarrier barrier) {
-    try {
-      barrier.await(BARRIER_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(e);
-    } catch (BrokenBarrierException | TimeoutException e) {
-      throw new IllegalStateException("The other evaluation never ran at the same time", e);
-    }
   }
 }

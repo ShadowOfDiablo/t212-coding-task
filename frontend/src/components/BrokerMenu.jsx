@@ -10,7 +10,13 @@ function brokerStyle({ colors }) {
 function BrokerBadge({ broker }) {
   return (
     <span className="broker-badge" style={brokerStyle(broker)} aria-hidden="true">
-      {broker.label.slice(0, 1)}
+      {broker.logoPath ? (
+        <svg className="broker-logo" viewBox={broker.logoViewBox}>
+          <path d={broker.logoPath} />
+        </svg>
+      ) : (
+        broker.label.slice(0, 1)
+      )}
     </span>
   )
 }

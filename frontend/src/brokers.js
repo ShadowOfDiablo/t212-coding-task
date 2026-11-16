@@ -1,6 +1,14 @@
+/** Binance's logo on a 24 × 24 grid, from Simple Icons (CC0). */
+const BINANCE_LOGO_PATH =
+  'M16.624 13.9202l2.7175 2.7154-7.353 7.353-7.353-7.352 2.7175-2.7164 4.6355 4.6595 4.6356-4.6595zm4.6366-4.6366L24 12l-2.7154 2.7164L18.5682 12l2.6924-2.7164zm-9.272.001l2.7163 2.6914-2.7164 2.7174v-.001L9.2721 12l2.7164-2.7154zm-9.2722-.001L5.4088 12l-2.6914 2.6924L0 12l2.7164-2.7164zM11.9885.0115l7.353 7.329-2.7174 2.7154-4.6356-4.6356-4.6355 4.6595-2.7174-2.7154 7.353-7.353z'
+
+/** Kraken's creature mark, from the logo in kraken.com's header. */
+const KRAKEN_LOGO_PATH =
+  'M62.8242 0C28.1261 0 0 28.4949 0 63.6445V90.9186C0 95.9358 4.01381 100 8.96858 100C13.9234 100 17.9666 95.9358 17.9666 90.9186V63.6445C17.9666 58.6125 21.9657 54.5482 26.9352 54.5482C31.8899 54.5482 35.9037 58.6125 35.9037 63.6445V90.9186C35.9037 95.9358 39.9175 100 44.8723 100C49.8418 100 53.8556 95.9358 53.8556 90.9186V63.6445C53.8556 58.6125 57.8694 54.5482 62.8242 54.5482C67.7937 54.5482 71.8222 58.6125 71.8222 63.6445V90.9186C71.8222 95.9358 75.836 100 80.7908 100C85.7455 100 89.7594 95.9358 89.7594 90.9186V63.6445C89.7594 58.6125 93.7732 54.5482 98.7573 54.5482C103.712 54.5482 107.726 58.6125 107.726 63.6445V90.9186C107.726 95.9358 111.74 100 116.709 100C121.664 100 125.678 95.9358 125.678 90.9186V63.6445C125.678 28.4949 97.537 0 62.8242 0Z'
+
 /**
  * The brokers the dashboard can show, styled in their own colours: `glow` lights the card on hover,
- * `badge` and `mark` are the background and letter of its badge.
+ * `badge` and `mark` are the background and logo (or letter, without `logoPath`) of its badge.
  */
 export const BROKERS = [
   {
@@ -8,6 +16,8 @@ export const BROKERS = [
     label: 'Binance',
     description: 'Spot demo account',
     connected: true,
+    logoPath: BINANCE_LOGO_PATH,
+    logoViewBox: '0 0 24 24',
     colors: { glow: '#f0b90b', badge: '#181a20', mark: '#f0b90b' },
   },
   {
@@ -15,6 +25,8 @@ export const BROKERS = [
     label: 'Kraken',
     description: 'Not connected yet',
     connected: false,
+    logoPath: KRAKEN_LOGO_PATH,
+    logoViewBox: '0 0 125.68 100',
     colors: { glow: '#7132f5', badge: '#7132f5', mark: '#ffffff' },
   },
 ]

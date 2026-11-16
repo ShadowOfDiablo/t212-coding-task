@@ -17,7 +17,7 @@ You need Java 21, Node.js 20.19+, Docker (running) and Git. Maven comes with the
 3. Start the backend. It starts PostgreSQL in Docker by itself and runs on http://localhost:8080:
    ```bash
    cd backend
-   ./mvnw spring-boot:run        # Windows: .mvnw.cmd spring-boot:run
+   ./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
    ```
 4. In a second terminal, start the dashboard:
    ```bash

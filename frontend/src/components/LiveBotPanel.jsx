@@ -90,7 +90,7 @@ function Counts({ bot }) {
  * only until Edit; Save asks for confirmation before they reach the running bot.
  */
 export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSettings }) {
-  const bot = usePolling(api.getBot, BOT_REFRESH_MS)
+  const bot = usePolling(api.getBots, BOT_REFRESH_MS)
   const resets = usePolling(api.getAccountResets, RESETS_REFRESH_MS)
   const [resetResult, setResetResult] = useState(null)
   const [chartRange, setChartRange] = useState('all')
@@ -100,7 +100,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const status = bot.data
+  const status = bot.data?.bots?.[0]
   const running = status?.runId != null
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const startForm = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
@@ -122,14 +122,20 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
     }
   }
 
-  const start = () => act(() => api.startBot(chosenTicker, settingsToBody(startForm)))
+  // The ticker keeps these settings and gets an equal share of the free USDT as its budget.
+  const start = () =>
+    act(async () => {
+      await api.assignTickerSettings(chosenTicker, settingsToBody(startForm))
+      await api.startBot(chosenTicker)
+    })
   const stop = () =>
     act(async () => {
-      await api.stopBot()
+      await api.stopBot(status.ticker)
       setDraft(null)
       setEditStep('readOnly')
     })
-  const togglePause = () => act(() => (status.paused ? api.resumeBot() : api.pauseBot()))
+  const togglePause = () =>
+    act(() => (status.paused ? api.resumeBot(status.ticker) : api.pauseBot(status.ticker)))
   // The tab opens before any await, or the browser blocks it as a popup; it gets Binance's page
   // only once the account is empty.
   const resetAccount = () => {
@@ -159,7 +165,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
   }
   const confirmEdit = () =>
     act(async () => {
-      await api.updateBotParameters(settingsToBody(draft))
+      await api.updateBotParameters(status.ticker, settingsToBody(draft))
       setDraft(null)
       setEditStep('readOnly')
     })

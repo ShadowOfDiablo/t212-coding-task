@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.bot.live.TradingBotService;
-import com.tihomir.t212.tradingbot.bot.model.LiveBotStatus;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
 import com.tihomir.t212.tradingbot.order.FakeOrderStore;
@@ -67,7 +66,7 @@ class AccountResetServiceTest {
   void fillTheAccount() {
     broker.addTicker("USDCUSDT");
     gateway.changeBalances(NOW, List.of(USDT, USDC, BTC, NOT_FOLLOWED, ONLY_LOCKED));
-    when(tradingBotService.getBotStatus(BROKER)).thenReturn(Optional.empty());
+    when(tradingBotService.isAnyBotRunning(BROKER)).thenReturn(false);
   }
 
   @Test
@@ -103,8 +102,8 @@ class AccountResetServiceTest {
   }
 
   @Test
-  void refusesWhileTheLiveBotRuns() {
-    when(tradingBotService.getBotStatus(BROKER)).thenReturn(Optional.of(mock(LiveBotStatus.class)));
+  void refusesWhileALiveBotRuns() {
+    when(tradingBotService.isAnyBotRunning(BROKER)).thenReturn(true);
 
     assertThatThrownBy(() -> service.emptyAccount(BROKER))
         .isInstanceOf(LiveBotRunningException.class);

@@ -109,7 +109,7 @@ function App() {
         </main>
       ) : (
         <main className="layout">
-          <TickerStrip tickers={tickerList} onFollowed={tickers.refresh} />
+          <TickerStrip tickers={tickerList} balances={balances.data?.balances} onFollowed={tickers.refresh} />
           <SectionTabs section={section} onSelect={setSection} />
           <div hidden={section !== 'live'}>
             <LiveBotPanel

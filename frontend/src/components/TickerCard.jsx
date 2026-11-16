@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { baseAsset, formatPrice, QUOTE_ASSET } from '../format.js'
 
-export function TickerCard({ ticker, quote }) {
+export function TickerCard({ ticker, quote, headAction }) {
   const lastPrice = quote?.lastPrice ?? null
   const previousPrice = useRef(lastPrice)
   const [move, setMove] = useState({ direction: 'flat', tick: 0 })
@@ -25,8 +25,11 @@ export function TickerCard({ ticker, quote }) {
           {baseAsset(ticker)}
           <span className="ticker-quote">/{QUOTE_ASSET}</span>
         </span>
-        <span className={`trend trend-${move.direction}`} aria-hidden="true">
-          {move.direction === 'down' ? '▼' : '▲'}
+        <span className="ticker-head-actions">
+          <span className={`trend trend-${move.direction}`} aria-hidden="true">
+            {move.direction === 'down' ? '▼' : '▲'}
+          </span>
+          {headAction}
         </span>
       </div>
       {quote ? (

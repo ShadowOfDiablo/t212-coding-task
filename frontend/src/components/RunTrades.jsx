@@ -2,7 +2,6 @@ import './RunTrades.css'
 import { useState } from 'react'
 import { api } from '../api.js'
 import { formatDuration, formatPrice, formatUtcClock, formatUtcDate } from '../format.js'
-import { HeaderHint } from './HeaderHint.jsx'
 import { LineChart } from './LineChart.jsx'
 
 const TRADES_PER_PAGE = 10
@@ -36,29 +35,66 @@ function tradeMarkers(positions) {
   return positions
     .filter((position) => position.entryPrice != null)
     .flatMap((position) => [
-      { time: position.openedAt, price: position.entryPrice, side: 'BUY' },
+      { id: position.id, time: position.openedAt, price: position.entryPrice, side: 'BUY' },
       ...(position.closedAt && position.exitPrice != null
-        ? [{ time: position.closedAt, price: position.exitPrice, side: 'SELL' }]
+        ? [{ id: position.id, time: position.closedAt, price: position.exitPrice, side: 'SELL' }]
         : []),
     ])
 }
 
+function SelectedTrade({ position }) {
+  return (
+    <p className="selected-trade small">
+      <span className="change-up">
+        Buy {position.quantity} at {formatPrice(position.entryPrice)}
+      </span>{' '}
+      on {formatUtcDate(position.openedAt)} {formatUtcClock(position.openedAt)}
+      {position.closedAt && position.exitPrice != null && (
+        <>
+          {' → '}
+          <span className="change-down">sell at {formatPrice(position.exitPrice)}</span> on{' '}
+          {formatUtcDate(position.closedAt)} {formatUtcClock(position.closedAt)}
+        </>
+      )}
+      {' · '}
+      <span className={pnlClass(position.realisedPnl)}>
+        P&amp;L {signed(position.realisedPnl)} ({signed(position.realisedPnlPercent, '%')})
+      </span>
+    </p>
+  )
+}
+
+/**
+ * The run's instrument price. With Show trades ticked, each position's buy and sell are marked;
+ * hovering one highlights its pair, and a click selects the trade and shows its details.
+ */
 function PriceChart({ prices, positions }) {
   const [showTrades, setShowTrades] = useState(false)
+  const [hoveredId, setHoveredId] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
   if (prices.length === 0) {
     return null
   }
+  const selected = positions.find((position) => position.id === selectedId)
+  const toggleSelected = (id) => setSelectedId(id === selectedId ? null : id)
   return (
     <div className="run-price-chart">
-      <label className="check-label small">
-        <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)} />
-        Show trades
-      </label>
+      <div className="run-price-chart-head">
+        <h3 className="small">Instrument price over time</h3>
+        <label className="check-label small">
+          <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)} />
+          Show trades
+        </label>
+      </div>
       <LineChart
         points={prices.map((point) => ({ time: point.time, value: point.price }))}
         trades={showTrades ? tradeMarkers(positions) : []}
+        activeTradeId={hoveredId ?? selectedId}
+        onTradeHover={setHoveredId}
+        onTradeSelect={toggleSelected}
         emptyText="No prices for this run."
       />
+      {showTrades && selected && <SelectedTrade position={selected} />}
     </div>
   )
 }
@@ -128,16 +164,6 @@ function TradesTable({ positions }) {
             <th scope="col" className="numeric">Price</th>
             <th scope="col" className="numeric">Cost</th>
             <th scope="col" className="numeric">P&amp;L</th>
-            <HeaderHint className="numeric" label="MAE" title="Maximum adverse excursion">
-              The worst the trade stood while open: its lowest unrealised P&amp;L, measured from the
-              entry price on every price seen. It shows how much loss the trade sat through before
-              it closed, and helps set a stop loss.
-            </HeaderHint>
-            <HeaderHint className="numeric" label="MFE" title="Maximum favourable excursion">
-              The best the trade stood while open: its highest unrealised P&amp;L. Compare it with
-              the P&amp;L to see how much profit was given back before the sell, and to set a take
-              profit.
-            </HeaderHint>
           </tr>
         </thead>
         <tbody>
@@ -161,8 +187,6 @@ function TradesTable({ positions }) {
                   <span className="trade-percent">{signed(position.realisedPnlPercent, '%')}</span>
                 </span>
               </td>
-              <td className="numeric change-down">{formatPrice(position.mae)}</td>
-              <td className="numeric change-up">{formatPrice(position.mfe)}</td>
             </tr>
           ))}
         </tbody>

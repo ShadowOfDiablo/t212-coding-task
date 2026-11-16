@@ -206,7 +206,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved,
             disabled={!canStart}
             onClick={runTraining}
           >
-            {running ? 'Running…' : 'Run training'}
+            {running ? 'Running…' : 'Run backtest'}
           </button>
           <button
             type="button"

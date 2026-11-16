@@ -94,9 +94,34 @@
   opacity: 0.6;
 }
 
+.chart-trade-target {
+  cursor: pointer;
+}
+
+.chart-trade-hit {
+  fill: transparent;
+}
+
 .chart-trade {
   stroke: var(--surface);
   stroke-width: 1;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.15s var(--ease), opacity 0.15s var(--ease);
+}
+
+.chart-trade.is-active {
+  stroke: var(--text);
+  stroke-width: 1.5;
+  transform: scale(1.6);
+}
+
+.chart-trade-pair {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 .chart-trade-buy {
@@ -116,6 +141,10 @@
   fill: var(--brand);
   font-size: 11px;
   font-weight: 600;
+}
+
+.chart-hover {
+  pointer-events: none;
 }
 
 .chart-hover line {

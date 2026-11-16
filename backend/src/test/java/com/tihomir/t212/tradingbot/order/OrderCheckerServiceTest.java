@@ -56,13 +56,14 @@ class OrderCheckerServiceTest {
   }
 
   @Test
-  void placesNothingWhenTheExchangeRejectsTheOrder() {
+  void passesAnExchangeRejectionOnSoTheCallerCanRetry() {
     gateway.failOrders(new ExchangeRejectedRequestException(-2010, "insufficient balance"));
 
-    assertThat(
+    assertThatThrownBy(() ->
             checker.placeCheckedOrder(
                 BROKER, TradingSignal.BUY, FakeAccountView.withCash("1000"), PRICE, settings("50")))
-        .isEmpty();
+        .isInstanceOf(ExchangeRejectedRequestException.class);
+    assertThat(gateway.placedOrders()).isEmpty();
   }
 
   @Test

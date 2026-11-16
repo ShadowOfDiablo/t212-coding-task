@@ -2,6 +2,9 @@ package com.tihomir.t212.tradingbot.bot.live;
 
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
 import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.bot.live.queue.LiveEvaluationQueue;
+import com.tihomir.t212.tradingbot.bot.live.queue.PriceMessage;
+import com.tihomir.t212.tradingbot.bot.live.queue.PriceMessageHandler;
 import com.tihomir.t212.tradingbot.bot.model.LiveBotStatus;
 import com.tihomir.t212.tradingbot.bot.model.PortfolioPoint;
 import com.tihomir.t212.tradingbot.bot.run.PortfolioPointList;
@@ -13,6 +16,7 @@ import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleUpdateListener;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
+import com.tihomir.t212.tradingbot.order.exception.ExchangeRejectedRequestException;
 import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
 import com.tihomir.t212.tradingbot.position.PositionWriteList;
 import java.math.BigDecimal;
@@ -23,38 +27,34 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * One running live bot. Prices arrive on every candle update ({@code liveOnTick}) or on a timer,
- * and are evaluated one at a time on the bot's own worker thread, so the feeder never waits.
+ * One running live bot. Prices arrive on every candle update ({@code liveOnTick}) or on a timer and
+ * go to the broker's evaluation queue; its workers call back here, one price of this ticker at a
+ * time. A price older than the last one evaluated is discarded.
  */
-final class LiveTradingBot implements CandleUpdateListener {
+final class LiveTradingBot implements CandleUpdateListener, PriceMessageHandler {
 
-  static final int EVALUATION_QUEUE_CAPACITY = 100;
   static final Duration STOP_TIMEOUT = Duration.ofSeconds(10);
   static final Duration PORTFOLIO_POINT_INTERVAL = Duration.ofSeconds(15);
   static final int MAX_PORTFOLIO_POINTS = 1000;
 
   private static final Logger log = LoggerFactory.getLogger(LiveTradingBot.class);
-  private static final int SINGLE_THREAD = 1;
-  private static final long NO_KEEP_ALIVE = 0;
 
   private final Broker broker;
   private volatile long runId;
   private final LiveTradingAccount account;
   private final OrderCheckerService orderChecker;
+  private final LiveEvaluationQueue evaluationQueue;
   private final Clock clock;
-  private final ThreadFactory threadFactory;
-  private final ThreadPoolExecutor worker;
+  private final ThreadFactory timerThreadFactory;
   private volatile LiveSignalSource signalSource;
   private long algorithmId;
   private boolean paused;
@@ -64,6 +64,9 @@ final class LiveTradingBot implements CandleUpdateListener {
   private int stopLossCount;
   private int takeProfitCount;
   private int refusedOrderCount;
+  private final AtomicInteger pendingMessageCount = new AtomicInteger();
+  private final Object pendingMessagesLock = new Object();
+  private Instant lastEvaluatedTime = Instant.EPOCH;
   private final Deque<PortfolioPoint> points = new ArrayDeque<>();
   private Instant lastPointTime = Instant.EPOCH;
 
@@ -74,6 +77,7 @@ final class LiveTradingBot implements CandleUpdateListener {
       OrderCheckerService orderChecker,
       LiveSignalSource signalSource,
       long algorithmId,
+      LiveEvaluationQueue evaluationQueue,
       Clock clock) {
     this.broker = broker;
     this.runId = runId;
@@ -81,17 +85,10 @@ final class LiveTradingBot implements CandleUpdateListener {
     this.orderChecker = orderChecker;
     this.signalSource = signalSource;
     this.algorithmId = algorithmId;
+    this.evaluationQueue = evaluationQueue;
     this.clock = clock;
-    this.threadFactory =
-        Thread.ofPlatform().daemon().name(broker.name() + "-live-bot-", 0).factory();
-    this.worker =
-        new ThreadPoolExecutor(
-            SINGLE_THREAD,
-            SINGLE_THREAD,
-            NO_KEEP_ALIVE,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(EVALUATION_QUEUE_CAPACITY),
-            threadFactory);
+    this.timerThreadFactory =
+        Thread.ofPlatform().daemon().name(broker.name() + "-live-timer-", 0).factory();
   }
 
   long runId() {
@@ -111,6 +108,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   }
 
   synchronized void startListening() {
+    evaluationQueue.registerHandler(ticker(), this);
     broker.candleFeeder().addListener(this);
     scheduleTimedEvaluations(signalSource.settings());
   }
@@ -120,30 +118,55 @@ final class LiveTradingBot implements CandleUpdateListener {
     if (!update.ticker().equals(ticker()) || !signalSource.settings().liveOnTick()) {
       return;
     }
-    submitEvaluation(update.close(), update.eventTime());
+    queuePrice(update.close(), update.eventTime());
+  }
+
+  /** Runs on a worker; a price older than the last one evaluated is discarded. */
+  @Override
+  public synchronized void evaluatePriceMessage(PriceMessage message) {
+    if (message.time().isBefore(lastEvaluatedTime)) {
+      log.debug("{} {}: discarded a price older than the last one", broker.name(), ticker());
+      return;
+    }
+    evaluate(message.price(), message.time());
+    lastEvaluatedTime = message.time();
+  }
+
+  /** An exchange rejection that is not retried any more counts as a refused order. */
+  @Override
+  public synchronized void recordFailedEvaluation(PriceMessage message, RuntimeException failure) {
+    if (failure instanceof ExchangeRejectedRequestException) {
+      refusedOrderCount++;
+    }
+    log.error(
+        "{} {}: live run {} could not evaluate the price {} after {} tries",
+        broker.name(),
+        ticker(),
+        runId,
+        message.price(),
+        message.attempt(),
+        failure);
+  }
+
+  @Override
+  public void finishPriceMessage() {
+    synchronized (pendingMessagesLock) {
+      pendingMessageCount.decrementAndGet();
+      pendingMessagesLock.notifyAll();
+    }
   }
 
   /**
-   * Runs on the worker thread. A failure is logged and the bot goes on with the next price. While
-   * paused, only MAE, MFE and the portfolio chart follow the price.
+   * Evaluates one price. A failure is thrown to the caller. While paused, only MAE, MFE and the
+   * portfolio chart follow the price.
    */
   synchronized void evaluate(BigDecimal price, Instant time) {
-    try {
-      if (paused) {
-        account.updateExcursions(price);
-      } else {
-        evaluatePrice(price, time);
-      }
-      recordPortfolioPoint(price, time);
-    } catch (RuntimeException e) {
-      log.error(
-          "{} {}: live run {} could not evaluate the price {}",
-          broker.name(),
-          ticker(),
-          runId,
-          price,
-          e);
+    if (paused) {
+      account.updateExcursions(price);
+    } else {
+      evaluatePrice(price, time);
     }
+    recordPortfolioPoint(price, time);
   }
 
   /**
@@ -178,11 +201,12 @@ final class LiveTradingBot implements CandleUpdateListener {
         runId, ticker(), paused, signalSource.settings(), algorithmId, counts(), portfolioPoints());
   }
 
-  /** Stops listening, lets the queued prices finish and tells how the run ended. */
+  /** Stops listening, lets the queued prices finish (up to the timeout) and tells how it ended. */
   RunEnd stop() {
     broker.candleFeeder().removeListener(this);
     stopTimer();
-    stopWorker();
+    awaitPendingMessages();
+    evaluationQueue.unregisterHandler(ticker());
     return runEnd(RunStatus.STOPPED);
   }
 
@@ -230,6 +254,9 @@ final class LiveTradingBot implements CandleUpdateListener {
     takeProfitCount++;
   }
 
+  /**
+   * @return false when the order checks refused it; an exchange rejection is thrown
+   */
   private boolean placeCheckedOrder(
       TradingSignal signal, BigDecimal price, AlgorithmSettings settings) {
     Optional<ExecutedOrder> order =
@@ -238,16 +265,11 @@ final class LiveTradingBot implements CandleUpdateListener {
     return order.isPresent();
   }
 
-  private void submitEvaluation(BigDecimal price, Instant time) {
-    try {
-      worker.execute(() -> evaluate(price, time));
-    } catch (RejectedExecutionException e) {
-      log.warn(
-          "{} {}: live run {} dropped the price {}, the bot is busy or stopping",
-          broker.name(),
-          ticker(),
-          runId,
-          price);
+  /** Never blocks: it runs on the feeder's dispatcher and the timer thread. */
+  private void queuePrice(BigDecimal price, Instant time) {
+    pendingMessageCount.incrementAndGet();
+    if (!evaluationQueue.offerLast(PriceMessage.firstAttempt(ticker(), price, time))) {
+      pendingMessageCount.decrementAndGet();
     }
   }
 
@@ -256,17 +278,15 @@ final class LiveTradingBot implements CandleUpdateListener {
       return;
     }
     long updateTimeSeconds = settings.updateTimeSeconds().orElseThrow();
-    ScheduledExecutorService newTimer = Executors.newSingleThreadScheduledExecutor(threadFactory);
+    ScheduledExecutorService newTimer =
+        Executors.newSingleThreadScheduledExecutor(timerThreadFactory);
     newTimer.scheduleWithFixedDelay(
-        this::submitEvaluationAtLatestPrice,
-        updateTimeSeconds,
-        updateTimeSeconds,
-        TimeUnit.SECONDS);
+        this::queueLatestPrice, updateTimeSeconds, updateTimeSeconds, TimeUnit.SECONDS);
     timer = Optional.of(newTimer);
   }
 
   /** Runs on the timer thread; it must not throw, or the timer stops. */
-  private void submitEvaluationAtLatestPrice() {
+  private void queueLatestPrice() {
     try {
       Optional<BigDecimal> lastPrice =
           broker.tickerPrices().get(ticker()).map(TickerQuote::lastPrice);
@@ -274,7 +294,7 @@ final class LiveTradingBot implements CandleUpdateListener {
         log.debug("{} {}: no live price yet", broker.name(), ticker());
         return;
       }
-      submitEvaluation(lastPrice.get(), clock.instant());
+      queuePrice(lastPrice.get(), clock.instant());
     } catch (RuntimeException e) {
       log.error("{} {}: live run {} timer failed", broker.name(), ticker(), runId, e);
     }
@@ -285,20 +305,24 @@ final class LiveTradingBot implements CandleUpdateListener {
     timer = Optional.empty();
   }
 
-  private void stopWorker() {
-    worker.shutdown();
-    try {
-      if (!worker.awaitTermination(STOP_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
-        log.warn(
-            "{} {}: live run {} did not finish its queued prices in time, dropping them",
-            broker.name(),
-            ticker(),
-            runId);
-        worker.shutdownNow();
+  private void awaitPendingMessages() {
+    long deadline = System.nanoTime() + STOP_TIMEOUT.toNanos();
+    synchronized (pendingMessagesLock) {
+      try {
+        while (pendingMessageCount.get() > 0 && System.nanoTime() < deadline) {
+          TimeUnit.NANOSECONDS.timedWait(pendingMessagesLock, deadline - System.nanoTime());
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
-    } catch (InterruptedException e) {
-      worker.shutdownNow();
-      Thread.currentThread().interrupt();
+    }
+    if (pendingMessageCount.get() > 0) {
+      log.warn(
+          "{} {}: live run {} stopped with {} prices still queued, they are dropped",
+          broker.name(),
+          ticker(),
+          runId,
+          pendingMessageCount.get());
     }
   }
 

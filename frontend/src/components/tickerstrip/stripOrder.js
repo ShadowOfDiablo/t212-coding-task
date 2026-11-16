@@ -10,9 +10,15 @@ function heldValue(ticker, quote, balances) {
   return (balance.free + balance.locked) * quote.lastPrice
 }
 
+/** True when every strip slot holds a pinned ticker that is still followed. */
+export function arePinsFull(tickers, pinned) {
+  const followedPins = pinned.filter((ticker) => tickers.some((entry) => entry.ticker === ticker))
+  return followedPins.length >= STRIP_SLOTS
+}
+
 /**
  * Pinned tickers first, in pin order, then the rest by the value held in them, biggest first.
- * The first `STRIP_SLOTS` are shown in the strip, the others behind "More tickers".
+ * The first `STRIP_SLOTS` are shown in the strip, the others in the side list.
  */
 export function stripOrder(tickers, pinned, balances) {
   const pinnedTickers = pinned

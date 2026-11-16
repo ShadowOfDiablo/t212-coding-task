@@ -1,5 +1,7 @@
 import './HoldingsCard.css'
-import { formatPrice, formatQuantity, QUOTE_ASSET } from '../format.js'
+import { useRef } from 'react'
+import { baseAsset, formatPrice, formatQuantity, QUOTE_ASSET } from '../format.js'
+import { useRowsThatFit } from '../hooks/useRowsThatFit.js'
 
 const TRADING_OFF_STATUS = 409
 
@@ -24,7 +26,35 @@ function holdingsWithValue(balances, tickers) {
     .sort((left, right) => (right.value ?? -1) - (left.value ?? -1))
 }
 
-export function HoldingsCard({ balances, tickers }) {
+/** A stretched card fills up with followed currencies until it lists this many. */
+const MAX_FILLED_HOLDINGS = 5
+
+/** Followed currencies the account holds none of, shown at zero to fill a stretched card. */
+function followedNotHeld(tickers, holdings) {
+  const held = new Set(holdings.map((holding) => holding.asset))
+  return (tickers ?? [])
+    .map(({ ticker }) => baseAsset(ticker))
+    .filter((asset) => !held.has(asset))
+    .map((asset) => ({ asset, quantity: 0, value: 0 }))
+    .slice(0, Math.max(0, MAX_FILLED_HOLDINGS - holdings.length))
+}
+
+/**
+ * The account's balances by value. With `fill`, a card stretched beside a taller one lists followed
+ * currencies at zero too, as many as fit, up to five currencies in all.
+ */
+export function HoldingsCard({ balances, tickers, fill = false }) {
+  const cardRef = useRef(null)
+  const listRef = useRef(null)
+  const loadedHoldings = balances.data ? holdingsWithValue(balances.data.balances, tickers) : []
+  const extras = fill ? followedNotHeld(tickers, loadedHoldings) : []
+  const extraCount = useRowsThatFit(
+    cardRef,
+    listRef,
+    extras.length,
+    `${loadedHoldings.length}:${extras.map((extra) => extra.asset).join(',')}`,
+  )
+
   if (balances.error) {
     return (
       <section className="card holdings">
@@ -48,11 +78,11 @@ export function HoldingsCard({ balances, tickers }) {
     )
   }
 
-  const holdings = holdingsWithValue(balances.data.balances, tickers)
+  const holdings = [...loadedHoldings, ...extras.slice(0, extraCount)]
   const total = holdings.reduce((sum, holding) => sum + (holding.value ?? 0), 0)
 
   return (
-    <section className="card holdings">
+    <section ref={cardRef} className="card holdings">
       <div className="card-head">
         <h2>Holdings</h2>
         <span className="muted small">valued in {QUOTE_ASSET}</span>
@@ -63,7 +93,7 @@ export function HoldingsCard({ balances, tickers }) {
       {holdings.length === 0 ? (
         <p className="empty">No holdings yet.</p>
       ) : (
-        <ul className="holding-list">
+        <ul ref={listRef} className="holding-list">
           {holdings.map((holding) => {
             const share = holding.value == null || total === 0 ? 0 : holding.value / total
             return (

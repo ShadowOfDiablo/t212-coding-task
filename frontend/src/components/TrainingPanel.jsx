@@ -19,6 +19,7 @@ import { SettingsForm } from './SettingsForm.jsx'
 import { TuningComparison } from './TuningComparison.jsx'
 import { TuningFields } from './TuningFields.jsx'
 import { TuningProgress } from './TuningProgress.jsx'
+import { ReviewColumn } from './review/ReviewColumn.jsx'
 
 const DEFAULT_FROM = '2021-01-01T00:00'
 const DEFAULT_TO = '2021-02-01T00:00'
@@ -38,7 +39,16 @@ function statusText(running, tuning) {
   return 'Settings editable'
 }
 
-export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved, onFormChange }) {
+export function TrainingPanel({
+  algorithms,
+  tickers,
+  mode,
+  onRunRecorded,
+  saved,
+  onFormChange,
+  reviewAside,
+  onReviewingChange,
+}) {
   const tickerId = useId()
   const fromId = useId()
   const toId = useId()
@@ -142,86 +152,91 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved,
     }
   }
 
+  const reviewing = Boolean(result || tuningResult)
+  useEffect(() => onReviewingChange?.(reviewing), [reviewing, onReviewingChange])
+
   return (
     <div className="panel-grid">
-      <section className="card">
-        <div className="card-head">
-          <h2>Training</h2>
-          <span className={`pill ${busy ? 'pill-on' : ''}`}>{statusText(running, tuning)}</span>
-        </div>
-        {mode !== 'TRAINING' && (
-          <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
-        )}
-        <fieldset className="date-fields" disabled={busy}>
-          <div className="field">
-            <label className="field-label" htmlFor={tickerId}>
-              Ticker
-            </label>
-            <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+      <ReviewColumn reviewing={reviewing} aside={reviewAside}>
+        <section className="card">
+          <div className="card-head">
+            <h2>Training</h2>
+            <span className={`pill ${busy ? 'pill-on' : ''}`}>{statusText(running, tuning)}</span>
           </div>
-          <label className="field">
-            <span className="field-label">Starting balance (USDT)</span>
-            <input
-              type="number"
-              min="1"
-              value={balance}
-              onChange={(event) => setBalance(event.target.value)}
-            />
-          </label>
-          <div className="field">
-            <label className="field-label" htmlFor={fromId}>
-              From (UTC)
-            </label>
-            <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor={toId}>
-              To (UTC)
-            </label>
-            <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
-          </div>
-        </fieldset>
-        <SettingsForm
-          algorithms={algorithms}
-          value={form}
-          onChange={setDraft}
-          disabled={busy}
-          tuning={tuningControls}
-          saved={saved}
-          onPickSaved={(entry) => setPickedEntryId(entry.id)}
-        >
-          {form && (
-            <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
+          {mode !== 'TRAINING' && (
+            <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
           )}
-        </SettingsForm>
-        <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
-        {error && (
-          <p className="form-error" role="alert">
-            {error.message}
-          </p>
-        )}
-        <div className="actions">
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!canStart}
-            onClick={runTraining}
+          <fieldset className="date-fields" disabled={busy}>
+            <div className="field">
+              <label className="field-label" htmlFor={tickerId}>
+                Ticker
+              </label>
+              <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+            </div>
+            <label className="field">
+              <span className="field-label">Starting balance (USDT)</span>
+              <input
+                type="number"
+                min="1"
+                value={balance}
+                onChange={(event) => setBalance(event.target.value)}
+              />
+            </label>
+            <div className="field">
+              <label className="field-label" htmlFor={fromId}>
+                From (UTC)
+              </label>
+              <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor={toId}>
+                To (UTC)
+              </label>
+              <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
+            </div>
+          </fieldset>
+          <SettingsForm
+            algorithms={algorithms}
+            value={form}
+            onChange={setDraft}
+            disabled={busy}
+            tuning={tuningControls}
+            saved={saved}
+            onPickSaved={(entry) => setPickedEntryId(entry.id)}
           >
-            {running ? 'Running…' : 'Run backtest'}
-          </button>
-          <button
-            type="button"
-            className="button"
-            disabled={!canStart || !tuningForm || !hasAnythingToTune(tuningForm)}
-            onClick={runTuning}
-          >
-            {tuning ? 'Tuning…' : 'Tune settings'}
-          </button>
-          <span className="muted small">Missing candles are downloaded first, then stored.</span>
-        </div>
-        {tuning && <TuningProgress percent={progress} />}
-      </section>
-      <section className="card">
+            {form && (
+              <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
+            )}
+          </SettingsForm>
+          <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
+          {error && (
+            <p className="form-error" role="alert">
+              {error.message}
+            </p>
+          )}
+          <div className="actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!canStart}
+              onClick={runTraining}
+            >
+              {running ? 'Running…' : 'Run backtest'}
+            </button>
+            <button
+              type="button"
+              className="button"
+              disabled={!canStart || !tuningForm || !hasAnythingToTune(tuningForm)}
+              onClick={runTuning}
+            >
+              {tuning ? 'Tuning…' : 'Tune settings'}
+            </button>
+            <span className="muted small">Missing candles are downloaded first, then stored.</span>
+          </div>
+          {tuning && <TuningProgress percent={progress} />}
+        </section>
+      </ReviewColumn>
+      <section className={`card ${!tuningResult && !result ? 'card-fill' : ''}`}>
         <div className="card-head">
           <h2>{tuningResult ? 'Old vs tuned settings' : 'Result'}</h2>
           <span className="muted small">portfolio value, USDT</span>

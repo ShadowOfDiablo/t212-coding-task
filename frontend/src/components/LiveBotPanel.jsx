@@ -221,7 +221,6 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
         />
         {chosenTicker && (
           <>
-            <h3>{chosenTicker}</h3>
             {running ? (
               <p className="muted small">
                 Trading on {timeframeLabel(status.currentParameters.timeframe)} candles with its own{' '}
@@ -330,7 +329,7 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
           )}
         </div>
       </section>
-      <section className="card">
+      <section className="card card-sticky">
         <div className="card-head">
           <h2>How {chosenTicker || 'the bot'} is doing</h2>
           <div

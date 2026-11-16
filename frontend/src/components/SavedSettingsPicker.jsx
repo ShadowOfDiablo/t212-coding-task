@@ -9,12 +9,16 @@ const NOT_FOUND = -1
 const sameForm = (left, right) =>
   JSON.stringify(settingsToBody(left)) === JSON.stringify(settingsToBody(right))
 
-function triggerText(list, selectedIndex, currentSelected) {
+/** The picked entry, or the last one picked marked "(edited)" once the form moved away from it. */
+function triggerText(list, selectedIndex, currentSelected, lastPicked) {
   if (selectedIndex !== NOT_FOUND) {
     return `${list[selectedIndex].number}. ${list[selectedIndex].name}`
   }
   if (currentSelected) {
     return 'Current settings'
+  }
+  if (lastPicked) {
+    return `${lastPicked.number}. ${lastPicked.name} (edited)`
   }
   if (list.length === 0) {
     return 'No saved settings yet'
@@ -101,8 +105,10 @@ export function SavedSettingsPicker({
   const [open, setOpen] = useState(false)
   const [confirmingId, setConfirmingId] = useState(NONE)
   const [error, setError] = useState(null)
+  const [lastPickedId, setLastPickedId] = useState(NONE)
   const rootRef = useRef(null)
   const list = saved.list ?? []
+  const lastPicked = list.find((entry) => entry.id === lastPickedId)
   const selectedIndex = list.findIndex((entry) => formMatchesSettings(form, entry.settings))
   const currentSelected = Boolean(current) && sameForm(form, current)
 
@@ -120,10 +126,12 @@ export function SavedSettingsPicker({
   useDismiss(rootRef, open, close)
 
   const pickSaved = (entry) => {
+    setLastPickedId(entry.id)
     onPickSaved(entry)
     close()
   }
   const pickCurrent = () => {
+    setLastPickedId(NONE)
     onPickCurrent(current)
     close()
   }
@@ -148,7 +156,7 @@ export function SavedSettingsPicker({
           disabled={disabled || (list.length === 0 && !current)}
           onClick={toggle}
         >
-          <span className="dropdown-value">{triggerText(list, selectedIndex, currentSelected)}</span>
+          <span className="dropdown-value">{triggerText(list, selectedIndex, currentSelected, lastPicked)}</span>
           <svg className="dropdown-chevron" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           </svg>

@@ -3,7 +3,7 @@ CREATE TYPE bot_mode AS ENUM ('TRADING', 'TRAINING');
 CREATE TYPE run_status AS ENUM ('STARTED', 'COMPLETED', 'STOPPED', 'FAILED');
 
 -- Written when the run starts and updated once when it ends.
-CREATE TABLE algorithm_run (
+CREATE TABLE IF NOT EXISTS algorithm_run (
     id                  BIGSERIAL   PRIMARY KEY,
     ticker_id           BIGINT      NOT NULL REFERENCES ticker (id),
     algorithm_id        BIGINT      NOT NULL REFERENCES algorithm (id),
@@ -25,10 +25,10 @@ CREATE TABLE algorithm_run (
     CHECK (from_time < to_time)
 );
 
-CREATE INDEX algorithm_run_ticker_idx ON algorithm_run (ticker_id, started_at);
+CREATE INDEX IF NOT EXISTS algorithm_run_ticker_idx ON algorithm_run (ticker_id, started_at);
 
 -- Thinned to at most 1,000 points per run.
-CREATE TABLE training_portfolio_point (
+CREATE TABLE IF NOT EXISTS training_portfolio_point (
     run_id     BIGINT      NOT NULL REFERENCES algorithm_run (id),
     point_time TIMESTAMPTZ NOT NULL,
     cash       NUMERIC     NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE training_portfolio_point (
 );
 
 -- The variant the live bot last traded each ticker with.
-CREATE TABLE active_algorithm (
+CREATE TABLE IF NOT EXISTS active_algorithm (
     ticker_id    BIGINT      PRIMARY KEY REFERENCES ticker (id),
     algorithm_id BIGINT      NOT NULL REFERENCES algorithm (id),
     activated_at TIMESTAMPTZ NOT NULL

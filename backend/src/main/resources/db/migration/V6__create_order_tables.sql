@@ -10,7 +10,7 @@ CREATE TYPE order_status AS ENUM ('NEW', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED
 
 -- Live orders: open, executed and refused. A Binance order id is unique per symbol only. A refused
 -- order has no exchange id and no execution numbers, only an error.
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id                BIGSERIAL         PRIMARY KEY,
     ticker_id         BIGINT            NOT NULL REFERENCES ticker (id),
     exchange_order_id BIGINT,
@@ -34,5 +34,4 @@ CREATE TABLE orders (
     CHECK ((fee_amount IS NULL) = (fee_currency IS NULL))
 );
 
-CREATE INDEX orders_ticker_updated_at_idx ON orders (ticker_id, updated_at DESC);
-
+CREATE INDEX IF NOT EXISTS orders_ticker_updated_at_idx ON orders (ticker_id, updated_at DESC);

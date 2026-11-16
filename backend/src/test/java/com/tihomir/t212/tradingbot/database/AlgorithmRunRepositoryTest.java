@@ -245,6 +245,60 @@ class AlgorithmRunRepositoryTest {
         .isEqualTo(RunStatus.COMPLETED);
   }
 
+  @Test
+  void deletesTheTickersWorseTunedRunsAndKeepsTheBestTheNewAndATunedSettingsRun() {
+    long best = tunedRun("1050");
+    long worse = tunedRun("1010");
+    long usedBySettings = tunedRun("1005");
+    long manual =
+        runRepository.insertStartedRun(start(BotMode.TRAINING, "binance", firstAlgorithmId));
+    runRepository.finishRun(manual, end(PortfolioPointList.NONE));
+    long newest = tunedRun("990");
+    jdbcClient
+        .sql(
+            """
+            INSERT INTO active_algorithm (ticker_id, algorithm_id, activated_at, tuned_run_id)
+            SELECT ticker_id, algorithm_id, started_at, id FROM algorithm_run WHERE id = ?
+            """)
+        .param(usedBySettings)
+        .update();
+
+    int deleted = runRepository.deleteTunedRunsExceptBest("binance", "BTCUSDT", newest);
+
+    assertThat(deleted).isEqualTo(1);
+    assertThat(runRepository.getRun(worse)).isEmpty();
+    assertThat(runRepository.getRuns("binance").runs())
+        .extracting(RecordedRun::id)
+        .containsExactlyInAnyOrder(best, usedBySettings, manual, newest);
+  }
+
+  private long tunedRun(String finalValue) {
+    RunStart manual = start(BotMode.TRAINING, "binance", firstAlgorithmId);
+    long runId =
+        runRepository.insertStartedRun(
+            new RunStart(
+                manual.mode(),
+                manual.broker(),
+                manual.ticker(),
+                manual.startedAt(),
+                manual.from(),
+                manual.to(),
+                manual.startingValue(),
+                manual.algorithmId(),
+                SettingsSource.AUTOMATIC));
+    runRepository.finishRun(
+        runId,
+        new RunEnd(
+            RunStatus.COMPLETED,
+            FINISHED_AT,
+            Optional.of(new BigDecimal(finalValue)),
+            RunCounts.NONE,
+            Optional.empty(),
+            PortfolioPointList.NONE,
+            PositionWriteList.NONE));
+    return runId;
+  }
+
   private long activeAlgorithmCount() {
     return jdbcClient.sql("SELECT count(*) FROM active_algorithm").query(Long.class).single();
   }

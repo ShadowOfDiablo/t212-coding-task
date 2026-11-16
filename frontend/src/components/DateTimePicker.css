@@ -200,14 +200,20 @@
   background: #fff;
 }
 
+/* The label on its own line keeps the clock and Done inside the popover width. */
 .picker-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   white-space: nowrap;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.picker-foot > .field-label {
+  flex-basis: 100%;
 }
 
 .picker-clock {

@@ -12,12 +12,15 @@ The design is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), with di
 | Demo account orders: market buy and sell, balances, over a REST API | Built |
 | Order checks for every order (cash, order size, stop loss, take profit, minimum value) and a virtual account for training | Built |
 | Trading algorithms: required and optional settings, stored once and reused (`GET /api/algorithms`), SMA example | Built |
-| Training runs: replay stored candles on a virtual account, recorded with their settings | Built |
-| Live trading bot on the demo account | Planned, next |
-| Database: PostgreSQL + Flyway, raw SQL, no ORM. Open orders, order history, fills | Built |
-| Database: restart reconciliation, positions and trades with PnL | Planned, next |
-| React dashboard: tickers, holdings, orders, mode switch, light and dark theme | Built |
-| Rest of the REST API (bot controls, runs, charts) | Planned |
+| Training runs (backtests): replay stored candles on a virtual account, recorded with their settings | Built |
+| Automatic tuning with TPE: tune on part of the range, check on the rest, keep only the best tuned run | Built |
+| Live trading bots on the demo account: one per followed ticker, each with its own settings and budget | Built |
+| Pause, resume, start all, stop all, and an account reset with reset markers on the chart | Built |
+| Database: PostgreSQL + Flyway, raw SQL, no ORM. Orders, runs, settings, positions and trades with P&L | Built |
+| Account value over time, sampled every minute and kept in memory | Built |
+| React dashboard: live bots, backtests and tuning, recorded runs, trades on a price chart, holdings, orders | Built |
+| Auto-tune per ticker until a better variant is found, with a stop button | Planned, next |
+| Restart reconciliation, background training, server-sent events | Planned |
 
 ## How market data works
 
@@ -26,7 +29,7 @@ flowchart LR
     WS["Binance WebSocket<br/>candles + best bid/ask"] --> Feeder["CandleFeeder"]
     REST["Binance REST<br/>candle history, server time"] --> Feeder
     Feeder -- "latest prices" --> Map["TickerPriceMap"]
-    Feeder -- "CandleUpdate" --> Listeners["Listeners<br/>(the bot, later)"]
+    Feeder -- "CandleUpdate" --> Listeners["Listeners<br/>(the live bots)"]
     Map --> Readers["Account, API, ..."]
 ```
 
@@ -46,12 +49,17 @@ See [section 4 of the architecture](docs/ARCHITECTURE.md#4-market-data-built) fo
 ├── frontend/          React UI (JavaScript, built with Vite)
 └── backend/           Java Spring Boot project (Maven)
     └── src/main/java/com/tihomir/t212/tradingbot
-        ├── api            REST controllers
+        ├── account        the account reset, and the account value history (account/value)
+        ├── algorithm      trading algorithms, their settings and saved settings, the SMA indicator
+        ├── api            REST controllers, request bodies and response DTOs
+        ├── bot            live bots (bot/live, its queue in bot/live/queue), ticker settings,
+        │                  training, tuning and recorded runs
         ├── broker         brokers (Binance: market data, signed trading) and the broker registry
         ├── database       PostgreSQL access (raw SQL through JdbcClient)
         ├── mode           the bot mode (trading, training), switched at runtime, and the live data starter
-        ├── marketdata     candle feed, WebSocket connections, market data events, ticker prices
-        ├── order          market orders, the balance cache and its sync, the trading gateway interface
+        ├── marketdata     candle feed, candle history, WebSocket connections, ticker prices
+        ├── order          market orders, order checks, the balance cache and its sync, the gateways
+        ├── position       positions as FIFO lots, with their trades and P&L
         ├── userdata       the user data stream connection (account events), separate from market data
         └── smoke          a short live check of the market data feed
 ```
@@ -99,10 +107,10 @@ Tickers, the candle interval and the Binance endpoints are set in `backend/src/m
 ```yaml
 binance:
   interval: ONE_MINUTE
-  tickers:
-    - BTCUSDT
-    - ETHUSDT
+  tickers: [BTCUSDT, ETHUSDT, USDCUSDT, SOLUSDT, DOGEUSDT, PEPEUSDT]
 ```
+
+These six are followed by default. More can be followed at runtime from the dashboard or with `POST /api/brokers/binance/tickers`.
 
 ### The database
 
@@ -232,6 +240,27 @@ curl -X POST localhost:8080/api/brokers/binance/training/runs -H "Content-Type: 
 
 In `TRADING` mode a training run is refused with 409, and so is a second run while one is going.
 
+**Tuning** searches for better settings with TPE: `POST /api/brokers/binance/training/tunings` takes the same candles and settings, plus `checkFrom`, which settings may change and the number of tries. The tries run on `[from, checkFrom)`. The best one is recorded as a run over the whole range, so its return after `checkFrom` shows how it does on data it never saw. Only the ticker's best tuned run is kept.
+
+### Run the live bots
+
+Each followed ticker has its own live bot, with its own settings and its own budget in USDT. A bot spends only its budget and keeps its own profit or loss. It only runs in `TRADING` mode, with the demo API key set:
+
+```bash
+curl -X PUT localhost:8080/api/brokers/binance/ticker-settings/BTCUSDT -H "Content-Type: application/json" -d '{
+  "settings": {"algorithmType": "SIMPLE_MOVING_AVERAGE", "timeframe": "1m", "liveOnTick": true, "timePeriod": 20},
+  "budget": 1000}'
+curl -X POST localhost:8080/api/brokers/binance/bots/BTCUSDT/start
+curl localhost:8080/api/brokers/binance/bots
+curl -X POST localhost:8080/api/brokers/binance/bots/BTCUSDT/pause
+curl -X POST localhost:8080/api/brokers/binance/bots/stop-all
+```
+
+- **Prices** go through one queue per broker and a pool of workers. Different tickers are evaluated in parallel, one ticker never twice at once, and a failed evaluation is retried at most 3 times.
+- **Stopping** a bot records its run and makes its final value the ticker's new budget.
+- **Account reset:** `POST /api/brokers/binance/account/reset` sells everything into USDT so the demo account can be reset on Binance. The reset shows as a marker on the live chart.
+- **Account value:** `GET /api/brokers/binance/account/value-points` is the whole account's value, sampled every minute since the backend started. It is kept in memory only.
+
 ### Code quality
 
 Code follows the [Google Java Style](https://google.github.io/styleguide/javaguide.html). Every push runs the same checks in GitHub Actions: formatting, Checkstyle, SpotBugs, then tests.
@@ -253,3 +282,11 @@ npm run lint         # lint with oxlint
 ```
 
 During `npm run dev`, requests to `/api` are forwarded to the backend on `http://localhost:8080`, so start the backend first.
+
+The dashboard has three tabs:
+
+- **Live bot:** pick a ticker's bot, set its budget and settings, start, pause or stop it, or start and stop all of them. The chart shows all live runs of the ticker or just this run, from 1D to MAX.
+- **Training:** run a backtest or tune the settings. The result shows the portfolio value, the instrument's price with the trades on it, and the trade history.
+- **Runs:** every recorded run, page by page, with its chart and trades.
+
+Above the tabs, four ticker cards show the pinned tickers first, then the biggest holdings; the other tickers sit in a side list where they can be pinned. Below, the orders and the holdings, with a chart of the whole account value.

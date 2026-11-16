@@ -17,17 +17,21 @@ Both modes run **the same pipeline and the same logic**. Only the source of even
 |---|---|
 | Market data: brokers, candle feeder, WebSocket streams, REST history, ticker price map | **Built** |
 | Demo account orders: signed market orders and balances on Binance Demo Mode, REST endpoints | **Built** |
-| Candle store: ticker and candle tables, paged download (§16.1) | In progress |
-| Trading algorithm with required and optional settings, SMA example (§16.2) | In progress |
-| Order checks, virtual account for training (§16.3) | In progress |
-| Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | In progress |
-| Live bot: `TradingBotService`, `currentParameters`, editing (§16.5, §16.6) | In progress |
+| Candle store: ticker and candle tables, paged download (§16.1) | **Built** |
+| Trading algorithm with required and optional settings, SMA example (§16.2) | **Built** |
+| Order checks, virtual account for training (§16.3) | **Built** |
+| Recorded runs and settings (start, change, end), training runs (§16.4, §16.5) | **Built** |
+| Automatic tuning with TPE, recorded over the whole range, only the best tuned run kept (§16.7) | **Built** |
+| One live bot per followed ticker, each with its own settings and budget; shared evaluation queue (§16.9) | **Built** |
+| Pause, resume, and account reset with reset markers (§16.6) | **Built** |
 | Database: PostgreSQL + Flyway, raw SQL. Orders: open, executed and refused, in one table | **Built** |
-| Positions at average cost with P&L, MAE and MFE (§8) | In progress |
-| Database: restart reconciliation | Planned, next |
+| Positions as FIFO lots with P&L, quantity, and buy and sell prices (§8, §16.8) | **Built** |
+| Account value history, in memory (§16.10) | **Built** |
 | React dashboard: tickers, holdings, orders, mode switch, light and dark theme | **Built** (§15) |
-| Dashboard: live bot, training and runs tabs, settings forms, charts, following tickers (§15.1, §15.2) | In progress |
-| Rest of the REST API (bot controls, runs, charts) | Planned |
+| Dashboard: live bots, training and runs tabs, settings forms, charts with time ranges, following and pinning tickers (§15) | **Built** |
+| Auto-tune per ticker until a better variant is found, with a stop button (§16.9) | Planned, next |
+| Database: restart reconciliation | Planned |
+| Training and tuning in the background; server-sent events instead of polling | Planned |
 
 ### System overview
 
@@ -749,14 +753,13 @@ Both options replay **as fast as possible**. A backtest over 1.5 years takes min
 - One shared scheduler thread for reconnects.
 - The price map is lock-free (`AtomicReference` per ticker); readers on any thread see whole quotes.
 
-**Planned (bot):**
-- **Events:** the `PriorityBlockingQueue` is ordered by **execution time**, the moment each event should be processed.
-- **First version:** a single worker thread processes events in order. Every order is validated against the latest account state.
-- **Later:** a multi-threaded `TradingBotService`:
-  - **In parallel:** signal generation, per ticker.
-  - **Serialised:** account changes go through a single applier in execution-time order, so the shared cash balance can't be spent twice.
-  - **Results:** they depend only on the execution-time order, never on thread timing.
-- **Other threads:** the WebSocket callbacks, the REST controls and the REST reads only touch the queue, the bot state, or concurrent and read-only views.
+**Built (live bots, §16.9):**
+- **One queue per broker:** the feeder's dispatcher and the bots' timers offer prices to a bounded `LinkedBlockingDeque`. They never block; a full queue drops the price with a warning.
+- **A worker pool per broker** takes prices from the front. A worker holds the ticker's own lock for the whole message (evaluate, then finish or retry), so different tickers run in parallel and one ticker never runs twice at once.
+- **Retries** go back to the front of the queue, at most 3 tries. A price older than the last one evaluated for its ticker is dropped.
+- **Shared state** (`TickerPriceMap`, the balance cache, `PositionTracker`, the feeder's listeners) is thread-safe on its own.
+- **Account value sampler:** one daemon thread samples every broker's account value once a minute (§16.10).
+- **Training and tuning** run on the request thread, one at a time under `TrainingLock`.
 
 ## 11. Database (orders built, the rest planned)
 
@@ -929,17 +932,10 @@ Everything is under `/api`. Errors are returned as RFC 9457 problem responses (`
 | POST | `/brokers/{broker}/tickers` | `{"ticker": "SOLUSDT"}`: follow one more ticker (§15.1). 400 when the exchange doesn't list it |
 | GET, PUT | `/bot/mode` | **Built.** Read or switch the bot mode: `{"mode": "TRADING"}` or `{"mode": "TRAINING"}` |
 | | §16.6 | **Algorithms, training runs, recorded runs and the live bot:** see the table in §16.6 |
-| GET | `/bot/status` | State, mode, current run, latest price |
-| POST | `/bot/start` | `{ "mode": "TRAINING", "from": …, "to": …, "live": false }` |
-| POST | `/bot/pause`, `/bot/resume`, `/bot/stop`, `/bot/reset` | Controls |
-| GET | `/runs`, `/runs/{id}` | Runs and their results |
-| GET | `/runs/{id}/portfolio` | Current cash, positions and total value |
-| GET | `/runs/{id}/portfolio/history` | Portfolio value over time |
-| GET | `/runs/{id}/candles` | Price chart data, with trades marked on it |
-| GET | `/runs/{id}/positions` | Every position of the run, the newest first (§8) |
-| GET | `/runs/{id}/positions/worst?limit=10` | The worst closed positions, with P&L, MAE, MFE and duration (§8) |
-| GET | `/runs/{id}/positions/{positionId}/chart` | The price path around one position, with the entry, exit, MAE and MFE marked |
-| GET | `/runs/{id}/events` | Server-Sent Events stream of progress, trades, snapshots and position closes, for live training and trading |
+| GET | `/brokers/{broker}/runs/{id}/candles` | **Built.** The run's closing prices for its price chart (§16.8) |
+| GET | `/brokers/{broker}/runs/{id}/positions` | **Built.** Every position of the run, the newest first (§8) |
+| GET | `/brokers/{broker}/account/value-points` | **Built.** The whole account's value, sampled every minute (§16.10) |
+| GET | `/runs/{id}/events` | Planned. Server-Sent Events stream of progress, trades and position closes, to replace polling |
 
 ## 13. Configuration
 
@@ -1025,7 +1021,10 @@ com.tihomir.t212.tradingbot
 │   ├── indicator    SimpleMovingAverage, SimpleMovingAverageAlgorithm, SimpleMovingAverageSignalGenerator
 │   └── exception    the algorithm and saved-settings exceptions
 ├── bot
-│   ├── live         TradingBotService, LiveTradingBot, LiveTradingAccount, LiveSignalSource
+│   ├── live         TradingBotService, LiveTradingBot, LiveTradingAccount, LiveSignalSource, RunningBotKey
+│   │   └── queue    LiveEvaluationQueue, EvaluationWorkerPool, EvaluationRetryPolicy, PriceMessage,
+│   │                PriceMessageHandler
+│   ├── tickersettings TickerSettingsService, TickerSettingsStore, TickerSettings(List), AssignedSettings
 │   ├── training     TrainingService, TrainingLock, TrainingReplay, TrainingSetup, TrainingRunRequest
 │   ├── tuning       TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange,
 │   │                TuningDimension(Kind), TuningDimensionValueDrawer, TuningPoint, TuningProgress,
@@ -1033,7 +1032,7 @@ com.tihomir.t212.tradingbot
 │   ├── run          AlgorithmRunService, AlgorithmRunStore, RecordedRun(List), RunCounts, RunDetails,
 │   │                RunEnd, RunStart, RunStatus, SettingsSource, StoredRunDetails, UnrecordedRun,
 │   │                UnfinishedRunCleanup, PortfolioPointList
-│   ├── model        LiveBotStatus, LiveRunRequest, PortfolioPoint
+│   ├── model        LiveBotStatus(List), PortfolioPoint
 │   └── exception    the bot, training and tuning exceptions
 ├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
 ├── order            OrderService, OrderStore, OrderCheckerService, OrderCheck, RejectionReason, AccountView
@@ -1046,6 +1045,8 @@ com.tihomir.t212.tradingbot
 │   ├── gateway      ExchangeTradingGateway, VirtualTradingGateway
 │   └── exception    the order and exchange exceptions
 ├── position         PositionTracker, PositionStore, Position, PositionStatus (§8)
+├── account          AccountResetService, AccountResetStore, AccountReset(List), EmptiedAccount
+│   └── value        AccountValueService, AccountValueHistory, AccountValuePoint(List) (§16.10)
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    PositionRepository (position)
 └── api              the controllers and ApiExceptionHandler
@@ -1059,15 +1060,17 @@ A React app in plain JavaScript (`.jsx`), HTML and CSS, in `frontend/`, built wi
 
 ```mermaid
 flowchart TB
-    Header["Header<br/>live dot, Trading/Training switch, theme toggle"]
-    Tickers["Ticker cards + Follow a ticker"]
+    Header["Header<br/>broker menu, Trading/Training switch, theme toggle"]
+    Side["Ticker side list<br/>the other followed tickers, pins, Follow a ticker"]
+    Tickers["Ticker strip<br/>4 cards: pinned first, then the biggest holdings"]
     subgraph Sections["Tabs: Live bot | Training | Runs"]
-        Live["Live bot panel<br/>ticker, settings form, start/stop,<br/>Edit, Save, Confirm<br/>+ portfolio value chart and counts"]
-        Train["Training panel<br/>ticker, range, balance, settings form<br/>+ result chart and settings history"]
-        Runs["Runs panel<br/>recorded runs, pick one for its chart"]
+        Live["Live bots panel<br/>bot dropdown, Start all / Stop all,<br/>budget and settings, Edit, Save, Confirm<br/>+ chart: all runs / this run, 1D…MAX"]
+        Train["Training panel<br/>ticker, range, balance, settings form, tuning<br/>+ result or old vs tuned, price chart and trades"]
+        Runs["Runs panel<br/>paged runs; a picked run's trades and Holdings<br/>in the left column"]
     end
-    Account["Orders card + Holdings card"]
+    Account["Orders card (paged) + Holdings card with account value chart"]
     Header --> Tickers --> Sections --> Account
+    Side -.- Tickers
 ```
 
 | Part | Calls |
@@ -1075,16 +1078,19 @@ flowchart TB
 | Header | `GET / PUT /api/bot/mode` (409 while a live bot runs; the error shows under the switch) |
 | Ticker cards | `GET /tickers` every 2 s; `POST /tickers` to follow one more |
 | Settings form | `GET /algorithms` once: every algorithm and its setting definitions |
-| Live bot panel | `GET /bot` every 2 s, `POST /bot/start`, `POST /bot/stop`, `PUT /bot/current-parameters` |
-| Training panel | `POST /training/runs` |
-| Runs panel | `GET /runs` every 10 s, `GET /runs/{id}` |
-| Orders, Holdings | `GET /orders/history`, `/rejected`, `/open`, `/balance` every 5 s |
+| Live bots panel | `GET /bots` and `GET /ticker-settings` every 2 s; `POST /bots/{ticker}/start` and the other bot controls; `PUT /ticker-settings/{ticker}` |
+| Training panel | `POST /training/runs`, `POST /training/tunings`, `GET /training` while tuning |
+| Runs panel | `GET /runs` every 10 s, `GET /runs/{id}`, `/runs/{id}/positions`, `/runs/{id}/candles` |
+| Orders, Holdings | `GET /orders/history`, `/rejected`, `/open`, `/balance` every 5 s; `GET /account/value-points` every minute |
 
 - **Settings form:** built from the algorithm's setting definitions (label, required, range, default). A required field left empty takes its default; an optional one left empty is off. `updateTimeSeconds` only shows when "Run on every price" is off. Settings that aren't shared go to `options`.
 - **Live bot editing** follows §16.6: the running bot's settings are read only; Edit unlocks them, Save asks to confirm, Confirm sends them, Back and Cancel keep the bot as it is.
 - **Charts** are plain SVG, with no chart library: portfolio value over time, the starting value as a dashed line, and the value under the mouse.
 - **Polling:** each part polls its endpoint (`usePolling`). On a failed request it keeps its last data, and a banner says the backend is unreachable until it answers again.
-- **Holdings** stand in for open positions until the positions work (average cost, PnL) exists. Each balance is valued with the last price of its `…USDT` ticker; assets that aren't followed show no value.
+- **Holdings:** each balance is valued with the last price of its `…USDT` ticker; assets that aren't followed show no value. A chart of the whole account value sits under the total, with 1D, 1W, 1M, 3M, 6M, YTD and MAX.
+- **Ticker strip:** four cards, pinned tickers first, then the biggest holdings. The rest go to a side list left of the app (a wrapped row on narrow screens), each with a pin. Pins are kept in `localStorage`.
+- **Reviewing a run** (a run picked in Runs, or a training or tuning result) hides the orders. Holdings moves under the left column and fills it with followed currencies at zero, five at most, so both columns end level. In Runs the trades table moves to the left column too; in Training it stays under the price chart.
+- **Tables** are split into pages: 10 rows for runs and orders, 7 for trades.
 - **Mode switch:** it updates at once and reverts if `PUT /api/bot/mode` fails. It also opens the matching tab (Trading: Live bot, Training: Training).
 - **Theme:** light or dark, from the system setting at first, then remembered in `localStorage`. Colours are CSS variables switched with `data-theme` on `<html>`.
 - **Motion:** cards rise in, the mode switch and tabs slide, prices flash green or red when they move, and loading uses shimmering skeletons. All motion is turned off when the system asks for reduced motion.
@@ -1110,7 +1116,7 @@ At startup, `BrokerStartupRunner` first stores the configured tickers as followe
 
 ### 15.2 Live bot chart
 
-The live bot keeps a portfolio point (time, free cash, and cash plus its position at the price) at most every 15 seconds, and at most 1,000 points; the oldest go first. `GET /bot` returns them as `points`. When the bot stops they are saved with the run, so `GET /runs/{id}` shows the chart of a stopped live run too.
+Each live bot keeps a portfolio point (time, its own cash, and cash plus its coins at the price) at most every 15 seconds, and at most 1,000 points; the oldest go first. `GET /bots` returns them as `points`. When the bot stops they are saved with the run, so `GET /runs/{id}` shows the chart of a stopped live run too. The chart switches between **all live runs** of the ticker and **this run**, and a range picker under it (1D to MAX) limits the time shown. Account resets show as a dashed line labelled "Account reset".
 
 ## 16. Trading algorithm, training and the live bot
 
@@ -1442,7 +1448,7 @@ stateDiagram-v2
 
 - **Whether settings can be edited follows from the status, with no flag of its own:**
   - Training: locked while `running` is true in `GET /training`.
-  - Live bot: editable while it runs, i.e. while `runId` is set in `GET /bot`.
+  - Live bot: editable while it runs, i.e. while the ticker has a bot in `GET /bots`.
 - **A saved live change:**
   1. Checks the values (`@Valid`, then `resolveSettings`).
   2. Rebuilds the signal generator, warmed up from the recent candles.
@@ -1454,7 +1460,7 @@ stateDiagram-v2
 - **Request bodies use nested `@Valid`:**
   - `AlgorithmSettingsBody`: `updateTimeSeconds` must be `null` exactly when `liveOnTick` is true.
   - `TrainingRunRequestBody(@Valid CandleRangeBody candles, @Valid AlgorithmSettingsBody settings, startingBalance)`.
-  - `LiveRunRequestBody(ticker, @Valid AlgorithmSettingsBody settings)`.
+  - `TickerSettingsRequestBody(@Valid AlgorithmSettingsBody settings, budget)`.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -1467,15 +1473,18 @@ stateDiagram-v2
 | POST | `/brokers/{broker}/training/tunings` | Tune settings automatically and record the best one as a training run (§16.7). Same 409s as a training run |
 | GET | `/brokers/{broker}/training` | `running` while a training run or a tuning goes on; `tuningProgressPercent` while a tuning runs |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
-| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `paused`, `currentParameters`, counts |
-| POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
-| POST | `/brokers/{broker}/account/reset` | Empty the account into USDT and close the open positions, before a reset on Binance (409 while the live bot runs). Answers `{soldBalances, keptBalances, closedPositionCount}` |
+| GET | `/brokers/{broker}/bots` | Every running bot: ticker, run, `paused`, `currentParameters`, counts, points |
+| POST | `/brokers/{broker}/bots/{ticker}/start`, `/stop` | Start the ticker's bot with its stored settings and budget (409 outside `TRADING`, while it runs, or without settings) or stop it (409 when it doesn't run) |
+| POST | `/brokers/{broker}/bots/start-all`, `/stop-all` | Start every ticker that has settings, or stop every bot |
+| GET, PUT | `/brokers/{broker}/ticker-settings`, `/ticker-settings/{ticker}` | Every followed ticker's settings and budget; assign settings and a budget by hand (§16.9) |
+| GET | `/brokers/{broker}/account/value-points` | The whole account's value over time (§16.10) |
+| POST | `/brokers/{broker}/account/reset` | Empty the account into USDT and close the open positions, before a reset on Binance (409 while any live bot runs). Answers `{soldBalances, keptBalances, closedPositionCount}` |
 | GET | `/brokers/{broker}/account/resets` | `{"resetTimes": […]}`, the detected account resets, oldest first |
-| POST | `/brokers/{broker}/bot/pause`, `/bot/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
-| PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
+| POST | `/brokers/{broker}/bots/{ticker}/pause`, `/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
+| PUT | `/brokers/{broker}/bots/{ticker}/current-parameters` | Save new live settings (409 when the bot doesn't run); the ticker keeps them for its next start |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
 
-### 16.7 Automatic tuning (planned)
+### 16.7 Automatic tuning (built)
 
 The tuner finds good settings for one algorithm on one ticker by itself. It runs many training replays in memory, each with other settings, and keeps the one with the best return. Only that one is recorded, as a normal training run with `settings_source = AUTOMATIC`. The tries themselves are never stored.
 
@@ -1490,8 +1499,9 @@ flowchart TD
     Replay -- "return" --> Sampler
     Replay --> Loop
     Loop -- no --> Best["best try"]
-    Best --> Record["TrainingService<br/>one recorded run on the check part,<br/>AUTOMATIC"]
+    Best --> Record["TrainingService<br/>one recorded run over the whole range,<br/>AUTOMATIC"]
     Record --> Db[("algorithm, algorithm_run,<br/>positions, points")]
+    Record --> Prune["delete the ticker's other tuned runs,<br/>keep the best and the new one"]
 ```
 
 - **Request:** broker, ticker, `from`, `checkFrom`, `to`, the base settings, the free settings with their own minimum and maximum, the number of tries (at most 200), the starting balance.
@@ -1500,7 +1510,8 @@ flowchart TD
   - `liveOnTick` and `updateTimeSeconds` are never free: training runs once per candle anyway.
   - Each free range must lie inside the setting's definition range (§16.2), with whole-number bounds for a whole-number setting. The body is checked with `@Valid`, the ranges against the algorithm's definitions; both before any try runs (400).
   - **Candles are read once per timeframe** for the tune range. A timeframe whose candles can't be read fails its later tries without asking again.
-- **Tune and check:** the tries are scored on `[from, checkFrom)`. The best try is replayed once on `[checkFrom, to)`, data it has never seen, and that replay is the recorded run. A big gap between the two returns means the settings were overfitted.
+- **Tune and check:** the tries are scored on `[from, checkFrom)`. The best try is replayed once over the whole `[from, to)`, and that replay is the recorded run, so its chart shows the entire period. Its return from `checkFrom` on is the part it has never seen; a big gap between that and the tune return means the settings were overfitted.
+- **Only the best tuned run is kept:** after a tuning, the ticker's other tuned runs (training, `AUTOMATIC`) are deleted with their points and positions, in one transaction. The one with the best return stays, and so do the new one and any run a ticker's assigned settings were tuned with. If the delete fails, it is logged and the tuning still stands.
 - **Score:** the return of a replay, `(final value − starting balance) / starting balance`.
 - **Method: TPE (Tree-structured Parzen Estimator),** a kind of Bayesian optimization:
   1. The first 10 tries draw every free setting at random within its range.
@@ -1509,7 +1520,7 @@ flowchart TD
   4. 24 candidates are drawn from l, and the one with the highest l / g is the next try.
 - **Failures:** a try whose settings `resolveSettings` refuses, or whose replay throws, is logged with its settings, scored as the worst, and the next try goes on. If no try succeeds, nothing is recorded and the request fails with 422.
 - **One at a time:** tuning and training share one flag, so neither starts while the other runs (409). Tuning answers when it is done, like a training run; moving both to a background thread is planned.
-- **Answer:** 201 with the recorded run (as `GET /runs/{id}`), the best try's tune return, the number of tries run, and `baseRun`: the request's own settings replayed on the same check range, **in memory only**, for the comparison. If that replay fails, `baseRun` is empty and the tuned run still stands.
+- **Answer:** 201 with the recorded run (as `GET /runs/{id}`), the best try's tune return, the number of tries run, and `baseRun`: the request's own settings replayed over the same range, **in memory only**, for the comparison. If that replay fails, `baseRun` is empty and the tuned run still stands.
 - **Progress:** `GET /brokers/{broker}/training` carries `tuningProgressPercent` (tries done / tries asked) while a tuning runs, and nothing otherwise.
 
 #### Dashboard
@@ -1530,7 +1541,7 @@ sequenceDiagram
 - **A blue round checkbox beside each setting** in the training form, and beside the timeframe: filled means the tuner may change it. The user never picks a range; a ticked setting is searched over its whole definition range, and a ticked timeframe over every candle size. The live bot's form has no circles.
 - **Tune automatically** below the form holds **Tune on the first (% of the range)** (default 70) and **Tries** (default 50).
 - While it runs, every field and both buttons are disabled, and the panel shows "Tuning in progress. Currently X% done, please wait" over a progress bar that moves smoothly between polls.
-- When it ends, the tuned settings replace the form's settings, and the result card shows **old vs tuned**: final value, return and buys/sells of both on the check range, and one chart with the tuned line and the old settings dashed.
+- When it ends, the result card shows **old vs tuned**: final value, return, **return on new data** (from `checkFrom` on) and buys/sells of both. One chart over the whole range shows the tuned line, the old settings dashed, and a "New data" marker at `checkFrom`. Apply settings puts the tuned settings into the form.
 
 ### 16.8 Trade history and price chart
 
@@ -1547,7 +1558,7 @@ The run's positions table is the trade history. Every position is a **buy** at O
 - **Price chart:** `GET /brokers/{broker}/runs/{id}/candles` returns `{"points": [{time, price}]}`: the closing prices of the run's ticker on its timeframe, from the candle store, over the replayed range of a training run or from start to end (or now) of a live run. Thinned evenly to at most 1,000 points, the last one always kept.
 - **Dashboard:** the run's positions table shows Quantity, Entry price and Exit price. A price chart above it has a **Show trades** checkbox, off by default: ticked, a green ▲ marks each position's open and a red ▼ its close, at that time and price.
 
-### 16.9 One live bot per ticker (planned)
+### 16.9 One live bot per ticker (built; auto-tune planned)
 
 Every followed ticker can trade at the same time, each with its own settings and its own money.
 
@@ -1577,7 +1588,7 @@ flowchart LR
 ```
 
 - Producers never block: a full queue drops the price with a warning.
-- **Locking:** `evaluate` is locked per bot, so one ticker is never evaluated twice at once. Different tickers run in parallel.
+- **Locking:** a worker holds the ticker's handler lock for the whole message, so one ticker is never evaluated twice at once, and its next price waits until this one is finished or back in the queue. Different tickers run in parallel.
 - **Stale prices:** a price no newer than the last evaluated one for its ticker is discarded.
 - **Retries:** a failed evaluation goes back to the front of the queue, at most 3 tries:
   - an exchange rejection (nothing was executed)
@@ -1594,7 +1605,7 @@ flowchart LR
 - **Budget:** each bot's cash starts at its budget and changes only with its own orders. It is never more than the real free USDT. When a run ends, the budget becomes the bot's value, cash plus coins at the last price.
 - Each bot's chart shows its own value. The whole account stays in Holdings.
 
-**Auto-tune (`bot/tuning/autotune`).**
+**Auto-tune (`bot/tuning/autotune`, planned).**
 - `POST /brokers/{broker}/ticker-settings/{ticker}/auto-tune` tunes the ticker over and over, on the request thread, under the training lock. At most 20 rounds.
 - Each round starts from the best settings so far, and its `attempt` number is part of the tuning seed, so every round searches differently.
 - **Goal:** the first time, a profitable run (final value above starting value). After that, a run that beats `tuned_run_id`.
@@ -1602,6 +1613,14 @@ flowchart LR
 - **Not found:** the ticker keeps its settings, and the answer says so, with the best result tried.
 
 **Dashboard.**
-- **Settings needed for trading:** a screen over the live panel lists the followed tickers without settings. A toggle "Count hand-picked settings" decides whether only tuned settings take a ticker off the list.
-  - Each row has a settings picker, a budget field and **Auto-tune**, which warns that it may take much longer than a normal tuning.
-- **Live panel:** one card per ticker, with its status, budget, value, Pause, Resume and Stop. **Start all** and **Stop all** sit on top.
+- **Built:** the live panel picks a ticker's bot from a dropdown, where each option shows whether it runs. Its card shows the status, budget and settings, with Start, Pause, Resume and Stop; **Start all** and **Stop all** sit on top. Below it, the ticker's budget and settings are saved for its next start, or edited and confirmed while it runs.
+- **Planned:** a "Settings needed for trading" screen listing the tickers without settings, each with a settings picker, a budget field and **Auto-tune**.
+
+### 16.10 Account value history (built)
+
+The whole account's value over time, for the Holdings chart. It is kept **in memory only**, so it starts empty after every restart; nothing is stored in the database.
+
+- `AccountValueService` samples every broker once a minute on its own daemon thread, from the cached balances (§7.2) and the ticker price map. USDT counts at 1, every other asset at the last price of its `…USDT` ticker, and an asset without a price is left out, like the Holdings total.
+- Each broker keeps at most one week of points (10,080); the oldest drop out first.
+- A sample that fails (balances unavailable, trading not configured) is logged and skipped; the next minute samples again.
+- `GET /brokers/{broker}/account/value-points` returns `{"points": [{time, value}]}`, oldest first.

@@ -139,6 +139,9 @@
 
 .chart-marker text {
   fill: var(--brand);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
   font-size: 11px;
   font-weight: 600;
 }

@@ -32,6 +32,11 @@
   color: var(--up);
 }
 
+.pill-paused {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
 .counts {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

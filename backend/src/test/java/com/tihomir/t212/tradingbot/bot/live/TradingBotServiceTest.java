@@ -158,6 +158,43 @@ class TradingBotServiceTest {
   }
 
   @Test
+  void placesNoOrderWhilePausedNotEvenAtTheStopLossAndSellsAfterResuming() {
+    TradingBotService service = service(TradingSignal.BUY);
+    long runId = service.startBot(request(true, STOP_LOSS_AND_TAKE_PROFIT));
+    LiveTradingBot bot = service.findRunningBot(BROKER).orElseThrow();
+    bot.evaluate(BigDecimal.ONE, NOW);
+
+    service.pauseBot(BROKER);
+    LiveBotStatus paused = service.pauseBot(BROKER);
+    bot.evaluate(new BigDecimal("0.5"), NOW);
+    int ordersWhilePaused = gateway.placedOrders().size();
+    LiveBotStatus resumed = service.resumeBot(BROKER);
+    bot.evaluate(new BigDecimal("0.5"), NOW);
+    service.stopBot(BROKER);
+
+    assertThat(paused.paused()).isTrue();
+    assertThat(ordersWhilePaused).isEqualTo(1);
+    assertThat(resumed.paused()).isFalse();
+    assertThat(gateway.placedOrders())
+        .extracting(MarketOrderRequest::side)
+        .containsExactly(OrderSide.BUY, OrderSide.SELL);
+    assertThat(runDetails(runId).run().counts()).isEqualTo(new RunCounts(1, 1, 1, 0, 0));
+  }
+
+  @Test
+  void staysPausedAfterAParameterChange() {
+    TradingBotService service = service();
+    service.startBot(request(true, Map.of()));
+    service.pauseBot(BROKER);
+
+    LiveBotStatus changed =
+        service.updateCurrentParameters(BROKER, settings(true, STOP_LOSS_AND_TAKE_PROFIT));
+    service.stopBot(BROKER);
+
+    assertThat(changed.paused()).isTrue();
+  }
+
+  @Test
   void countsRefusedAndRejectedOrdersAndKeepsGoingAfterAFailure() {
     TradingBotService service =
         service(TradingSignal.SELL, TradingSignal.BUY, TradingSignal.BUY, TradingSignal.BUY);
@@ -248,6 +285,10 @@ class TradingBotServiceTest {
     assertThatThrownBy(() -> service.stopBot(BROKER))
         .isInstanceOf(LiveBotNotRunningException.class);
     assertThatThrownBy(() -> service.updateCurrentParameters(BROKER, settings(true, Map.of())))
+        .isInstanceOf(LiveBotNotRunningException.class);
+    assertThatThrownBy(() -> service.pauseBot(BROKER))
+        .isInstanceOf(LiveBotNotRunningException.class);
+    assertThatThrownBy(() -> service.resumeBot(BROKER))
         .isInstanceOf(LiveBotNotRunningException.class);
   }
 

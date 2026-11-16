@@ -8,6 +8,7 @@ import java.util.Optional;
 public record LiveBotStatusResponse(
     Optional<Long> runId,
     Optional<String> ticker,
+    boolean paused,
     Optional<AlgorithmSettingsResponse> currentParameters,
     Optional<Long> algorithmId,
     int buyCount,
@@ -21,6 +22,7 @@ public record LiveBotStatusResponse(
       new LiveBotStatusResponse(
           Optional.empty(),
           Optional.empty(),
+          false,
           Optional.empty(),
           Optional.empty(),
           0,
@@ -38,6 +40,7 @@ public record LiveBotStatusResponse(
     return new LiveBotStatusResponse(
         Optional.of(status.runId()),
         Optional.of(status.ticker()),
+        status.paused(),
         Optional.of(AlgorithmSettingsResponse.of(status.currentParameters())),
         Optional.of(status.algorithmId()),
         status.counts().buyCount(),

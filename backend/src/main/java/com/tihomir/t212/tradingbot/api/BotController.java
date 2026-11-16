@@ -48,6 +48,16 @@ public class BotController {
     return RunDetailsResponse.of(runService.getRun(broker, runId));
   }
 
+  @PostMapping("/pause")
+  public LiveBotStatusResponse pauseBot(@PathVariable String broker) {
+    return LiveBotStatusResponse.running(tradingBotService.pauseBot(broker));
+  }
+
+  @PostMapping("/resume")
+  public LiveBotStatusResponse resumeBot(@PathVariable String broker) {
+    return LiveBotStatusResponse.running(tradingBotService.resumeBot(broker));
+  }
+
   @PutMapping("/current-parameters")
   public LiveBotStatusResponse updateCurrentParameters(
       @PathVariable String broker, @Valid @RequestBody AlgorithmSettingsBody body) {

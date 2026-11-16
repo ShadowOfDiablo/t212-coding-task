@@ -57,6 +57,7 @@ final class LiveTradingBot implements CandleUpdateListener {
   private final ThreadPoolExecutor worker;
   private volatile LiveSignalSource signalSource;
   private long algorithmId;
+  private boolean paused;
   private Optional<ScheduledExecutorService> timer = Optional.empty();
   private int buyCount;
   private int sellCount;
@@ -122,10 +123,17 @@ final class LiveTradingBot implements CandleUpdateListener {
     submitEvaluation(update.close(), update.eventTime());
   }
 
-  /** Runs on the worker thread. A failure is logged and the bot goes on with the next price. */
+  /**
+   * Runs on the worker thread. A failure is logged and the bot goes on with the next price. While
+   * paused, only MAE, MFE and the portfolio chart follow the price.
+   */
   synchronized void evaluate(BigDecimal price, Instant time) {
     try {
-      evaluatePrice(price, time);
+      if (paused) {
+        account.updateExcursions(price);
+      } else {
+        evaluatePrice(price, time);
+      }
       recordPortfolioPoint(price, time);
     } catch (RuntimeException e) {
       log.error(
@@ -160,9 +168,14 @@ final class LiveTradingBot implements CandleUpdateListener {
     scheduleTimedEvaluations(newSignalSource.settings());
   }
 
+  /** While paused no order is placed, not even a stop loss or take profit. */
+  synchronized void setPaused(boolean paused) {
+    this.paused = paused;
+  }
+
   synchronized LiveBotStatus status() {
     return new LiveBotStatus(
-        runId, ticker(), signalSource.settings(), algorithmId, counts(), portfolioPoints());
+        runId, ticker(), paused, signalSource.settings(), algorithmId, counts(), portfolioPoints());
   }
 
   /** Stops listening, lets the queued prices finish and tells how the run ended. */

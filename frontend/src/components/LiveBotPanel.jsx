@@ -42,6 +42,16 @@ function chartEmptyText(chartRange, running) {
   return 'Start the bot to see its portfolio value.'
 }
 
+function statusPill(status, running) {
+  if (!running) {
+    return { className: 'pill', text: 'Stopped' }
+  }
+  if (status.paused) {
+    return { className: 'pill pill-paused', text: `Paused · run ${status.runId}` }
+  }
+  return { className: 'pill pill-on', text: `Running · run ${status.runId}` }
+}
+
 function Counts({ bot }) {
   const counts = [
     ['Buys', bot.buyCount],
@@ -80,6 +90,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
   const chosenTicker = ticker || tickers?.[0]?.ticker || ''
   const startForm = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
   const chartPoints = chartRange === 'all' ? allLiveRunPoints(runs, status) : status?.points
+  const pill = statusPill(status, running)
   const shownSettings =
     running && editStep === 'readOnly' ? settingsFromResponse(status.currentParameters) : draft
 
@@ -103,6 +114,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
       setDraft(null)
       setEditStep('readOnly')
     })
+  const togglePause = () => act(() => (status.paused ? api.resumeBot() : api.pauseBot()))
   const beginEdit = () => {
     setDraft(settingsFromResponse(status.currentParameters))
     setEditStep('editing')
@@ -125,9 +137,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
       <section className="card">
         <div className="card-head">
           <h2>Live bot</h2>
-          <span className={`pill ${running ? 'pill-on' : ''}`}>
-            {running ? `Running · run ${status.runId}` : 'Stopped'}
-          </span>
+          <span className={pill.className}>{pill.text}</span>
         </div>
         {mode !== 'TRADING' && !running && (
           <p className="notice">The live bot runs in Trading mode. Switch the mode at the top.</p>
@@ -152,6 +162,9 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
           saved={saved}
           current={currentSettings}
         />
+        {running && status.paused && (
+          <p className="notice">Paused: no orders are placed, not even a stop loss or take profit.</p>
+        )}
         {editStep === 'confirm' && (
           <p className="notice">
             Apply these settings to the running bot? They are recorded and take effect from the
@@ -178,6 +191,9 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
             <>
               <button type="button" className="button" disabled={busy} onClick={beginEdit}>
                 Edit parameters
+              </button>
+              <button type="button" className="button" disabled={busy} onClick={togglePause}>
+                {status.paused ? 'Resume' : 'Pause'}
               </button>
               <button type="button" className="button button-danger" disabled={busy} onClick={stop}>
                 Stop bot

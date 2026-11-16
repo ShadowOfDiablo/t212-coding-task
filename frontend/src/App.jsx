@@ -148,14 +148,14 @@ function App() {
                 onRunRecorded={runs.refresh}
                 saved={saved}
                 onFormChange={setTrainingForm}
-              reviewAside={<HoldingsCard balances={balances} tickers={tickerList} />}
+              reviewAside={<HoldingsCard balances={balances} tickers={tickerList} fill />}
               onReviewingChange={setTrainingReviewing}
               />
             </div>
             <div hidden={section !== 'runs'}>
               <RunsPanel
                 runs={runs}
-                reviewAside={<HoldingsCard balances={balances} tickers={tickerList} />}
+                reviewAside={<HoldingsCard balances={balances} tickers={tickerList} fill />}
                 onReviewingChange={setRunsReviewing}
               />
             </div>

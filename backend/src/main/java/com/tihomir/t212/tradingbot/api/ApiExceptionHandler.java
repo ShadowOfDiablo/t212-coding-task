@@ -1,6 +1,8 @@
 package com.tihomir.t212.tradingbot.api;
 
 import com.tihomir.t212.tradingbot.algorithm.exception.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.exception.SavedAlgorithmNotFoundException;
+import com.tihomir.t212.tradingbot.algorithm.exception.SettingsAlreadySavedException;
 import com.tihomir.t212.tradingbot.algorithm.exception.UnknownAlgorithmException;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
@@ -58,6 +60,11 @@ public class ApiExceptionHandler {
     return problem(HttpStatus.NOT_FOUND, e);
   }
 
+  @ExceptionHandler(SavedAlgorithmNotFoundException.class)
+  ProblemDetail savedAlgorithmNotFound(SavedAlgorithmNotFoundException e) {
+    return problem(HttpStatus.NOT_FOUND, e);
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   ProblemDetail invalidRequestBody(MethodArgumentNotValidException e) {
     String detail =
@@ -75,7 +82,8 @@ public class ApiExceptionHandler {
     TrainingAlreadyRunningException.class,
     TradingModeRequiredException.class,
     LiveBotRunningException.class,
-    LiveBotNotRunningException.class
+    LiveBotNotRunningException.class,
+    SettingsAlreadySavedException.class
   })
   ProblemDetail conflict(RuntimeException e) {
     return problem(HttpStatus.CONFLICT, e);

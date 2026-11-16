@@ -7,6 +7,9 @@ import com.tihomir.t212.tradingbot.order.exception.ExchangeRejectedRequestExcept
 import com.tihomir.t212.tradingbot.order.exception.OrderStatusUnknownException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class EvaluationWorkerPoolTest {
@@ -17,6 +20,7 @@ class EvaluationWorkerPoolTest {
   private static final int NO_WORKERS = 0;
   private static final int TWO_WORKERS = 2;
   private static final int TWO_EVALUATIONS = 2;
+  private static final int SAME_TICKER_PRICES = 200;
   private static final ExchangeRejectedRequestException REJECTED =
       new ExchangeRejectedRequestException(-2010, "Not enough USDT");
 
@@ -75,8 +79,11 @@ class EvaluationWorkerPoolTest {
   }
 
   @Test
-  void evaluatesThePricesOfEveryTickerOnItsWorkers() {
+  void evaluatesDifferentTickersAtTheSameTimeOnItsWorkers() {
+    CyclicBarrier bothRunning = new CyclicBarrier(TWO_EVALUATIONS);
     FakePriceMessageHandler ethHandler = new FakePriceMessageHandler();
+    btcHandler.waitAt(bothRunning);
+    ethHandler.waitAt(bothRunning);
     queue.registerHandler(BTC, btcHandler);
     queue.registerHandler(ETH, ethHandler);
 
@@ -89,6 +96,26 @@ class EvaluationWorkerPoolTest {
     }
     assertThat(btcHandler.failures()).isEmpty();
     assertThat(ethHandler.failures()).isEmpty();
+  }
+
+  @Test
+  void finishesOnePriceOfATickerBeforeAnyWorkerEvaluatesItsNext() {
+    queue.registerHandler(BTC, btcHandler);
+
+    try (EvaluationWorkerPool pool = new EvaluationWorkerPool(queue, TWO_WORKERS)) {
+      for (int index = 0; index < SAME_TICKER_PRICES; index++) {
+        queue.offerLast(price(BTC));
+      }
+
+      await().until(() -> btcHandler.finishedCount() == SAME_TICKER_PRICES);
+    }
+    assertThat(btcHandler.steps())
+        .containsExactlyElementsOf(
+            IntStream.range(0, SAME_TICKER_PRICES)
+                .mapToObj(index ->
+                    List.of(FakePriceMessageHandler.EVALUATED, FakePriceMessageHandler.FINISHED))
+                .flatMap(List::stream)
+                .toList());
   }
 
   @Test

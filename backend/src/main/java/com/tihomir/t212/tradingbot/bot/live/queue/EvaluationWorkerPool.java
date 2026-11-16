@@ -9,7 +9,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Worker threads that take prices from one broker's queue and hand each to its ticker's handler.
- * One message is handled at a time. A worker never stops on a failure.
+ * Different tickers are evaluated in parallel; a worker holds the ticker's handler lock for the
+ * whole message, so one ticker never runs twice at once. A worker never stops on a failure.
  */
 public final class EvaluationWorkerPool implements AutoCloseable {
 
@@ -30,19 +31,22 @@ public final class EvaluationWorkerPool implements AutoCloseable {
 
   /**
    * Evaluates one message as a worker does. A retryable failure goes back to the front of the queue
-   * while attempts are left; any other outcome finishes the message.
+   * while attempts are left; any other outcome finishes the message. The ticker's next price waits
+   * until this one is finished or back in the queue.
    */
-  public synchronized void handleMessage(PriceMessage message) {
+  public void handleMessage(PriceMessage message) {
     Optional<PriceMessageHandler> handler = queue.handlerOf(message.ticker());
     if (handler.isEmpty()) {
       log.debug("{} {}: no running bot, dropped a price", queue.broker(), message.ticker());
       return;
     }
-    try {
-      handler.get().evaluatePriceMessage(message);
-      handler.get().finishPriceMessage();
-    } catch (RuntimeException e) {
-      handleFailure(handler.get(), message, e);
+    synchronized (handler.get()) {
+      try {
+        handler.get().evaluatePriceMessage(message);
+        handler.get().finishPriceMessage();
+      } catch (RuntimeException e) {
+        handleFailure(handler.get(), message, e);
+      }
     }
   }
 

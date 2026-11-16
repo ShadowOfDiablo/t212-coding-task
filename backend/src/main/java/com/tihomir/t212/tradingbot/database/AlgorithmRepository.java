@@ -1,16 +1,16 @@
 package com.tihomir.t212.tradingbot.database;
 
-import static com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues.plainValue;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.ORDER_SIZE_PERCENT;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.STOP_LOSS_PERCENT;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.TAKE_PROFIT_PERCENT;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.TIME_PERIOD;
 import static com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm.UPDATE_TIME_SECONDS;
+import static com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingValues.plainValue;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettingValues;
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmStore;
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmType;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingValues;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import java.math.BigDecimal;
 import java.sql.ResultSet;

@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
-import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.FakeExchangeTradingGateway;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;

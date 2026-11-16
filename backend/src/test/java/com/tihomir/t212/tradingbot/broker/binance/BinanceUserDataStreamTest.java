@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.awaitility.Awaitility.await;
 
-import com.tihomir.t212.tradingbot.order.AccountBalanceSynchronizer;
-import com.tihomir.t212.tradingbot.order.AssetBalance;
-import com.tihomir.t212.tradingbot.order.BalanceCachingTradingGateway;
-import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSynchronizer;
+import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
+import com.tihomir.t212.tradingbot.order.balance.BalanceCachingTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.userdata.FakeUserDataStreamConnectionFactory;
 import java.math.BigDecimal;
 import java.net.URI;

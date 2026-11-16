@@ -1,5 +1,10 @@
 package com.tihomir.t212.tradingbot.order;
 
+import com.tihomir.t212.tradingbot.order.model.OpenOrderList;
+import com.tihomir.t212.tradingbot.order.model.OrderHistory;
+import com.tihomir.t212.tradingbot.order.model.OrderHistoryEntry;
+import com.tihomir.t212.tradingbot.order.model.RejectedOrder;
+import com.tihomir.t212.tradingbot.order.model.RejectedOrderList;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.dao.DataAccessResourceFailureException;

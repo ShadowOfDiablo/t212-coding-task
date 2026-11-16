@@ -1,5 +1,9 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinition;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinitionList;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.math.BigDecimal;
 import java.util.List;
 

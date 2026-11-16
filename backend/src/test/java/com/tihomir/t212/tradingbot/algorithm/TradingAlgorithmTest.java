@@ -3,6 +3,10 @@ package com.tihomir.t212.tradingbot.algorithm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.InvalidAlgorithmSettingsException;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingDefinition;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettingsRequest;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import java.math.BigDecimal;
 import java.util.HashMap;

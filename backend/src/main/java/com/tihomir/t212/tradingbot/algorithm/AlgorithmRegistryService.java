@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.UnknownAlgorithmException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;

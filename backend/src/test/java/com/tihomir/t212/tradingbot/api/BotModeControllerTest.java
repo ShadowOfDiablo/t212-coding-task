@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.tihomir.t212.tradingbot.bot.LiveBotRunningException;
-import com.tihomir.t212.tradingbot.bot.TradingBotService;
+import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
+import com.tihomir.t212.tradingbot.bot.live.TradingBotService;
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.mode.BotModeService;
 import org.junit.jupiter.api.Test;

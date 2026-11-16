@@ -1,16 +1,16 @@
 package com.tihomir.t212.tradingbot.database;
 
-import com.tihomir.t212.tradingbot.order.OpenOrder;
-import com.tihomir.t212.tradingbot.order.OpenOrderList;
-import com.tihomir.t212.tradingbot.order.OpenOrderStatus;
-import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderFee;
-import com.tihomir.t212.tradingbot.order.OrderHistory;
-import com.tihomir.t212.tradingbot.order.OrderHistoryEntry;
-import com.tihomir.t212.tradingbot.order.OrderSide;
 import com.tihomir.t212.tradingbot.order.OrderStore;
-import com.tihomir.t212.tradingbot.order.RejectedOrder;
-import com.tihomir.t212.tradingbot.order.RejectedOrderList;
+import com.tihomir.t212.tradingbot.order.model.OpenOrder;
+import com.tihomir.t212.tradingbot.order.model.OpenOrderList;
+import com.tihomir.t212.tradingbot.order.model.OpenOrderStatus;
+import com.tihomir.t212.tradingbot.order.model.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.model.OrderFee;
+import com.tihomir.t212.tradingbot.order.model.OrderHistory;
+import com.tihomir.t212.tradingbot.order.model.OrderHistoryEntry;
+import com.tihomir.t212.tradingbot.order.model.OrderSide;
+import com.tihomir.t212.tradingbot.order.model.RejectedOrder;
+import com.tihomir.t212.tradingbot.order.model.RejectedOrderList;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;

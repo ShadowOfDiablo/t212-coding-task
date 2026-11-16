@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

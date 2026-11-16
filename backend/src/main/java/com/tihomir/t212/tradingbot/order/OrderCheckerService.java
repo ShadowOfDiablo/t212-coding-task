@@ -1,7 +1,12 @@
 package com.tihomir.t212.tradingbot.order;
 
-import com.tihomir.t212.tradingbot.algorithm.AlgorithmSettings;
 import com.tihomir.t212.tradingbot.algorithm.TradingSignal;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
+import com.tihomir.t212.tradingbot.order.exception.ExchangeRejectedRequestException;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.order.model.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.model.OrderSide;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;

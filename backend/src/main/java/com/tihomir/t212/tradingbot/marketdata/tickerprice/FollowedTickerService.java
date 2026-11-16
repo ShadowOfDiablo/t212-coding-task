@@ -3,7 +3,7 @@ package com.tihomir.t212.tradingbot.marketdata.tickerprice;
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.broker.BrokerNotFoundException;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
-import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
+import com.tihomir.t212.tradingbot.order.exception.ExchangeUnavailableException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

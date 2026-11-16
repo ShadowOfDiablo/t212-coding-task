@@ -1,9 +1,9 @@
 package com.tihomir.t212.tradingbot.position;
 
-import com.tihomir.t212.tradingbot.order.ExecutedOrder;
 import com.tihomir.t212.tradingbot.order.OrderCheckerService;
-import com.tihomir.t212.tradingbot.order.OrderFill;
-import com.tihomir.t212.tradingbot.order.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.VirtualTradingGateway;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.OrderFill;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;

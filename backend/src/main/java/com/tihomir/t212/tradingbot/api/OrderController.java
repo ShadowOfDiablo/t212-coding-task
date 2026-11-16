@@ -1,8 +1,12 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.order.ExecutedOrder;
-import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.api.response.AccountBalanceResponse;
+import com.tihomir.t212.tradingbot.api.response.OpenOrderListResponse;
+import com.tihomir.t212.tradingbot.api.response.OrderHistoryResponse;
+import com.tihomir.t212.tradingbot.api.response.RejectedOrderListResponse;
 import com.tihomir.t212.tradingbot.order.OrderService;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.MarketOrderRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

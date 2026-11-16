@@ -5,8 +5,8 @@ import com.tihomir.t212.tradingbot.marketdata.candlefeed.FakeExchangeMarketDataP
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataMessageHandler;
 import com.tihomir.t212.tradingbot.marketdata.websocket.MarketDataStreamConnection;
-import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
-import com.tihomir.t212.tradingbot.order.FakeExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.ExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.FakeExchangeTradingGateway;
 import java.net.URI;
 import java.util.List;
 import org.springframework.web.client.RestClient;

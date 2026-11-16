@@ -1,7 +1,7 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
 import com.tihomir.t212.tradingbot.broker.binance.util.OrderUtil;
-import com.tihomir.t212.tradingbot.order.AccountBalanceSynchronizer;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSynchronizer;
 import com.tihomir.t212.tradingbot.userdata.UserDataStreamConnection;
 import com.tihomir.t212.tradingbot.userdata.UserDataStreamConnectionFactory;
 import com.tihomir.t212.tradingbot.userdata.UserDataStreamHandler;

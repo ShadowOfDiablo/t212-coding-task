@@ -12,17 +12,17 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
-import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
-import com.tihomir.t212.tradingbot.order.AssetBalance;
-import com.tihomir.t212.tradingbot.order.ExchangeRejectedRequestException;
-import com.tihomir.t212.tradingbot.order.ExchangeUnavailableException;
-import com.tihomir.t212.tradingbot.order.ExecutedOrder;
-import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
-import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderSide;
-import com.tihomir.t212.tradingbot.order.OrderStatusUnknownException;
-import com.tihomir.t212.tradingbot.order.TickerTradingRules;
-import com.tihomir.t212.tradingbot.order.TradingNotConfiguredException;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSnapshot;
+import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
+import com.tihomir.t212.tradingbot.order.exception.ExchangeRejectedRequestException;
+import com.tihomir.t212.tradingbot.order.exception.ExchangeUnavailableException;
+import com.tihomir.t212.tradingbot.order.exception.OrderStatusUnknownException;
+import com.tihomir.t212.tradingbot.order.exception.TradingNotConfiguredException;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.order.model.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.model.OrderSide;
+import com.tihomir.t212.tradingbot.order.model.TickerTradingRules;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;

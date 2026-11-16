@@ -1,13 +1,13 @@
 package com.tihomir.t212.tradingbot.broker.binance.util;
 
-import com.tihomir.t212.tradingbot.order.AccountBalanceList;
-import com.tihomir.t212.tradingbot.order.AccountBalanceSnapshot;
-import com.tihomir.t212.tradingbot.order.AssetBalance;
-import com.tihomir.t212.tradingbot.order.ExecutedOrder;
-import com.tihomir.t212.tradingbot.order.MarketOrderRequest;
-import com.tihomir.t212.tradingbot.order.OrderAmountType;
-import com.tihomir.t212.tradingbot.order.OrderFill;
-import com.tihomir.t212.tradingbot.order.TickerTradingRules;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceList;
+import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSnapshot;
+import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
+import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
+import com.tihomir.t212.tradingbot.order.model.MarketOrderRequest;
+import com.tihomir.t212.tradingbot.order.model.OrderAmountType;
+import com.tihomir.t212.tradingbot.order.model.OrderFill;
+import com.tihomir.t212.tradingbot.order.model.TickerTradingRules;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.Instant;

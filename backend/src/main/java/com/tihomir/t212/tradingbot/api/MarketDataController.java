@@ -1,5 +1,7 @@
 package com.tihomir.t212.tradingbot.api;
 
+import com.tihomir.t212.tradingbot.api.request.FollowTickerRequestBody;
+import com.tihomir.t212.tradingbot.api.response.TickerPriceListResponse;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.FollowedTickerService;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceService;
 import jakarta.validation.Valid;

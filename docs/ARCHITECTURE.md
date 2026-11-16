@@ -1007,30 +1007,39 @@ com.tihomir.t212.tradingbot
 │                    JdkWebSocketConnection, JdkWebSocketConnectionFactory
 ├── mode             BotMode, BotModeService, BrokerStartupRunner
 ├── smoke            MarketDataSmokeRunner (profile "smoke")
-├── algorithm        TradingAlgorithm, AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmType, AlgorithmStore,
-│   │                AlgorithmRegistryService, SignalGenerator, TradingSignal, SimpleMovingAverageAlgorithm
-│   └── indicator    SimpleMovingAverage
-├── bot              TradingBotService, TrainingService, TrainingLock, AlgorithmRunStore, RunStatus, SettingsSource,
-│                    TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange, TuningTrial, TuningResult
+├── algorithm        TradingAlgorithm(List), AlgorithmType, SignalGenerator, TradingSignal,
+│   │                AlgorithmRegistryService, AlgorithmSettingsService, AlgorithmStore
+│   ├── settings     AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmSettingValues,
+│   │                AlgorithmSettingsRequest
+│   ├── indicator    SimpleMovingAverage, SimpleMovingAverageAlgorithm, SimpleMovingAverageSignalGenerator
+│   └── exception    the algorithm exceptions
+├── bot
+│   ├── live         TradingBotService, LiveTradingBot, LiveTradingAccount, LiveSignalSource
+│   ├── training     TrainingService, TrainingLock, TrainingReplay, TrainingSetup, TrainingRunRequest
+│   ├── tuning       TuningService, TuningSession, TpeSampler, TuningRequest, TunedSettingRange,
+│   │                TuningDimension(Kind), TuningDimensionValueDrawer, TuningPoint, TuningProgress,
+│   │                TuningTrial, TuningResult
+│   ├── run          AlgorithmRunService, AlgorithmRunStore, RecordedRun(List), RunCounts, RunDetails,
+│   │                RunEnd, RunStart, RunStatus, SettingsSource, StoredRunDetails, UnrecordedRun,
+│   │                UnfinishedRunCleanup, PortfolioPointList
+│   ├── model        LiveBotStatus, LiveRunRequest, PortfolioPoint
+│   └── exception    the bot, training and tuning exceptions
 ├── marketdata/history CandleHistoryService, CandleStore, CandleHistoryRequest, StoredCandleRange
-├── order            OrderService, ExchangeTradingGateway, BalanceCachingTradingGateway,
-│                    AccountBalanceCache, CachedAssetBalance, AccountBalanceSnapshot,
-│                    AccountBalanceSynchronizer, MarketOrderRequest, OrderSide, OrderAmountType,
-│                    OrderStore, OpenOrder, OpenOrderList, OpenOrderStatus, OrderHistory, OrderHistoryEntry,
-│                    RejectedOrder, RejectedOrderList, AccountBalanceList,
-│                    ExecutedOrder, OrderFill, AssetBalance, ExchangeRejectedRequestException,
-│                    ExchangeUnavailableException, OrderStatusUnknownException, TickerNotTradedException,
-│                    TradingNotConfiguredException
-│                    OrderCheckerService, OrderCheck, RejectionReason, AccountView, VirtualTradingGateway
-│                    (planned) OrderExecutionService
-│   └── fee          (planned) FeeService
+├── order            OrderService, OrderStore, OrderCheckerService, OrderCheck, RejectionReason, AccountView
+│   ├── model        ExecutedOrder, OpenOrder(List), OpenOrderStatus, OrderSide, OrderAmountType, OrderFee,
+│   │                OrderFill, OrderHistory(Entry), RejectedOrder(List), MarketOrderRequest,
+│   │                TickerTradingRules
+│   ├── balance      AccountBalanceCache, AccountBalanceList, AccountBalanceSnapshot,
+│   │                AccountBalanceSynchronizer, AssetBalance, CachedAssetBalance,
+│   │                BalanceCachingTradingGateway
+│   ├── gateway      ExchangeTradingGateway, VirtualTradingGateway
+│   └── exception    the order and exchange exceptions
 ├── position         PositionTracker, PositionStore, Position, PositionStatus (§8)
 ├── database         OrderRepository (implements OrderStore; JdbcClient, raw SQL), OrderFillRow
 │                    PositionRepository (position)
-└── api              OrderController, AccountBalanceResponse, OpenOrderListResponse, OrderHistoryResponse,
-                     RejectedOrderListResponse, MarketDataController, TickerPriceListResponse,
-                     BotModeController, BotModeSetting, ApiExceptionHandler
-                     (planned) bot controls and read endpoints
+└── api              the controllers and ApiExceptionHandler
+    ├── request      the request bodies (*Body)
+    └── response     the response DTOs (*Response) and BotModeSetting
 ```
 
 ## 15. Frontend (dashboard built)

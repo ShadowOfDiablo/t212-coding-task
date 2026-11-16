@@ -6,8 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tihomir.t212.tradingbot.algorithm.AlgorithmRegistryService;
-import com.tihomir.t212.tradingbot.algorithm.SimpleMovingAverageAlgorithm;
 import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithmList;
+import com.tihomir.t212.tradingbot.algorithm.indicator.SimpleMovingAverageAlgorithm;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

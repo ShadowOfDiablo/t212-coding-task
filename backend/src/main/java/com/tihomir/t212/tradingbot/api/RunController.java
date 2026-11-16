@@ -1,9 +1,17 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
-import com.tihomir.t212.tradingbot.bot.TrainingService;
-import com.tihomir.t212.tradingbot.bot.TuningResult;
-import com.tihomir.t212.tradingbot.bot.TuningService;
+import com.tihomir.t212.tradingbot.api.request.TrainingRunRequestBody;
+import com.tihomir.t212.tradingbot.api.request.TuningRequestBody;
+import com.tihomir.t212.tradingbot.api.response.PositionListResponse;
+import com.tihomir.t212.tradingbot.api.response.RecordedRunListResponse;
+import com.tihomir.t212.tradingbot.api.response.RunDetailsResponse;
+import com.tihomir.t212.tradingbot.api.response.TrainingStatusResponse;
+import com.tihomir.t212.tradingbot.api.response.TuningResponse;
+import com.tihomir.t212.tradingbot.api.response.UnrecordedRunResponse;
+import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
+import com.tihomir.t212.tradingbot.bot.training.TrainingService;
+import com.tihomir.t212.tradingbot.bot.tuning.TuningResult;
+import com.tihomir.t212.tradingbot.bot.tuning.TuningService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;

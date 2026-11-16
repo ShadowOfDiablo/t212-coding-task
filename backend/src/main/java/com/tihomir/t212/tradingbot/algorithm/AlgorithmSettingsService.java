@@ -1,5 +1,7 @@
 package com.tihomir.t212.tradingbot.algorithm;
 
+import com.tihomir.t212.tradingbot.algorithm.exception.AlgorithmSettingsNotFoundException;
+import com.tihomir.t212.tradingbot.algorithm.settings.AlgorithmSettings;
 import java.time.Clock;
 import org.springframework.stereotype.Service;
 

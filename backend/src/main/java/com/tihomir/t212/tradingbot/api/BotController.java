@@ -1,7 +1,11 @@
 package com.tihomir.t212.tradingbot.api;
 
-import com.tihomir.t212.tradingbot.bot.AlgorithmRunService;
-import com.tihomir.t212.tradingbot.bot.TradingBotService;
+import com.tihomir.t212.tradingbot.api.request.AlgorithmSettingsBody;
+import com.tihomir.t212.tradingbot.api.request.LiveRunRequestBody;
+import com.tihomir.t212.tradingbot.api.response.LiveBotStatusResponse;
+import com.tihomir.t212.tradingbot.api.response.RunDetailsResponse;
+import com.tihomir.t212.tradingbot.bot.live.TradingBotService;
+import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;

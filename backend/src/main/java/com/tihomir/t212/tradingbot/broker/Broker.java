@@ -3,7 +3,7 @@ package com.tihomir.t212.tradingbot.broker;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleFeeder;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerList;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceReader;
-import com.tihomir.t212.tradingbot.order.ExchangeTradingGateway;
+import com.tihomir.t212.tradingbot.order.gateway.ExchangeTradingGateway;
 
 public interface Broker {
 

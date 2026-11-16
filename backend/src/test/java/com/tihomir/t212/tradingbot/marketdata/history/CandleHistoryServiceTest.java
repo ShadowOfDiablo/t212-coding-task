@@ -12,7 +12,7 @@ import com.tihomir.t212.tradingbot.broker.FakeBroker;
 import com.tihomir.t212.tradingbot.marketdata.candlefeed.CandleList;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleInterval;
 import com.tihomir.t212.tradingbot.marketdata.update.CandleUpdate;
-import com.tihomir.t212.tradingbot.order.TickerNotTradedException;
+import com.tihomir.t212.tradingbot.order.exception.TickerNotTradedException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;

@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.order;
 
+import com.tihomir.t212.tradingbot.order.model.MarketOrderRequest;
 import java.util.Optional;
 
 /** The outcome of the order checks: either an order to place or the reason it was refused. */

@@ -53,6 +53,8 @@ function App() {
   const { theme, toggleTheme } = useTheme()
   const botMode = useBotMode()
   const [section, setSection] = useState('live')
+  const [trainingReviewing, setTrainingReviewing] = useState(false)
+  const [runsReviewing, setRunsReviewing] = useState(false)
   const [broker, setBroker] = useState(BROKERS[0].id)
   const [algorithms, setAlgorithms] = useState(null)
   const saved = useSavedAlgorithms()
@@ -81,6 +83,8 @@ function App() {
   }
 
   const tickerList = tickers.data?.tickers
+  // Reviewing a run shows Holdings beside it and hides the live orders.
+  const reviewing = (section === 'training' && trainingReviewing) || (section === 'runs' && runsReviewing)
   const brokerInfo = BROKERS.find((candidate) => candidate.id === broker)
   const connected = brokerInfo.connected && tickers.data !== null && tickers.error === null
   const refreshAccount = () => {
@@ -144,18 +148,26 @@ function App() {
                 onRunRecorded={runs.refresh}
                 saved={saved}
                 onFormChange={setTrainingForm}
+              reviewAside={<HoldingsCard balances={balances} tickers={tickerList} />}
+              onReviewingChange={setTrainingReviewing}
               />
             </div>
             <div hidden={section !== 'runs'}>
-              <RunsPanel runs={runs} />
+              <RunsPanel
+                runs={runs}
+                reviewAside={<HoldingsCard balances={balances} tickers={tickerList} />}
+                onReviewingChange={setRunsReviewing}
+              />
             </div>
-            <div className="columns">
-              <OrdersCard history={history} rejected={rejected} open={open} />
-              <div className="side-column">
-                <HoldingsCard balances={balances} tickers={tickerList} />
-                <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
+            {!reviewing && (
+              <div className="columns">
+                <OrdersCard history={history} rejected={rejected} open={open} />
+                <div className="side-column">
+                  <HoldingsCard balances={balances} tickers={tickerList} />
+                  <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
+                </div>
               </div>
-            </div>
+            )}
           </main>
         </div>
       )}

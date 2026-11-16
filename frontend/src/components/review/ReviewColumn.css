@@ -1,0 +1,24 @@
+.panel-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.panel-column:not(.is-reviewing) > .card:first-child,
+.panel-fill {
+  flex: 1;
+}
+
+.panel-fill {
+  display: grid;
+}
+
+.trades-slot:empty {
+  display: none;
+}
+
+.trades-card .trades-table td,
+.trades-card .trades-table th {
+  white-space: nowrap;
+}

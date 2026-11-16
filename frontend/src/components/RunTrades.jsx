@@ -1,11 +1,13 @@
 import './Tuning.css'
 import './RunTrades.css'
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api.js'
 import { formatDuration, formatPrice, formatUtcClock, formatUtcDate } from '../format.js'
 import { LineChart } from './LineChart.jsx'
+import { TradesSlotContext } from './review/TradesSlotContext.js'
 
-const TRADES_PER_PAGE = 10
+const TRADES_PER_PAGE = 7
 
 function TradeTime({ iso }) {
   return (
@@ -201,6 +203,24 @@ function TradesTable({ positions }) {
   )
 }
 
+/** The trades table in its own card in the left column's slot, or inline where there is none. */
+function PlacedTrades({ positions }) {
+  const slot = useContext(TradesSlotContext)
+  if (!slot) {
+    return <TradesPage positions={positions} />
+  }
+  return createPortal(
+    <section className="card trades-card">
+      <div className="card-head">
+        <h2>Trades</h2>
+        <span className="muted small">newest first</span>
+      </div>
+      <TradesPage positions={positions} />
+    </section>,
+    slot,
+  )
+}
+
 /** A Trades button that loads the run's positions, newest first, the first time it opens. */
 export function RunTrades({ runId }) {
   const [open, setOpen] = useState(false)
@@ -235,7 +255,7 @@ export function RunTrades({ runId }) {
           {error && <p className="form-error small">Could not load the trades: {error.message}</p>}
           {!error && !positions && <p className="skeleton skeleton-line" />}
           {positions && <PriceChart prices={prices} positions={positions} />}
-          {positions && <TradesPage positions={positions} />}
+          {positions && <PlacedTrades positions={positions} />}
         </div>
       )}
     </div>

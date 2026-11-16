@@ -30,7 +30,9 @@
   }
 }
 
-.panel-grid > .card {
+.panel-grid > .card,
+.panel-column > .card,
+.trades-slot > .card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;

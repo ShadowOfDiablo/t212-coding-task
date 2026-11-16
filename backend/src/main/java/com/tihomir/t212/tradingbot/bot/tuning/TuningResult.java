@@ -5,9 +5,9 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 /**
- * @param runId the recorded run: the best try, replayed on the check range
+ * @param runId the recorded run: the best try, replayed over the whole range
  * @param bestTuneReturnPercent the best try's return on the tune range
- * @param baseRun the base settings replayed on the check range, not stored; empty if that replay
+ * @param baseRun the base settings replayed over the whole range, not stored; empty if that replay
  *     failed
  */
 public record TuningResult(

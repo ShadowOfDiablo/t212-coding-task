@@ -16,7 +16,7 @@ import java.util.Optional;
 /**
  * A tuning: {@code settings} are the base settings, {@code settingRanges} and {@code timeframes}
  * say what the tuner may change. Tries are scored on {@code [candles.from, checkFrom)}, the best
- * one is recorded on {@code [checkFrom, candles.to)}.
+ * one is recorded on the whole {@code [candles.from, candles.to)}.
  */
 public record TuningRequestBody(
     @NotNull @Valid CandleRangeBody candles,

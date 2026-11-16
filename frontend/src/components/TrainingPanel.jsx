@@ -122,16 +122,17 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved,
     setProgress(0)
     setError(null)
     const oldSettings = withDefaults(settingsToBody(form), algorithm)
+    const checkFrom = checkFromInstant(toInstant(from), toInstant(to), tuningForm.tuneSharePercent)
     try {
       const tuned = await api.runTuning({
         candles: candles(),
-        checkFrom: checkFromInstant(toInstant(from), toInstant(to), tuningForm.tuneSharePercent),
+        checkFrom,
         settings: settingsToBody(form),
         startingBalance: Number(balance),
         ...tuningToBody(tuningForm, algorithm),
       })
       setProgress(DONE_PERCENT)
-      setTuningResult({ tuned, oldSettings, applied: false })
+      setTuningResult({ tuned, oldSettings, checkFrom, applied: false })
       setResult(null)
       onRunRecorded()
     } catch (failure) {
@@ -229,6 +230,7 @@ export function TrainingPanel({ algorithms, tickers, mode, onRunRecorded, saved,
           <TuningComparison
             tuning={tuningResult.tuned}
             oldSettings={tuningResult.oldSettings}
+            checkFrom={tuningResult.checkFrom}
             applied={tuningResult.applied}
             disabled={busy}
             onApply={applyTunedSettings}

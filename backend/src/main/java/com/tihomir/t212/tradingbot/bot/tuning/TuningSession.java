@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * One tuning: turns the requested ranges into dimensions, scores tries on the tune range, and
- * builds the setup that records the best try on the check range. Candles are read once per
+ * builds the setup that records the best try over the whole range. Candles are read once per
  * timeframe.
  */
 final class TuningSession {
@@ -108,18 +108,22 @@ final class TuningSession {
     }
   }
 
-  /** These settings (the best try's, or the base ones) set up for the check range. */
-  TrainingSetup checkSetup(AlgorithmSettingsRequest settings) {
+  /**
+   * These settings (the best try's, or the base ones) set up for the whole range, tune and check
+   * range together, so the recorded run shows the entire period.
+   */
+  TrainingSetup fullRangeSetup(AlgorithmSettingsRequest settings) {
     TrainingRunRequest training = request.training();
-    TrainingRunRequest check =
+    TrainingRunRequest fullRange =
         new TrainingRunRequest(
             training.broker(),
             training.ticker(),
-            request.checkFrom(),
+            training.from(),
             training.to(),
             settings,
             training.startingBalance());
-    return new TrainingSetup(check, algorithm, algorithm.resolveSettings(settings), tradingRules);
+    return new TrainingSetup(
+        fullRange, algorithm, algorithm.resolveSettings(settings), tradingRules);
   }
 
   /** An optional setting the try switched off isn't part of the try. */

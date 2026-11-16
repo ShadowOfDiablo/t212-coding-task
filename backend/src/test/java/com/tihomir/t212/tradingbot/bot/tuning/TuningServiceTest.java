@@ -94,7 +94,7 @@ class TuningServiceTest {
   }
 
   @Test
-  void recordsOnlyTheBestTryOnTheCheckRangeWithAutomaticSettings() {
+  void recordsOnlyTheBestTryOverTheWholeRangeWithAutomaticSettings() {
     TrainingService trainingService =
         trainingService(new PeriodSellingTestAlgorithm(ALWAYS_WORKING));
 
@@ -104,13 +104,13 @@ class TuningServiceTest {
     assertThat(runStore.getRuns(BROKER).runs()).hasSize(1);
     RunDetails details = runDetails(result.runId());
     assertThat(details.run().settingsSource()).isEqualTo(SettingsSource.AUTOMATIC);
-    assertThat(details.run().from()).contains(openTime(CHECK_FROM_INDEX));
+    assertThat(details.run().from()).contains(openTime(0));
     assertThat(details.run().to()).contains(openTime(CANDLE_COUNT));
     assertThat(details.settings().timePeriod()).isEqualTo(BEST_TIME_PERIOD);
     assertThat(details.settings().orderSizePercent()).isEqualByComparingTo(BASE_ORDER_SIZE_PERCENT);
     assertThat(result.trialCount()).isEqualTo(TRIAL_COUNT);
     assertThat(result.bestTuneReturnPercent()).isPositive();
-    assertThat(result.baseRun()).hasValueSatisfying(this::isReplayedOnTheCheckRange);
+    assertThat(result.baseRun()).hasValueSatisfying(this::isReplayedOverTheWholeRange);
     assertThat(runStore.getRuns(BROKER).runs()).hasSize(1);
     assertThat(trainingService.isTrainingRunning()).isFalse();
   }
@@ -238,11 +238,9 @@ class TuningServiceTest {
     assertThat(runStore.getRuns(BROKER).runs()).isEmpty();
   }
 
-  private void isReplayedOnTheCheckRange(UnrecordedRun baseRun) {
-    int checkCandleCount = CANDLE_COUNT - CHECK_FROM_INDEX;
-    assertThat(baseRun.points().points()).hasSize(checkCandleCount);
-    assertThat(baseRun.points().points().getFirst().time())
-        .isEqualTo(openTime(CHECK_FROM_INDEX + 1).minusMillis(1));
+  private void isReplayedOverTheWholeRange(UnrecordedRun baseRun) {
+    assertThat(baseRun.points().points()).hasSize(CANDLE_COUNT);
+    assertThat(baseRun.points().points().getFirst().time()).isEqualTo(openTime(1).minusMillis(1));
   }
 
   private static void assertRefused(TuningService tuningService, TunedSettingRange... ranges) {

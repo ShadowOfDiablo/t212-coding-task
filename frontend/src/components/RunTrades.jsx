@@ -159,11 +159,11 @@ function TradesTable({ positions }) {
           <tr>
             <th scope="col">Opened (UTC)</th>
             <th scope="col">Closed</th>
-            <th scope="col">Held</th>
+            <th scope="col" className="numeric">P&amp;L</th>
             <th scope="col" className="numeric">Quantity</th>
             <th scope="col" className="numeric">Price</th>
             <th scope="col" className="numeric">Cost</th>
-            <th scope="col" className="numeric">P&amp;L</th>
+            <th scope="col">Held</th>
           </tr>
         </thead>
         <tbody>
@@ -175,18 +175,18 @@ function TradesTable({ positions }) {
               <td>
                 {position.closedAt ? <TradeTime iso={position.closedAt} /> : <span className="trade-open">open</span>}
               </td>
-              <td>{formatDuration(position.durationSeconds)}</td>
-              <td className="numeric">{position.quantity ?? '–'}</td>
-              <td className="numeric">
-                <TradePrices position={position} />
-              </td>
-              <td className="numeric">{formatPrice(position.cost)}</td>
               <td className={`numeric ${pnlClass(position.realisedPnl)}`}>
                 <span className="trade-stack">
                   <span>{signed(position.realisedPnl)}</span>
                   <span className="trade-percent">{signed(position.realisedPnlPercent, '%')}</span>
                 </span>
               </td>
+              <td className="numeric">{position.quantity ?? '–'}</td>
+              <td className="numeric">
+                <TradePrices position={position} />
+              </td>
+              <td className="numeric">{formatPrice(position.cost)}</td>
+              <td>{formatDuration(position.durationSeconds)}</td>
             </tr>
           ))}
         </tbody>

@@ -1,11 +1,20 @@
+/*
+ * The list sits in the free space left of the centred app column, so the app keeps its width.
+ * Where that space is too narrow, it becomes one wrapped row above the page.
+ */
 .with-ticker-list {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+  position: relative;
 }
 
 .ticker-side-list {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 24px);
+  bottom: 0;
+  width: 200px;
+}
+
+.ticker-side-inner {
   position: sticky;
   top: 20px;
   display: grid;
@@ -71,13 +80,30 @@
   }
 }
 
-@media (max-width: 900px) {
-  .with-ticker-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
+/* App column (1240px) plus the list and its gap on both sides. */
+@media (max-width: 1740px) {
   .ticker-side-list {
     position: static;
+    width: auto;
+    margin-bottom: 20px;
+  }
+
+  .ticker-side-inner {
+    position: static;
     max-height: none;
+    overflow: visible;
+  }
+
+  .ticker-side-list ul {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .ticker-side-list li {
+    grid-template-columns: auto auto auto;
+  }
+
+  .ticker-side-inner .follow-card {
+    max-width: 320px;
   }
 }

@@ -8,6 +8,7 @@ import com.tihomir.t212.tradingbot.bot.exception.LiveBotNotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.NoSuccessfulTuningTrialException;
 import com.tihomir.t212.tradingbot.bot.exception.RunNotFoundException;
+import com.tihomir.t212.tradingbot.bot.exception.TickerSettingsMissingException;
 import com.tihomir.t212.tradingbot.bot.exception.TradingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.exception.TrainingAlreadyRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.TrainingModeRequiredException;
@@ -83,6 +84,7 @@ public class ApiExceptionHandler {
     TradingModeRequiredException.class,
     LiveBotRunningException.class,
     LiveBotNotRunningException.class,
+    TickerSettingsMissingException.class,
     SettingsAlreadySavedException.class
   })
   ProblemDetail conflict(RuntimeException e) {

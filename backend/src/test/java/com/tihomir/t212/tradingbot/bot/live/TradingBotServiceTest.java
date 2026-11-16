@@ -26,6 +26,8 @@ import com.tihomir.t212.tradingbot.bot.run.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.run.RunCounts;
 import com.tihomir.t212.tradingbot.bot.run.RunDetails;
 import com.tihomir.t212.tradingbot.bot.run.RunStatus;
+import com.tihomir.t212.tradingbot.bot.tickersettings.FakeTickerSettingsStore;
+import com.tihomir.t212.tradingbot.bot.tickersettings.TickerSettingsService;
 import com.tihomir.t212.tradingbot.broker.BrokerRegistryService;
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleHistoryService;
@@ -56,6 +58,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -76,6 +79,7 @@ class TradingBotServiceTest {
       List.of(TradingSignal.HOLD, TradingSignal.HOLD);
   private static final BigDecimal TOO_HIGH_STOP_LOSS_PERCENT = BigDecimal.valueOf(100);
   private static final BigDecimal BUY_AMOUNT = new BigDecimal("100.00000000");
+  private static final BigDecimal BUDGET = new BigDecimal("100");
   private static final Map<String, BigDecimal> STOP_LOSS_AND_TAKE_PROFIT =
       Map.of(
           TradingAlgorithm.STOP_LOSS_PERCENT,
@@ -91,6 +95,8 @@ class TradingBotServiceTest {
   private final BotModeService botModeService = new BotModeService(BotMode.TRADING);
   private final AtomicInteger evaluatedPrices = new AtomicInteger();
   private final List<TradingBotService> services = new ArrayList<>();
+  private final FakeTickerSettingsStore tickerSettingsStore = new FakeTickerSettingsStore();
+  private TickerSettingsService tickerSettings;
   private final AlgorithmSettingsService settingsService =
       new AlgorithmSettingsService(new FakeAlgorithmStore(1), Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -202,6 +208,19 @@ class TradingBotServiceTest {
     service.stopBot(BROKER);
 
     assertThat(changed.paused()).isTrue();
+  }
+
+  @Test
+  void keepsTheBotsProfitInTheTickersBudgetWhenItStops() {
+    TradingBotService service = service(TradingSignal.BUY);
+    service.startBot(request(true, Map.of()));
+    service.findRunningBot(BROKER).orElseThrow().evaluate(BigDecimal.ONE, NOW);
+    updateLastPrice(BigDecimal.TWO);
+
+    service.stopBot(BROKER);
+
+    assertThat(tickerSettings.getAssignedSettings(BROKER, TICKER).budget())
+        .hasValueSatisfying(budget -> assertThat(budget).isEqualByComparingTo("200"));
   }
 
   @Test
@@ -404,12 +423,17 @@ class TradingBotServiceTest {
     BrokerRegistryService brokers = new BrokerRegistryService(List.of(broker));
     List<TradingSignal> script =
         Stream.concat(WARM_UP.stream(), List.of(signals).stream()).toList();
+    AlgorithmRegistryService algorithms =
+        new AlgorithmRegistryService(
+            List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet)));
+    tickerSettings =
+        new TickerSettingsService(brokers, algorithms, settingsService, tickerSettingsStore);
     TradingBotService service =
         new TradingBotService(
             botModeService,
-            new AlgorithmRegistryService(
-                List.of(new ScriptedTestAlgorithm(script, evaluatedPrices::incrementAndGet))),
+            algorithms,
             settingsService,
+            tickerSettings,
             new CandleHistoryService(brokers, candleStore, CLOCK),
             new OrderCheckerService(new OrderService(brokers, new FakeOrderStore(), CLOCK)),
             runStore,
@@ -423,7 +447,10 @@ class TradingBotServiceTest {
     candleStore.storeCandles(TICKER_ID, List.of(candle(0), candle(1)));
   }
 
-  private static LiveRunRequest request(boolean liveOnTick, Map<String, BigDecimal> values) {
+  /** Gives the ticker these settings and a budget of the whole fake account first. */
+  private LiveRunRequest request(boolean liveOnTick, Map<String, BigDecimal> values) {
+    tickerSettings.assignSettings(
+        BROKER, TICKER, settings(liveOnTick, values), Optional.of(BUDGET));
     return new LiveRunRequest(BROKER, TICKER, settings(liveOnTick, values));
   }
 

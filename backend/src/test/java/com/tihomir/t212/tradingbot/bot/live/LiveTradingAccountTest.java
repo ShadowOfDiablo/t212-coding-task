@@ -3,8 +3,6 @@ package com.tihomir.t212.tradingbot.bot.live;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tihomir.t212.tradingbot.broker.FakeBroker;
-import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerPriceMap;
-import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuoteSource;
 import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
 import com.tihomir.t212.tradingbot.order.gateway.FakeExchangeTradingGateway;
 import com.tihomir.t212.tradingbot.order.model.ExecutedOrder;
@@ -22,12 +20,13 @@ class LiveTradingAccountTest {
 
   private static final String TICKER = "BTCUSDT";
   private static final long RUN_ID = 7;
+  private static final BigDecimal BUDGET = new BigDecimal("1000");
 
   private final FakeExchangeTradingGateway gateway = new FakeExchangeTradingGateway();
   private final FakeBroker broker = new FakeBroker("binance", gateway);
   private final LiveTradingAccount account =
       new LiveTradingAccount(
-          TICKER, broker, new PositionTracker("binance", TICKER), new FakePositionStore());
+          TICKER, broker, new PositionTracker("binance", TICKER), new FakePositionStore(), BUDGET);
 
   @BeforeEach
   void startRun() {
@@ -62,25 +61,28 @@ class LiveTradingAccountTest {
 
     assertThat(account.baseQuantity()).isZero();
     assertThat(account.entryPrice()).isEmpty();
-    assertThat(account.portfolioValue(BigDecimal.TEN)).isEqualByComparingTo("100");
+    assertThat(account.portfolioValue(BigDecimal.TEN)).isEqualByComparingTo("1000");
   }
 
   @Test
-  void valuesTheWholeAccountAndLeavesOutABalanceWithoutAPrice() {
+  void keepsItsOwnMoneyAndNeverSpendsMoreThanTheAccountHasFree() {
     gateway.changeBalances(
-        Instant.EPOCH,
-        List.of(
-            new AssetBalance("USDT", new BigDecimal("5000"), BigDecimal.ZERO),
-            new AssetBalance("USDC", new BigDecimal("4000"), new BigDecimal("1000")),
-            new AssetBalance("BTC", new BigDecimal("0.5"), BigDecimal.ZERO),
-            new AssetBalance("DOGE", new BigDecimal("100"), BigDecimal.ZERO)));
-    TickerPriceMap prices = (TickerPriceMap) broker.tickerPrices();
-    prices.addTicker("USDCUSDT");
-    prices.updateLastPrice(
-        "USDCUSDT", new BigDecimal("1.00078"), Instant.EPOCH, TickerQuoteSource.WEBSOCKET);
+        Instant.EPOCH, List.of(new AssetBalance("USDT", new BigDecimal("5000"), BigDecimal.ZERO)));
 
-    assertThat(account.portfolioValue(new BigDecimal("60000")))
-        .isEqualByComparingTo("40003.90000000");
+    account.recordExecutedOrder(
+        order(
+            OrderSide.BUY,
+            "0.5",
+            "200",
+            new OrderFill(
+                1, new BigDecimal("400"), new BigDecimal("0.5"), new BigDecimal("0.2"), "USDT")));
+
+    assertThat(account.ownCash()).isEqualByComparingTo("799.8");
+    assertThat(account.cash()).isEqualByComparingTo("799.8");
+    assertThat(account.portfolioValue(new BigDecimal("400"))).isEqualByComparingTo("999.8");
+    gateway.changeBalances(
+        Instant.EPOCH, List.of(new AssetBalance("USDT", new BigDecimal("50"), BigDecimal.ZERO)));
+    assertThat(account.cash()).isEqualByComparingTo("50");
   }
 
   private static ExecutedOrder order(

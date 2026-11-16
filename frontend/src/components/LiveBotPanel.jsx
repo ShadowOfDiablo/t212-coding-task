@@ -1,17 +1,12 @@
 import './Panels.css'
 import { useState } from 'react'
 import { api } from '../api.js'
+import { formatPrice, QUOTE_ASSET } from '../format.js'
 import { usePolling } from '../hooks/usePolling.js'
-import {
-  defaultSettings,
-  settingsFromResponse,
-  settingsToBody,
-  tickerOptions,
-  timeframeLabel,
-} from '../settings.js'
-import { Dropdown } from './Dropdown.jsx'
+import { defaultSettings, settingsFromResponse, settingsToBody, timeframeLabel } from '../settings.js'
 import { LineChart } from './LineChart.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
+import { BotList } from './livebots/BotList.jsx'
 
 const BOT_REFRESH_MS = 2000
 const RESETS_REFRESH_MS = 10000
@@ -35,9 +30,11 @@ const CHART_RANGES = [
 
 const byTime = (left, right) => new Date(left.time) - new Date(right.time)
 
-/** Every live run as its start and end value, then the running run's own points. */
-function allLiveRunPoints(runs, status) {
-  const finishedRuns = (runs ?? []).filter((run) => run.mode !== 'TRAINING' && run.id !== status?.runId)
+/** Every live run of the ticker as its start and end value, then the running run's own points. */
+function allLiveRunPoints(runs, ticker, status) {
+  const finishedRuns = (runs ?? []).filter(
+    (run) => run.mode !== 'TRAINING' && run.ticker === ticker && run.id !== status?.runId,
+  )
   const runEnds = finishedRuns.flatMap((run) => [
     { time: run.startedAt, value: run.startingValue },
     ...(run.finishedAt && run.finalValue != null ? [{ time: run.finishedAt, value: run.finalValue }] : []),
@@ -55,15 +52,14 @@ function chartEmptyText(chartRange, running) {
   return 'Start the bot to see its portfolio value.'
 }
 
-function statusPill(status, running) {
-  if (!running) {
-    return { className: 'pill', text: 'Stopped' }
+function storedForm(tickerSettings, algorithms) {
+  if (tickerSettings?.settings) {
+    return settingsFromResponse(tickerSettings.settings)
   }
-  if (status.paused) {
-    return { className: 'pill pill-paused', text: `Paused · run ${status.runId}` }
-  }
-  return { className: 'pill pill-on', text: `Running · run ${status.runId}` }
+  return algorithms?.[0] ? defaultSettings(algorithms[0]) : null
 }
+
+const budgetToBody = (budget) => (budget === '' || budget == null ? null : Number(budget))
 
 function Counts({ bot }) {
   const counts = [
@@ -86,35 +82,48 @@ function Counts({ bot }) {
 }
 
 /**
- * The live bot. Stopped: pick a ticker and settings, then start. Running: the settings are read
- * only until Edit; Save asks for confirmation before they reach the running bot.
+ * One live bot per followed ticker. A stopped ticker's settings and budget are saved for its next
+ * start; a running bot's settings are read only until Edit, and Save asks for confirmation.
  */
-export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSettings }) {
-  const bot = usePolling(api.getBots, BOT_REFRESH_MS)
+export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings }) {
+  const tickerSettings = usePolling(api.getTickerSettings, BOT_REFRESH_MS)
+  const bots = usePolling(api.getBots, BOT_REFRESH_MS)
   const resets = usePolling(api.getAccountResets, RESETS_REFRESH_MS)
   const [resetResult, setResetResult] = useState(null)
   const [chartRange, setChartRange] = useState('all')
   const [ticker, setTicker] = useState('')
   const [draft, setDraft] = useState(null)
+  const [budgetDraft, setBudgetDraft] = useState(null)
   const [editStep, setEditStep] = useState('readOnly')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const status = bot.data?.bots?.[0]
-  const running = status?.runId != null
-  const chosenTicker = ticker || tickers?.[0]?.ticker || ''
-  const startForm = draft ?? (algorithms?.[0] ? defaultSettings(algorithms[0]) : null)
-  const chartPoints = chartRange === 'all' ? allLiveRunPoints(runs, status) : status?.points
-  const pill = statusPill(status, running)
+  const tickerRows = tickerSettings.data?.tickers ?? []
+  const runningBots = bots.data?.bots ?? []
+  const chosenTicker = ticker || tickerRows[0]?.ticker || ''
+  const chosenSettings = tickerRows.find((row) => row.ticker === chosenTicker)
+  const status = runningBots.find((bot) => bot.ticker === chosenTicker)
+  const running = status != null
+  const anyRunning = runningBots.length > 0
+  const trading = mode === 'TRADING'
+  const stoppedForm = draft ?? storedForm(chosenSettings, algorithms)
+  const budget = budgetDraft ?? chosenSettings?.budget ?? ''
+  const chartPoints = chartRange === 'all' ? allLiveRunPoints(runs, chosenTicker, status) : status?.points
   const shownSettings =
     running && editStep === 'readOnly' ? settingsFromResponse(status.currentParameters) : draft
+
+  const clearDrafts = () => {
+    setDraft(null)
+    setBudgetDraft(null)
+    setEditStep('readOnly')
+  }
 
   const act = async (action) => {
     setBusy(true)
     try {
       await action()
       setError(null)
-      await bot.refresh()
+      await Promise.all([bots.refresh(), tickerSettings.refresh()])
     } catch (failure) {
       setError(failure)
     } finally {
@@ -122,20 +131,16 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
     }
   }
 
-  // The ticker keeps these settings and gets an equal share of the free USDT as its budget.
-  const start = () =>
+  const selectTicker = (nextTicker) => {
+    setTicker(nextTicker)
+    clearDrafts()
+    setError(null)
+  }
+  const saveSettings = () =>
     act(async () => {
-      await api.assignTickerSettings(chosenTicker, settingsToBody(startForm))
-      await api.startBot(chosenTicker)
+      await api.assignTickerSettings(chosenTicker, settingsToBody(stoppedForm), budgetToBody(budget))
+      clearDrafts()
     })
-  const stop = () =>
-    act(async () => {
-      await api.stopBot(status.ticker)
-      setDraft(null)
-      setEditStep('readOnly')
-    })
-  const togglePause = () =>
-    act(() => (status.paused ? api.resumeBot(status.ticker) : api.pauseBot(status.ticker)))
   // The tab opens before any await, or the browser blocks it as a popup; it gets Binance's page
   // only once the account is empty.
   const resetAccount = () => {
@@ -159,51 +164,95 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
     setError(null)
   }
   const cancelEdit = () => {
-    setDraft(null)
-    setEditStep('readOnly')
+    clearDrafts()
     setError(null)
   }
   const confirmEdit = () =>
     act(async () => {
-      await api.updateBotParameters(status.ticker, settingsToBody(draft))
-      setDraft(null)
-      setEditStep('readOnly')
+      await api.updateBotParameters(chosenTicker, settingsToBody(draft))
+      clearDrafts()
     })
 
   return (
     <div className="panel-grid">
       <section className="card">
         <div className="card-head">
-          <h2>Live bot</h2>
-          <span className={pill.className}>{pill.text}</span>
-        </div>
-        {mode !== 'TRADING' && !running && (
-          <p className="notice">The live bot runs in Trading mode. Switch the mode at the top.</p>
-        )}
-        {running ? (
-          <p className="muted small">
-            Trading <strong>{status.ticker}</strong> on{' '}
-            {timeframeLabel(status.currentParameters.timeframe)} candles. Parameters editable:{' '}
-            {running ? 'yes' : 'no'}.
-          </p>
-        ) : (
-          <div className="field">
-            <span className="field-label">Ticker</span>
-            <Dropdown ariaLabel="Ticker" value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+          <h2>Live bots</h2>
+          <div className="actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={busy || !trading}
+              onClick={() => act(api.startAllBots)}
+            >
+              Start all
+            </button>
+            <button
+              type="button"
+              className="button button-danger"
+              disabled={busy || !anyRunning}
+              onClick={() => act(api.stopAllBots)}
+            >
+              Stop all
+            </button>
           </div>
+        </div>
+        {!trading && !anyRunning && (
+          <p className="notice">The live bots run in Trading mode. Switch the mode at the top.</p>
         )}
-        <SettingsForm
-          algorithms={algorithms}
-          value={running ? shownSettings : startForm}
-          onChange={setDraft}
-          disabled={busy || (running && editStep !== 'editing')}
-          saved={saved}
-          current={currentSettings}
+        {tickerRows.length === 0 && <p className="muted small">Follow a ticker to give it a bot.</p>}
+        <BotList
+          tickers={tickerRows}
+          bots={runningBots}
+          selectedTicker={chosenTicker}
+          onSelect={selectTicker}
+          onAct={act}
+          busy={busy}
+          canStart={trading}
         />
+        {chosenTicker && (
+          <>
+            <h3>{chosenTicker}</h3>
+            {running ? (
+              <p className="muted small">
+                Trading on {timeframeLabel(status.currentParameters.timeframe)} candles with its own{' '}
+                {QUOTE_ASSET}.
+              </p>
+            ) : (
+              <div className="field">
+                <label className="field-label" htmlFor="live-bot-budget">
+                  Budget ({QUOTE_ASSET})
+                </label>
+                <input
+                  id="live-bot-budget"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={budget}
+                  disabled={busy}
+                  onChange={(event) => setBudgetDraft(event.target.value)}
+                />
+              </div>
+            )}
+            {running && chosenSettings?.budget != null && (
+              <p className="muted small">
+                Budget at start: {formatPrice(chosenSettings.budget)} {QUOTE_ASSET}
+              </p>
+            )}
+            <SettingsForm
+              algorithms={algorithms}
+              value={running ? shownSettings : stoppedForm}
+              onChange={setDraft}
+              disabled={busy || (running && editStep !== 'editing')}
+              saved={saved}
+              current={currentSettings}
+            />
+          </>
+        )}
         {running && status.paused && (
           <p className="notice">Paused: no orders are placed, not even a stop loss or take profit.</p>
         )}
-        {resetResult && !running && <p className="notice">{resetResult}</p>}
+        {resetResult && !anyRunning && <p className="notice">{resetResult}</p>}
         {editStep === 'confirm' && (
           <p className="notice">
             Apply these settings to the running bot? They are recorded and take effect from the
@@ -216,33 +265,25 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
           </p>
         )}
         <div className="actions">
-          {!running && (
+          {chosenTicker && !running && (
             <button
               type="button"
               className="button button-primary"
-              disabled={busy || mode !== 'TRADING' || !startForm || !chosenTicker}
-              onClick={start}
+              disabled={busy || !stoppedForm}
+              onClick={saveSettings}
             >
-              Start bot
+              Save settings
             </button>
           )}
-          {!running && (
+          {!anyRunning && (
             <button type="button" className="button" disabled={busy} onClick={resetAccount}>
               Reset account
             </button>
           )}
           {running && editStep === 'readOnly' && (
-            <>
-              <button type="button" className="button" disabled={busy} onClick={beginEdit}>
-                Edit parameters
-              </button>
-              <button type="button" className="button" disabled={busy} onClick={togglePause}>
-                {status.paused ? 'Resume' : 'Pause'}
-              </button>
-              <button type="button" className="button button-danger" disabled={busy} onClick={stop}>
-                Stop bot
-              </button>
-            </>
+            <button type="button" className="button" disabled={busy} onClick={beginEdit}>
+              Edit parameters
+            </button>
           )}
           {running && editStep === 'editing' && (
             <>
@@ -282,7 +323,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
       </section>
       <section className="card">
         <div className="card-head">
-          <h2>How the bot is doing</h2>
+          <h2>How {chosenTicker || 'the bot'} is doing</h2>
           <div
             className={`segmented segmented-small ${chartRange === 'run' ? 'is-second' : ''}`}
             role="radiogroup"
@@ -304,7 +345,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
           </div>
         </div>
         <LineChart
-          key={chartRange}
+          key={`${chosenTicker}-${chartRange}`}
           points={chartPoints}
           baseline={chartPoints?.[0]?.value ?? null}
           markers={(resets.data?.resetTimes ?? []).map((time) => ({ time, label: 'Reset' }))}

@@ -1,0 +1,33 @@
+.bot-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-list li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.bot-list li.is-selected {
+  border-color: var(--brand);
+}
+
+.bot-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bot-list-actions {
+  display: flex;
+  gap: 8px;
+}

@@ -20,7 +20,6 @@ import { TuningComparison } from './TuningComparison.jsx'
 import { TuningFields } from './TuningFields.jsx'
 import { TuningProgress } from './TuningProgress.jsx'
 import { ReviewColumn } from './review/ReviewColumn.jsx'
-import { TradesSlotContext } from './review/TradesSlotContext.js'
 
 const DEFAULT_FROM = '2021-01-01T00:00'
 const DEFAULT_TO = '2021-02-01T00:00'
@@ -50,7 +49,6 @@ export function TrainingPanel({
   reviewAside,
   onReviewingChange,
 }) {
-  const [tradesSlot, setTradesSlot] = useState(null)
   const tickerId = useId()
   const fromId = useId()
   const toId = useId()
@@ -158,111 +156,109 @@ export function TrainingPanel({
   useEffect(() => onReviewingChange?.(reviewing), [reviewing, onReviewingChange])
 
   return (
-    <TradesSlotContext.Provider value={tradesSlot}>
-      <div className="panel-grid">
-        <ReviewColumn reviewing={reviewing} aside={reviewAside} onSlot={setTradesSlot}>
-          <section className="card">
-            <div className="card-head">
-              <h2>Training</h2>
-              <span className={`pill ${busy ? 'pill-on' : ''}`}>{statusText(running, tuning)}</span>
-            </div>
-            {mode !== 'TRAINING' && (
-              <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
-            )}
-            <fieldset className="date-fields" disabled={busy}>
-              <div className="field">
-                <label className="field-label" htmlFor={tickerId}>
-                  Ticker
-                </label>
-                <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
-              </div>
-              <label className="field">
-                <span className="field-label">Starting balance (USDT)</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={balance}
-                  onChange={(event) => setBalance(event.target.value)}
-                />
-              </label>
-              <div className="field">
-                <label className="field-label" htmlFor={fromId}>
-                  From (UTC)
-                </label>
-                <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
-              </div>
-              <div className="field">
-                <label className="field-label" htmlFor={toId}>
-                  To (UTC)
-                </label>
-                <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
-              </div>
-            </fieldset>
-            <SettingsForm
-              algorithms={algorithms}
-              value={form}
-              onChange={setDraft}
-              disabled={busy}
-              tuning={tuningControls}
-              saved={saved}
-              onPickSaved={(entry) => setPickedEntryId(entry.id)}
-            >
-              {form && (
-                <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
-              )}
-            </SettingsForm>
-            <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
-            {error && (
-              <p className="form-error" role="alert">
-                {error.message}
-              </p>
-            )}
-            <div className="actions">
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={!canStart}
-                onClick={runTraining}
-              >
-                {running ? 'Running…' : 'Run backtest'}
-              </button>
-              <button
-                type="button"
-                className="button"
-                disabled={!canStart || !tuningForm || !hasAnythingToTune(tuningForm)}
-                onClick={runTuning}
-              >
-                {tuning ? 'Tuning…' : 'Tune settings'}
-              </button>
-              <span className="muted small">Missing candles are downloaded first, then stored.</span>
-            </div>
-            {tuning && <TuningProgress percent={progress} />}
-          </section>
-        </ReviewColumn>
-        <section className={`card ${!tuningResult && !result ? 'card-fill' : ''}`}>
+    <div className="panel-grid">
+      <ReviewColumn reviewing={reviewing} aside={reviewAside}>
+        <section className="card">
           <div className="card-head">
-            <h2>{tuningResult ? 'Old vs tuned settings' : 'Result'}</h2>
-            <span className="muted small">portfolio value, USDT</span>
+            <h2>Training</h2>
+            <span className={`pill ${busy ? 'pill-on' : ''}`}>{statusText(running, tuning)}</span>
           </div>
-          {tuningResult && (
-            <TuningComparison
-              tuning={tuningResult.tuned}
-              oldSettings={tuningResult.oldSettings}
-              checkFrom={tuningResult.checkFrom}
-              applied={tuningResult.applied}
-              disabled={busy}
-              onApply={applyTunedSettings}
-              saved={saved}
-            />
+          {mode !== 'TRAINING' && (
+            <p className="notice">Training runs in Training mode. Switch the mode at the top.</p>
           )}
-          {!tuningResult && result && <RunDetails details={result} />}
-          {!tuningResult && !result && (
-            <p className="empty chart-empty">
-              Run a training to see how the algorithm would have done, or tune its settings.
+          <fieldset className="date-fields" disabled={busy}>
+            <div className="field">
+              <label className="field-label" htmlFor={tickerId}>
+                Ticker
+              </label>
+              <Dropdown id={tickerId} value={chosenTicker} options={tickerOptions(tickers)} onChange={setTicker} />
+            </div>
+            <label className="field">
+              <span className="field-label">Starting balance (USDT)</span>
+              <input
+                type="number"
+                min="1"
+                value={balance}
+                onChange={(event) => setBalance(event.target.value)}
+              />
+            </label>
+            <div className="field">
+              <label className="field-label" htmlFor={fromId}>
+                From (UTC)
+              </label>
+              <DateTimePicker id={fromId} value={from} onChange={setFrom} disabled={busy} />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor={toId}>
+                To (UTC)
+              </label>
+              <DateTimePicker id={toId} value={to} onChange={setTo} disabled={busy} />
+            </div>
+          </fieldset>
+          <SettingsForm
+            algorithms={algorithms}
+            value={form}
+            onChange={setDraft}
+            disabled={busy}
+            tuning={tuningControls}
+            saved={saved}
+            onPickSaved={(entry) => setPickedEntryId(entry.id)}
+          >
+            {form && (
+              <SaveCurrentSettings form={form} saved={saved} pickedEntryId={pickedEntryId} disabled={busy} />
+            )}
+          </SettingsForm>
+          <TuningFields value={tuningForm} onChange={setTuningDraft} disabled={busy} />
+          {error && (
+            <p className="form-error" role="alert">
+              {error.message}
             </p>
           )}
+          <div className="actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!canStart}
+              onClick={runTraining}
+            >
+              {running ? 'Running…' : 'Run backtest'}
+            </button>
+            <button
+              type="button"
+              className="button"
+              disabled={!canStart || !tuningForm || !hasAnythingToTune(tuningForm)}
+              onClick={runTuning}
+            >
+              {tuning ? 'Tuning…' : 'Tune settings'}
+            </button>
+            <span className="muted small">Missing candles are downloaded first, then stored.</span>
+          </div>
+          {tuning && <TuningProgress percent={progress} />}
         </section>
-      </div>
-    </TradesSlotContext.Provider>
+      </ReviewColumn>
+      <section className={`card ${!tuningResult && !result ? 'card-fill' : ''}`}>
+        <div className="card-head">
+          <h2>{tuningResult ? 'Old vs tuned settings' : 'Result'}</h2>
+          <span className="muted small">portfolio value, USDT</span>
+        </div>
+        {tuningResult && (
+          <TuningComparison
+            tuning={tuningResult.tuned}
+            oldSettings={tuningResult.oldSettings}
+            checkFrom={tuningResult.checkFrom}
+            applied={tuningResult.applied}
+            disabled={busy}
+            onApply={applyTunedSettings}
+            saved={saved}
+          />
+        )}
+        {!tuningResult && result && <RunDetails details={result} />}
+        {!tuningResult && !result && (
+          <p className="empty chart-empty">
+            Run a training to see how the algorithm would have done, or tune its settings.
+          </p>
+        )}
+      </section>
+    </div>
   )
 }

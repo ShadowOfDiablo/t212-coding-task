@@ -5,6 +5,7 @@ import com.tihomir.t212.tradingbot.algorithm.TradingAlgorithm;
 import com.tihomir.t212.tradingbot.bot.exception.NoSuccessfulTuningTrialException;
 import com.tihomir.t212.tradingbot.bot.exception.TrainingAlreadyRunningException;
 import com.tihomir.t212.tradingbot.bot.exception.TrainingModeRequiredException;
+import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunStore;
 import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.run.UnrecordedRun;
 import com.tihomir.t212.tradingbot.bot.training.TrainingLock;
@@ -25,7 +26,8 @@ import org.springframework.stereotype.Service;
 /**
  * Finds good settings automatically: replays many tries in memory on the tune range, chosen with
  * TPE, and records only the best one, replayed over the whole range, as a training run with
- * AUTOMATIC settings. Shares the training lock, so it never runs beside a training run.
+ * AUTOMATIC settings. Shares the training lock, so it never runs beside a training run. Afterwards
+ * only the ticker's best tuned run is kept, next to the new one.
  */
 @Service
 public class TuningService {
@@ -38,16 +40,19 @@ public class TuningService {
   private final TrainingService trainingService;
   private final AlgorithmRegistryService algorithms;
   private final TrainingLock trainingLock;
+  private final AlgorithmRunStore runStore;
   private final AtomicReference<Optional<TuningProgress>> progress =
       new AtomicReference<>(Optional.empty());
 
   public TuningService(
       TrainingService trainingService,
       AlgorithmRegistryService algorithms,
-      TrainingLock trainingLock) {
+      TrainingLock trainingLock,
+      AlgorithmRunStore runStore) {
     this.trainingService = trainingService;
     this.algorithms = algorithms;
     this.trainingLock = trainingLock;
+    this.runStore = runStore;
   }
 
   /**
@@ -114,7 +119,26 @@ public class TuningService {
         best.settings().timeframe().code(),
         best.settings().values(),
         runId);
+    deleteWorseTunedRuns(request.training(), runId);
     return new TuningResult(runId, bestTuneReturnPercent, trials.size(), baseRun(request, session));
+  }
+
+  /** The tuning is already recorded; runs that can't be deleted only stay in the list. */
+  private void deleteWorseTunedRuns(TrainingRunRequest training, long runId) {
+    try {
+      int deleted = runStore.deleteTunedRunsExceptBest(training.broker(), training.ticker(), runId);
+      log.info(
+          "Tuning {} {}: deleted {} earlier tuned runs, kept the best",
+          training.broker(),
+          training.ticker(),
+          deleted);
+    } catch (RuntimeException e) {
+      log.error(
+          "Tuning {} {}: deleting the earlier tuned runs failed",
+          training.broker(),
+          training.ticker(),
+          e);
+    }
   }
 
   /**

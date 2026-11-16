@@ -36,4 +36,13 @@ public interface AlgorithmRunStore {
 
   /** The latest runs of a broker, newest first, without points. */
   RecordedRunList getRuns(String broker);
+
+  /**
+   * Deletes the ticker's finished tuned runs (training, AUTOMATIC) with their points and positions,
+   * except the one with the best return, `keptRunId`, and a run a ticker's settings were tuned
+   * with. In one transaction.
+   *
+   * @return how many runs were deleted
+   */
+  int deleteTunedRunsExceptBest(String broker, String ticker, long keptRunId);
 }

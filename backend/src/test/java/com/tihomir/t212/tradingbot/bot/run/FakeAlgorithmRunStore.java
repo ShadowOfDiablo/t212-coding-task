@@ -2,7 +2,10 @@ package com.tihomir.t212.tradingbot.bot.run;
 
 import com.tihomir.t212.tradingbot.mode.BotMode;
 import com.tihomir.t212.tradingbot.position.PositionWriteList;
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,10 +18,11 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
   private final Map<Long, PortfolioPointList> points = new HashMap<>();
   private final Map<Long, PositionWriteList> positionWrites = new HashMap<>();
   private final Map<String, Long> activeAlgorithmIds = new HashMap<>();
+  private long lastRunId;
 
   @Override
   public synchronized long insertStartedRun(RunStart start) {
-    long runId = runs.size() + 1L;
+    long runId = ++lastRunId;
     runs.put(
         runId,
         new RecordedRun(
@@ -83,6 +87,32 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
         runs.values().stream().filter(run -> run.broker().equals(broker)).toList());
   }
 
+  /** Like the database, without the rule about runs a ticker's settings were tuned with. */
+  @Override
+  public synchronized int deleteTunedRunsExceptBest(String broker, String ticker, long keptRunId) {
+    List<RecordedRun> tunedRuns =
+        runs.values().stream()
+            .filter(run -> run.broker().equals(broker) && run.ticker().equals(ticker))
+            .filter(run -> run.mode() == BotMode.TRAINING)
+            .filter(run -> run.settingsSource() == SettingsSource.AUTOMATIC)
+            .filter(run -> run.status() != RunStatus.STARTED)
+            .toList();
+    Optional<Long> bestRunId =
+        tunedRuns.stream()
+            .filter(run -> run.finalValue().isPresent())
+            .max(
+                Comparator.comparing(FakeAlgorithmRunStore::returnRatio)
+                    .thenComparing(RecordedRun::id))
+            .map(RecordedRun::id);
+    List<Long> deleted =
+        tunedRuns.stream()
+            .map(RecordedRun::id)
+            .filter(runId -> runId != keptRunId && !bestRunId.equals(Optional.of(runId)))
+            .toList();
+    deleted.forEach(this::removeRun);
+    return deleted.size();
+  }
+
   /** The position writes a run ended with; none while it runs. */
   public synchronized PositionWriteList positionWrites(long runId) {
     return positionWrites.getOrDefault(runId, PositionWriteList.NONE);
@@ -91,6 +121,16 @@ public final class FakeAlgorithmRunStore implements AlgorithmRunStore {
   /** The variant the last live run of the ticker started with. */
   public synchronized Optional<Long> activeAlgorithmId(String ticker) {
     return Optional.ofNullable(activeAlgorithmIds.get(ticker));
+  }
+
+  private void removeRun(long runId) {
+    runs.remove(runId);
+    points.remove(runId);
+    positionWrites.remove(runId);
+  }
+
+  private static BigDecimal returnRatio(RecordedRun run) {
+    return run.finalValue().orElseThrow().divide(run.startingValue(), MathContext.DECIMAL64);
   }
 
   private StoredRunDetails details(RecordedRun run) {

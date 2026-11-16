@@ -18,6 +18,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.SqlParameterValue;
@@ -178,6 +179,52 @@ public class AlgorithmRunRepository implements AlgorithmRunStore {
             .param(MAX_RUNS_PER_LIST)
             .query(AlgorithmRunRepository::recordedRun)
             .list());
+  }
+
+  @Override
+  @Transactional
+  public int deleteTunedRunsExceptBest(String broker, String ticker, long keptRunId) {
+    List<Long> deletedRunIds =
+        jdbcClient
+            .sql(
+                """
+                SELECT r.id FROM algorithm_run r
+                JOIN ticker t ON t.id = r.ticker_id
+                JOIN brokers b ON b.broker_id = t.broker_id
+                WHERE b.name = :broker AND t.symbol = :ticker
+                  AND r.mode = CAST(:mode AS bot_mode)
+                  AND r.settings_source = CAST(:source AS settings_source)
+                  AND r.status <> CAST(:started AS run_status)
+                  AND r.id <> :keptRunId
+                  AND r.id <> COALESCE(
+                    (SELECT r2.id FROM algorithm_run r2
+                     WHERE r2.ticker_id = r.ticker_id AND r2.mode = r.mode
+                       AND r2.settings_source = r.settings_source AND r2.final_value IS NOT NULL
+                     ORDER BY r2.final_value / r2.starting_value DESC, r2.id DESC
+                     LIMIT 1), -1)
+                  AND r.id NOT IN (
+                    SELECT tuned_run_id FROM active_algorithm WHERE tuned_run_id IS NOT NULL)
+                """)
+            .param("broker", broker)
+            .param("ticker", ticker)
+            .param("mode", BotMode.TRAINING.name())
+            .param("source", SettingsSource.AUTOMATIC.name())
+            .param("started", RunStatus.STARTED.name())
+            .param("keptRunId", keptRunId)
+            .query(Long.class)
+            .list();
+    if (deletedRunIds.isEmpty()) {
+      return 0;
+    }
+    deleteFromRunTable(
+        "DELETE FROM training_portfolio_point WHERE run_id IN (:ids)", deletedRunIds);
+    deleteFromRunTable("DELETE FROM position WHERE run_id IN (:ids)", deletedRunIds);
+    deleteFromRunTable("UPDATE orders SET run_id = NULL WHERE run_id IN (:ids)", deletedRunIds);
+    return deleteFromRunTable("DELETE FROM algorithm_run WHERE id IN (:ids)", deletedRunIds);
+  }
+
+  private int deleteFromRunTable(String sql, List<Long> runIds) {
+    return jdbcClient.sql(sql).param("ids", runIds).update();
   }
 
   private void updateActiveAlgorithm(long tickerId, RunStart start) {

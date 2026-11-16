@@ -17,6 +17,7 @@ import com.tihomir.t212.tradingbot.bot.exception.TrainingAlreadyRunningException
 import com.tihomir.t212.tradingbot.bot.exception.TrainingModeRequiredException;
 import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
 import com.tihomir.t212.tradingbot.bot.run.FakeAlgorithmRunStore;
+import com.tihomir.t212.tradingbot.bot.run.RecordedRun;
 import com.tihomir.t212.tradingbot.bot.run.RunDetails;
 import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
 import com.tihomir.t212.tradingbot.bot.run.UnrecordedRun;
@@ -94,6 +95,20 @@ class TuningServiceTest {
   }
 
   @Test
+  void keepsOnlyTheNewTunedRunWhenItIsTheTickersBestAfterAnotherTuning() {
+    TuningService tuningService =
+        tuningService(trainingService(new PeriodSellingTestAlgorithm(ALWAYS_WORKING)));
+    TuningRequest request = request(List.of(TIME_PERIOD_RANGE), List.of());
+
+    tuningService.runTuning(request);
+    TuningResult second = tuningService.runTuning(request);
+
+    assertThat(runStore.getRuns(BROKER).runs())
+        .extracting(RecordedRun::id)
+        .containsExactly(second.runId());
+  }
+
+  @Test
   void recordsOnlyTheBestTryOverTheWholeRangeWithAutomaticSettings() {
     TrainingService trainingService =
         trainingService(new PeriodSellingTestAlgorithm(ALWAYS_WORKING));
@@ -122,10 +137,10 @@ class TuningServiceTest {
 
     TuningResult first =
         tuningService(trainingService(firstAlgorithm)).runTuning(request(STOP_RANGES, List.of()));
+    RunDetails firstRun = runDetails(first.runId());
     TuningResult second =
         tuningService(trainingService(secondAlgorithm)).runTuning(request(STOP_RANGES, List.of()));
 
-    RunDetails firstRun = runDetails(first.runId());
     RunDetails secondRun = runDetails(second.runId());
     assertThat(secondAlgorithm.seenSettings()).isEqualTo(firstAlgorithm.seenSettings());
     assertThat(second.runId()).isNotEqualTo(first.runId());
@@ -249,7 +264,7 @@ class TuningServiceTest {
   }
 
   private TuningService tuningService(TrainingService trainingService) {
-    return new TuningService(trainingService, algorithms, trainingLock);
+    return new TuningService(trainingService, algorithms, trainingLock, runStore);
   }
 
   private TrainingService trainingService(TradingAlgorithm algorithm) {

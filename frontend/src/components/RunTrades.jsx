@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { api } from '../api.js'
 import { formatDuration, formatPrice, formatUtcClock, formatUtcDate } from '../format.js'
 import { HeaderHint } from './HeaderHint.jsx'
+import { LineChart } from './LineChart.jsx'
 
 const TRADES_PER_PAGE = 10
 
@@ -12,6 +13,53 @@ function TradeTime({ iso }) {
       <span>{formatUtcDate(iso)}</span>
       <span className="trade-clock">{formatUtcClock(iso)}</span>
     </span>
+  )
+}
+
+/** The average buy price over the average sell price; positions stored before V12 have none. */
+function TradePrices({ position }) {
+  if (position.entryPrice == null) {
+    return '–'
+  }
+  return (
+    <span className="trade-stack">
+      <span>Buy {formatPrice(position.entryPrice)}</span>
+      {position.exitPrice != null && (
+        <span className="trade-clock">Sell {formatPrice(position.exitPrice)}</span>
+      )}
+    </span>
+  )
+}
+
+/** Each position as a buy at its open and, once sold, a sell at its close, for the price chart. */
+function tradeMarkers(positions) {
+  return positions
+    .filter((position) => position.entryPrice != null)
+    .flatMap((position) => [
+      { time: position.openedAt, price: position.entryPrice, side: 'BUY' },
+      ...(position.closedAt && position.exitPrice != null
+        ? [{ time: position.closedAt, price: position.exitPrice, side: 'SELL' }]
+        : []),
+    ])
+}
+
+function PriceChart({ prices, positions }) {
+  const [showTrades, setShowTrades] = useState(false)
+  if (prices.length === 0) {
+    return null
+  }
+  return (
+    <div className="run-price-chart">
+      <label className="check-label small">
+        <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)} />
+        Show trades
+      </label>
+      <LineChart
+        points={prices.map((point) => ({ time: point.time, value: point.price }))}
+        trades={showTrades ? tradeMarkers(positions) : []}
+        emptyText="No prices for this run."
+      />
+    </div>
   )
 }
 
@@ -76,6 +124,8 @@ function TradesTable({ positions }) {
             <th scope="col">Opened (UTC)</th>
             <th scope="col">Closed</th>
             <th scope="col">Held</th>
+            <th scope="col" className="numeric">Quantity</th>
+            <th scope="col" className="numeric">Price</th>
             <th scope="col" className="numeric">Cost</th>
             <th scope="col" className="numeric">P&amp;L</th>
             <HeaderHint className="numeric" label="MAE" title="Maximum adverse excursion">
@@ -100,6 +150,10 @@ function TradesTable({ positions }) {
                 {position.closedAt ? <TradeTime iso={position.closedAt} /> : <span className="trade-open">open</span>}
               </td>
               <td>{formatDuration(position.durationSeconds)}</td>
+              <td className="numeric">{position.quantity ?? '–'}</td>
+              <td className="numeric">
+                <TradePrices position={position} />
+              </td>
               <td className="numeric">{formatPrice(position.cost)}</td>
               <td className={`numeric ${pnlClass(position.realisedPnl)}`}>
                 <span className="trade-stack">
@@ -121,6 +175,7 @@ function TradesTable({ positions }) {
 export function RunTrades({ runId }) {
   const [open, setOpen] = useState(false)
   const [positions, setPositions] = useState(null)
+  const [prices, setPrices] = useState([])
   const [error, setError] = useState(null)
 
   const toggle = async () => {
@@ -128,6 +183,7 @@ export function RunTrades({ runId }) {
     if (open || positions) {
       return
     }
+    const pricesLoad = api.getRunPrices(runId).catch(() => ({ points: [] }))
     try {
       const list = await api.getRunPositions(runId)
       setPositions(list.positions)
@@ -135,6 +191,7 @@ export function RunTrades({ runId }) {
     } catch (failure) {
       setError(failure)
     }
+    setPrices((await pricesLoad).points)
   }
 
   return (
@@ -147,6 +204,7 @@ export function RunTrades({ runId }) {
         <div className="run-trades-body">
           {error && <p className="form-error small">Could not load the trades: {error.message}</p>}
           {!error && !positions && <p className="skeleton skeleton-line" />}
+          {positions && <PriceChart prices={prices} positions={positions} />}
           {positions && <TradesPage positions={positions} />}
         </div>
       )}

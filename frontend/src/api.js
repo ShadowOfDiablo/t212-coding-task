@@ -57,4 +57,5 @@ export const api = {
   getRuns: () => request(`${BROKER_PATH}/runs`),
   getRun: (id) => request(`${BROKER_PATH}/runs/${id}`),
   getRunPositions: (id) => request(`${BROKER_PATH}/runs/${id}/positions`),
+  getRunPrices: (id) => request(`${BROKER_PATH}/runs/${id}/candles`),
 }

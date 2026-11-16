@@ -16,6 +16,20 @@
   animation: rise 0.3s var(--ease) both;
 }
 
+.run-price-chart {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  justify-self: start;
+}
+
 .trades-table {
   width: 100%;
   border-collapse: collapse;

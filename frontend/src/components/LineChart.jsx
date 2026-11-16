@@ -13,6 +13,13 @@ const VALUE_MARGIN = 0.08
 const PERCENT = 100
 const TOOLTIP_FLIP_SHARE = 0.6
 const MARKER_LABEL_GAP = 4
+const TRADE_MARK_SIZE = 6
+
+/** A triangle pointing up for a buy and down for a sell, centred on the trade. */
+function tradeMarkPath(x, y, side) {
+  const tip = side === 'BUY' ? -TRADE_MARK_SIZE : TRADE_MARK_SIZE
+  return `M${x},${y + tip} L${x - TRADE_MARK_SIZE},${y - tip / 2} L${x + TRADE_MARK_SIZE},${y - tip / 2} Z`
+}
 
 const timeOf = (point) => new Date(point.time).getTime()
 
@@ -121,12 +128,14 @@ function Tooltip({ point, coordinate, baseline }) {
  * Portfolio value over time as a smooth line. `baseline` (the starting value) is drawn dashed and
  * sets the colour of the change; `comparePoints` adds a second, dashed line. `markers` ({time,
  * label}) are vertical lines at moments inside the chart's time range, such as account resets.
+ * `trades` ({time, price, side}) are drawn as ▲ for a buy and ▼ for a sell at their own price.
  */
 export function LineChart({
   points,
   comparePoints = null,
   baseline = null,
   markers = [],
+  trades = [],
   emptyText = 'No data yet.',
 }) {
   const [hoverIndex, setHoverIndex] = useState(null)
@@ -136,7 +145,8 @@ export function LineChart({
     return <p className="empty chart-empty">{emptyText}</p>
   }
 
-  const scale = scaleFor([...points, ...(comparePoints ?? [])], baseline)
+  const tradePoints = trades.map((trade) => ({ time: trade.time, value: Number(trade.price) }))
+  const scale = scaleFor([...points, ...(comparePoints ?? []), ...tradePoints], baseline)
   const coordinates = toCoordinates(points, scale)
   const line = smoothPath(coordinates)
   const bottom = PADDING.top + PLOT_HEIGHT
@@ -231,6 +241,18 @@ export function LineChart({
             {compareLine && <path className="chart-line-compare" d={compareLine} />}
             <path className="chart-line" d={line} pathLength="1" />
           </g>
+          {trades.map((trade) => (
+            <path
+              key={`${trade.side}-${trade.time}`}
+              className={`chart-trade chart-trade-${trade.side === 'BUY' ? 'buy' : 'sell'}`}
+              d={tradeMarkPath(scale.x(timeOf(trade)), scale.y(Number(trade.price)), trade.side)}
+            >
+              <title>
+                {trade.side === 'BUY' ? 'Buy' : 'Sell'} at {formatPrice(trade.price)} USDT,{' '}
+                {formatUtcDateTime(trade.time)}
+              </title>
+            </path>
+          ))}
           {hovered && (
             <g className="chart-hover">
               <line

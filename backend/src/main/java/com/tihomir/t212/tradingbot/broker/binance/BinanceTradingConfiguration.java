@@ -1,11 +1,15 @@
 package com.tihomir.t212.tradingbot.broker.binance;
 
+import com.tihomir.t212.tradingbot.account.AccountResetStore;
 import com.tihomir.t212.tradingbot.broker.MissingKeyRequestSigner;
 import com.tihomir.t212.tradingbot.broker.RequestSigner;
 import com.tihomir.t212.tradingbot.order.balance.AccountBalanceSynchronizer;
 import com.tihomir.t212.tradingbot.order.balance.BalanceCachingTradingGateway;
+import com.tihomir.t212.tradingbot.order.balance.StartingBalances;
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +19,13 @@ import org.springframework.context.annotation.Configuration;
 class BinanceTradingConfiguration {
 
   private static final Logger log = LoggerFactory.getLogger(BinanceTradingConfiguration.class);
+
+  private static final BigDecimal DEMO_STARTING_AMOUNT_PER_ASSET = BigDecimal.valueOf(5_000);
+
+  /** What Binance's demo account holds after a reset on its website. */
+  static final StartingBalances DEMO_STARTING_BALANCES =
+      new StartingBalances(
+          Map.of("USDT", DEMO_STARTING_AMOUNT_PER_ASSET, "USDC", DEMO_STARTING_AMOUNT_PER_ASSET));
 
   @Bean
   RequestSigner binanceRequestSigner(BinanceTradingProperties tradingProperties) {
@@ -28,8 +39,14 @@ class BinanceTradingConfiguration {
 
   @Bean
   BalanceCachingTradingGateway binanceBalanceCachingTradingGateway(
-      BinanceTradingGateway tradingGateway) {
-    return new BalanceCachingTradingGateway(tradingGateway);
+      BinanceTradingGateway tradingGateway,
+      BinanceConnectionProperties connectionProperties,
+      AccountResetStore accountResetStore) {
+    String broker = connectionProperties.name();
+    return new BalanceCachingTradingGateway(
+        tradingGateway,
+        DEMO_STARTING_BALANCES,
+        resetAt -> accountResetStore.insertAccountReset(broker, resetAt));
   }
 
   @Bean

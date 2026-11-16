@@ -77,6 +77,25 @@ public class PositionRepository implements PositionStore {
             .list());
   }
 
+  @Override
+  public int closeOpenPositions(String broker, Instant closedAt) {
+    return jdbcClient
+        .sql(
+            """
+            UPDATE position SET status = CAST(? AS position_status), closed_at = ?
+            WHERE status = CAST(? AS position_status)
+              AND run_id IN (SELECT r.id FROM algorithm_run r
+                             JOIN ticker t ON t.id = r.ticker_id
+                             JOIN brokers b ON b.broker_id = t.broker_id
+                             WHERE b.name = ?)
+            """)
+        .param(PositionStatus.CLOSED.name())
+        .param(toUtcTimestamp(closedAt))
+        .param(PositionStatus.OPEN.name())
+        .param(broker)
+        .update();
+  }
+
   private int updatePosition(Position position) {
     return jdbcClient
         .sql(

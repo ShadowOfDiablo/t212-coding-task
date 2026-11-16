@@ -43,6 +43,7 @@ class PositionRepositoryTest {
   private static final Instant FIRST_BUY = Instant.parse("2026-01-01T10:00:00Z");
   private static final Instant SECOND_BUY = Instant.parse("2026-01-01T11:00:00Z");
   private static final Instant SELL = Instant.parse("2026-01-01T12:00:00Z");
+  private static final Instant RESET = Instant.parse("2026-01-02T09:00:00Z");
   private static final long MISSING_RUN_ID = Long.MAX_VALUE;
   private static final int ONE_POSITION = 1;
   private static final int ALL_POSITIONS = 10;
@@ -118,6 +119,23 @@ class PositionRepositoryTest {
         .containsExactly(
             tuple(SECOND_BUY, PositionStatus.OPEN), tuple(FIRST_BUY, PositionStatus.CLOSED));
     assertThat(repository.getPositions(MISSING_RUN_ID).positions()).isEmpty();
+  }
+
+  @Test
+  void closesTheOpenPositionsOfTheBrokerKeepingTheirPnl() {
+    repository.savePosition(write(runId, FIRST_BUY, PositionStatus.CLOSED, LOSS));
+    repository.savePosition(write(runId, SECOND_BUY, PositionStatus.OPEN, LATER_PNL));
+
+    int closed = repository.closeOpenPositions(BROKER, RESET);
+
+    assertThat(closed).isEqualTo(ONE_POSITION);
+    assertThat(repository.getPositions(runId).positions())
+        .extracting(StoredPosition::position)
+        .extracting(Position::status, Position::closedAt)
+        .containsExactly(
+            tuple(PositionStatus.CLOSED, Optional.of(RESET)),
+            tuple(PositionStatus.CLOSED, Optional.of(SELL)));
+    assertThat(repository.closeOpenPositions(BROKER, RESET)).isZero();
   }
 
   @Test

@@ -1403,9 +1403,9 @@ flowchart LR
   - **Account value:** the live chart and the start and final values of live runs show the **whole account** in USDT: every balance (free + locked) times its last `<ASSET>USDT` price, USDT itself at 1. `USDCUSDT` is followed by default (`binance.market-data.tickers`), so the USDC half of the demo account has a price. A balance whose ticker isn't followed has no price; it is left out and logged once. Example: 5,000 USDT + 5,000 USDC at 1.00078 = 10,003.90 USDT.
   - **Reset** (only while no bot runs; the button is hidden while one runs). Binance's demo account has no reset endpoint ("You can reset your balance whenever you want via the UI", Demo Mode docs), so the reset itself happens on Binance's page:
     1. `POST /brokers/{broker}/account/reset` empties the account into USDT with market orders: every balance except USDT is sold, USDC included (`USDCUSDT`), through `OrderService`, so the sells land in the order history. A coin worth less than the minimum order value, or without a USDT ticker, stays and is listed in the answer.
-    2. The same call closes every position still `OPEN` in the database (positions of stopped runs are never reloaded), at the sell's average price, with its realised P&L.
+    2. The same call closes every position still `OPEN` in the database (positions of stopped runs are never reloaded) at the reset time. Their realised P&L stays as recorded: positions keep no quantity, so the sale can't be split between them. A live bot running refuses the call with 409.
     3. The dashboard opens `https://demo.binance.com/en/my/wallet/demo/main`, where the user presses Binance's reset. The balances go back to 5,000 USDT and 5,000 USDC.
-  - **Reset marker:** the balance cache keeps updating from the user data stream as usual. When the balances change to exactly the demo starting balances (5,000 USDT, 5,000 USDC, nothing else) from something else, that time is recorded as a reset (V11: `account_reset(id, broker_id, reset_at)`). The live chart draws a marker at each reset. `GET /brokers/{broker}/account/resets` lists them. No backend change.
+  - **Reset marker:** the balance cache keeps updating from the user data stream as usual. When the balances change to exactly the demo starting balances (5,000 USDT, 5,000 USDC, nothing else) from something else, that time is recorded as a reset (V11: `account_reset(id, broker_id, reset_at)`). The live chart draws a marker at each reset. `GET /brokers/{broker}/account/resets` lists them.
 
 ```mermaid
 flowchart LR
@@ -1469,6 +1469,8 @@ stateDiagram-v2
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
 | GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `paused`, `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
+| POST | `/brokers/{broker}/account/reset` | Empty the account into USDT and close the open positions, before a reset on Binance (409 while the live bot runs). Answers `{soldBalances, keptBalances, closedPositionCount}` |
+| GET | `/brokers/{broker}/account/resets` | `{"resetTimes": […]}`, the detected account resets, oldest first |
 | POST | `/brokers/{broker}/bot/pause`, `/bot/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |

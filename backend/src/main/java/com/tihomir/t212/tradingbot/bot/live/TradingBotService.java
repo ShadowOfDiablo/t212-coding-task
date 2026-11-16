@@ -17,6 +17,8 @@ import com.tihomir.t212.tradingbot.bot.run.RunEnd;
 import com.tihomir.t212.tradingbot.bot.run.RunStart;
 import com.tihomir.t212.tradingbot.bot.run.RunStatus;
 import com.tihomir.t212.tradingbot.bot.run.SettingsSource;
+import com.tihomir.t212.tradingbot.bot.tickersettings.AssignedSettings;
+import com.tihomir.t212.tradingbot.bot.tickersettings.TickerSettingsService;
 import com.tihomir.t212.tradingbot.broker.Broker;
 import com.tihomir.t212.tradingbot.marketdata.history.CandleHistoryService;
 import com.tihomir.t212.tradingbot.marketdata.tickerprice.TickerQuote;
@@ -49,6 +51,7 @@ public class TradingBotService {
   private final BotModeService botModeService;
   private final AlgorithmRegistryService algorithms;
   private final AlgorithmSettingsService settingsService;
+  private final TickerSettingsService tickerSettings;
   private final CandleHistoryService candleHistory;
   private final OrderCheckerService orderChecker;
   private final AlgorithmRunStore runStore;
@@ -62,6 +65,7 @@ public class TradingBotService {
       BotModeService botModeService,
       AlgorithmRegistryService algorithms,
       AlgorithmSettingsService settingsService,
+      TickerSettingsService tickerSettings,
       CandleHistoryService candleHistory,
       OrderCheckerService orderChecker,
       AlgorithmRunStore runStore,
@@ -70,6 +74,7 @@ public class TradingBotService {
     this.botModeService = botModeService;
     this.algorithms = algorithms;
     this.settingsService = settingsService;
+    this.tickerSettings = tickerSettings;
     this.candleHistory = candleHistory;
     this.orderChecker = orderChecker;
     this.runStore = runStore;
@@ -93,13 +98,22 @@ public class TradingBotService {
       throw new LiveBotRunningException(request.broker());
     }
     Broker broker = candleHistory.tradingBroker(request.broker(), request.ticker());
-    PositionTracker positionTracker = new PositionTracker(broker.name(), request.ticker());
-    LiveTradingAccount account =
-        new LiveTradingAccount(request.ticker(), broker, positionTracker, positionStore);
     LiveSignalSource signalSource =
         warmedUpSignalSource(broker.name(), request.ticker(), request.settings());
+    AssignedSettings assigned =
+        tickerSettings
+            .assignSettings(broker.name(), request.ticker(), request.settings(), Optional.empty())
+            .assigned()
+            .orElseThrow();
+    LiveTradingAccount account =
+        new LiveTradingAccount(
+            request.ticker(),
+            broker,
+            new PositionTracker(broker.name(), request.ticker()),
+            positionStore,
+            assigned.budget().orElseThrow());
     BigDecimal startingValue = currentValue(broker, account);
-    long algorithmId = settingsService.saveSettings(signalSource.settings());
+    long algorithmId = assigned.algorithmId();
     long runId =
         runStore.insertStartedRun(
             new RunStart(
@@ -111,7 +125,7 @@ public class TradingBotService {
                 Optional.empty(),
                 startingValue,
                 algorithmId,
-                SettingsSource.MANUAL));
+                assigned.source()));
     account.startRun(runId);
     LiveTradingBot bot =
         new LiveTradingBot(
@@ -145,6 +159,7 @@ public class TradingBotService {
     runningBots.remove(broker);
     RunEnd end = bot.stop();
     runStore.finishRun(bot.runId(), end);
+    keepBudget(broker, bot.ticker(), end.finalValue().orElseGet(bot::cash));
     log.info("{} {}: live run {} stopped, {}", broker, bot.ticker(), bot.runId(), end.counts());
     return bot.runId();
   }
@@ -229,6 +244,14 @@ public class TradingBotService {
     return workerPools.get(broker);
   }
 
+  private void keepBudget(String broker, String ticker, BigDecimal value) {
+    try {
+      tickerSettings.updateBudget(broker, ticker, value);
+    } catch (RuntimeException e) {
+      log.error("{} {}: the budget {} could not be kept", broker, ticker, value, e);
+    }
+  }
+
   private LiveEvaluationQueue evaluationQueue(String broker) {
     return evaluationQueues.computeIfAbsent(broker, this::startEvaluationQueue);
   }
@@ -267,7 +290,7 @@ public class TradingBotService {
         .get(account.ticker())
         .map(TickerQuote::lastPrice)
         .map(account::portfolioValue)
-        .orElseGet(account::cash);
+        .orElseGet(account::ownCash);
   }
 
   private RunStart nextRunStart(LiveTradingBot bot, RunEnd end, long algorithmId) {

@@ -1,16 +1,24 @@
-CREATE TYPE order_side AS ENUM ('BUY', 'SELL');
-
-CREATE TYPE order_type AS ENUM ('MARKET');
-
-CREATE TYPE order_amount_type AS ENUM ('BASE_QUANTITY', 'QUOTE_AMOUNT');
-
--- Binance's order statuses, by their wire names.
-CREATE TYPE order_status AS ENUM ('NEW', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED',
-                                  'EXPIRED', 'EXPIRED_IN_MATCH');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_side') THEN
+        CREATE TYPE order_side AS ENUM ('BUY', 'SELL');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_type') THEN
+        CREATE TYPE order_type AS ENUM ('MARKET');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_amount_type') THEN
+        CREATE TYPE order_amount_type AS ENUM ('BASE_QUANTITY', 'QUOTE_AMOUNT');
+    END IF;
+    -- Binance's order statuses, by their wire names.
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+        CREATE TYPE order_status AS ENUM ('NEW', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED',
+                                          'REJECTED', 'EXPIRED', 'EXPIRED_IN_MATCH');
+    END IF;
+END $$;
 
 -- Live orders: open, executed and refused. A Binance order id is unique per symbol only. A refused
 -- order has no exchange id and no execution numbers, only an error.
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id                BIGSERIAL         PRIMARY KEY,
     ticker_id         BIGINT            NOT NULL REFERENCES ticker (id),
     exchange_order_id BIGINT,
@@ -34,5 +42,4 @@ CREATE TABLE orders (
     CHECK ((fee_amount IS NULL) = (fee_currency IS NULL))
 );
 
-CREATE INDEX orders_ticker_updated_at_idx ON orders (ticker_id, updated_at DESC);
-
+CREATE INDEX IF NOT EXISTS orders_ticker_updated_at_idx ON orders (ticker_id, updated_at DESC);

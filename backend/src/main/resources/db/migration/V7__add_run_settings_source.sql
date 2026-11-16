@@ -1,9 +1,4 @@
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'settings_source') THEN
-        CREATE TYPE settings_source AS ENUM ('MANUAL', 'AUTOMATIC');
-    END IF;
-END $$;
+CREATE TYPE settings_source AS ENUM ('MANUAL', 'AUTOMATIC');
 
 -- Who chose the run's algorithm variant: the user or the tuner.
 ALTER TABLE algorithm_run

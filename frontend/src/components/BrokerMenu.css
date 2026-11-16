@@ -53,6 +53,12 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--broker-glow) 45%, transparent);
 }
 
+.broker-logo {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
 .broker-panel {
   position: absolute;
   top: calc(100% + 10px);

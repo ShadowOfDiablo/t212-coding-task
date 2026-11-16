@@ -32,6 +32,7 @@ public final class PeriodSellingTestAlgorithm extends TradingAlgorithm {
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-period-selling",
         "Sells after timePeriod prices",
+        "A test algorithm.",
         AlgorithmSettingDefinitionList.NONE);
     this.maxWorkingTimePeriod = maxWorkingTimePeriod;
     this.onEveryGenerator = onEveryGenerator;

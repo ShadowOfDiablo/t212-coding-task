@@ -20,6 +20,7 @@ public final class RecordingTestAlgorithm extends TradingAlgorithm {
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-recording",
         "Recording",
+        "A test algorithm.",
         AlgorithmSettingDefinitionList.NONE);
   }
 

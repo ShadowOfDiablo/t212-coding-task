@@ -825,6 +825,13 @@ erDiagram
         bigint algorithm_id FK
         timestamptz activated_at
     }
+    saved_algorithm {
+        bigserial id PK
+        int number "unique, kept for good: deleting never renumbers"
+        bigint algorithm_id FK "unique: a variant is saved once"
+        text name "the name the user gave it"
+        timestamptz saved_at
+    }
     position {
         bigserial id PK
         bigint run_id FK "the run it opened in"
@@ -839,6 +846,7 @@ erDiagram
     orders {
         bigserial id PK
         bigint ticker_id FK
+        bigint run_id FK "the run that placed it, NULL when placed by hand"
         bigint exchange_order_id "Binance orderId, NULL when refused"
         order_side side "enum"
         order_type order_type "enum"
@@ -862,12 +870,14 @@ erDiagram
     ticker ||--o{ orders : "for"
     algorithm ||--o{ algorithm_run : "used by"
     algorithm_run ||--o{ training_portfolio_point : "charts"
+    algorithm ||--o| saved_algorithm : "saved as"
     algorithm_run ||--o{ position : "opens"
+    algorithm_run |o--o{ orders : "places"
 ```
 
 Enum types: `algorithm_type`, `bot_mode`, `run_status`, `position_status`, `order_side`, `order_type`, `order_amount_type`, `order_status` (Binance's status names).
 
-- **One `orders` table** holds open, executed and refused live orders, told apart by status: open = `NEW` or `PARTIALLY_FILLED`, refused = `REJECTED`. A refused order has an error code and no exchange order id; a `CHECK` keeps the two together. The bot's `tb-…` client order id is not stored: every stored order is the bot's.
+- **One `orders` table** holds open, executed and refused live orders, told apart by status: open = `NEW` or `PARTIALLY_FILLED`, refused = `REJECTED`. A refused order has an error code and no exchange order id; a `CHECK` keeps the two together. The bot's `tb-…` client order id is not stored. `run_id` tells who placed an order: the live run, or NULL for an order placed by hand (a test buy or sell).
 - **Keys:** Binance's `orderId` is unique per symbol only, so an order is unique by `(ticker_id, exchange_order_id)`. An executed order keeps its total fee (`fee_amount`, `fee_currency`): the sum of its fills when they all paid in one coin. Fills paid in mixed coins (possible with the BNB fee discount) leave the fee empty, with a warning in the log. The fills themselves are not stored.
 - Money and quantities are `numeric`, mapped to `BigDecimal`. Times are `timestamptz`.
 - **`OrderRepository`:** method names follow the SQL they run: `insertExecutedOrder` (one order row), `insertRejectedOrder`, `getOpenOrders`, `getOrderHistory`, `getRejectedOrders`. Each read returns a record holding its list (`OpenOrderList`, `OrderHistory`, `RejectedOrderList`), which the service passes on. The controller wraps each in its own API response DTO (`OpenOrderListResponse`, `OrderHistoryResponse`, `RejectedOrderListResponse`, `AccountBalanceResponse`), so the JSON contract stays separate from the internal records.
@@ -1011,8 +1021,9 @@ com.tihomir.t212.tradingbot
 │   │                AlgorithmRegistryService, AlgorithmSettingsService, AlgorithmStore
 │   ├── settings     AlgorithmSettings, AlgorithmSettingDefinition(List), AlgorithmSettingValues,
 │   │                AlgorithmSettingsRequest
+│   ├── saved        SavedAlgorithm(List), SavedAlgorithmStore, SavedAlgorithmService
 │   ├── indicator    SimpleMovingAverage, SimpleMovingAverageAlgorithm, SimpleMovingAverageSignalGenerator
-│   └── exception    the algorithm exceptions
+│   └── exception    the algorithm and saved-settings exceptions
 ├── bot
 │   ├── live         TradingBotService, LiveTradingBot, LiveTradingAccount, LiveSignalSource
 │   ├── training     TrainingService, TrainingLock, TrainingReplay, TrainingSetup, TrainingRunRequest
@@ -1350,6 +1361,21 @@ erDiagram
 - **Live settings change:** the running run ends as `COMPLETED` and a new run starts with the new variant, in one transaction. The new run starts at the old run's final value.
 - **Active algorithm:** `active_algorithm` holds, per broker and ticker, the variant the live bot last traded it with. It stays after the bot stops. Variants themselves don't belong to a ticker, so one variant can be active on several tickers.
 - **Restart:** at startup, runs still marked `STARTED` are set to `STOPPED`, "interrupted by restart". A live bot does not resume by itself.
+- **Saved settings:** variants the user keeps to pick again, each under a name they type.
+  - `saved_algorithm` points at a variant (`algorithm_id`, unique) with its `name` and `saved_at`. Saving settings finds or inserts their variant first; saving a variant that is already saved renames it instead of adding a second entry.
+  - Removing an entry deletes only the `saved_algorithm` row. The variant stays, so runs that used it keep their settings.
+  - Replacing an entry points it at the variant of the new settings and keeps its name, place and `saved_at`. If another entry already holds that variant, it is refused (409) instead of merging the two. The old variant stays.
+  - Editing settings picked from the list never changes the entry: the form holds a copy. The training form's "Save current settings" saves them as a new entry, or, if they came from an entry and were changed, offers "Replace" for that entry.
+  - The live bot form also offers "Current settings": whatever the training form holds right now.
+  - Each entry gets a number when it is first saved (the highest so far plus one) and keeps it: deleting an entry leaves a gap instead of renumbering the others. The dashboard lists them as "1. name", "3. name", … by that number, in a scrollable dropdown on the training and the live bot form. Picking one fills the form; a tuning result can save its settings with a tick.
+
+```mermaid
+flowchart LR
+    Tuning["Tuning result<br/>Save these settings"] -- "POST /algorithms/saved" --> Service["SavedAlgorithmService"]
+    Forms["Training and live bot forms<br/>Saved settings dropdown"] -- "GET / DELETE" --> Service
+    Service -- "find or insert variant" --> Algorithm[("algorithm")]
+    Service -- "save, rename, remove" --> Saved[("saved_algorithm")]
+```
 
 ### 16.5 When the algorithm runs
 
@@ -1424,6 +1450,10 @@ stateDiagram-v2
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/algorithms` | Algorithms and their setting definitions |
+| GET | `/algorithms/saved` | Saved settings, oldest first, each with its name and settings |
+| POST | `/algorithms/saved` | Save settings under a name (`{name, settings}`); the same settings again rename the entry |
+| PUT | `/algorithms/saved/{id}` | Put new settings (`{settings}`) under an entry, keeping its name and place (404 if unknown, 409 if another entry holds them) |
+| DELETE | `/algorithms/saved/{id}` | Remove a saved entry (404 if unknown); its variant and runs stay |
 | POST | `/brokers/{broker}/training/runs` | Run a training (409 outside `TRAINING` or while one runs) |
 | POST | `/brokers/{broker}/training/tunings` | Tune settings automatically and record the best one as a training run (§16.7). Same 409s as a training run |
 | GET | `/brokers/{broker}/training` | `running` while a training run or a tuning goes on; `tuningProgressPercent` while a tuning runs |

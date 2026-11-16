@@ -139,8 +139,11 @@ public class AlgorithmRepository implements AlgorithmStore {
     value.ifPresent(number -> values.put(name, plainValue(number)));
   }
 
-  private static AlgorithmSettings algorithmSettings(ResultSet row, int rowNumber)
-      throws SQLException {
+  /**
+   * Reads the variant from a row with {@code id}, {@code algorithm_type}, {@code timeframe_seconds}
+   * and {@code settings}.
+   */
+  static AlgorithmSettings algorithmSettings(ResultSet row, int rowNumber) throws SQLException {
     long algorithmId = row.getLong("id");
     try {
       return algorithmSettings(

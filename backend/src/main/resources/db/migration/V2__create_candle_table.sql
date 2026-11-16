@@ -1,6 +1,6 @@
 -- The close time is open_time + interval - 1 ms. The first and last row per ticker and interval
 -- mark the stored range that downloads extend.
-CREATE TABLE candle (
+CREATE TABLE IF NOT EXISTS candle (
     ticker_id        BIGINT      NOT NULL REFERENCES ticker (id),
     interval_seconds INTEGER     NOT NULL CHECK (interval_seconds > 0),
     open_time        TIMESTAMPTZ NOT NULL,

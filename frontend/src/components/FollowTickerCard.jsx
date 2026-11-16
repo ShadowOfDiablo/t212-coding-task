@@ -31,7 +31,7 @@ export function FollowTickerCard({ onFollowed }) {
       <span className="field-label">Follow a ticker</span>
       <input
         type="text"
-        placeholder="e.g. SOLUSDT"
+        placeholder="e.g. SOLUSDT or SOL/USDT"
         value={ticker}
         disabled={saving}
         onChange={(event) => setTicker(event.target.value.toUpperCase())}

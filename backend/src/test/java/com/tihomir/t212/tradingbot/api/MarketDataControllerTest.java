@@ -1,5 +1,6 @@
 package com.tihomir.t212.tradingbot.api;
 
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -85,8 +86,21 @@ class MarketDataControllerTest {
   }
 
   @Test
+  void followsATickerWrittenWithASlashOrInLowerCase() throws Exception {
+    when(tickerPriceService.getTickerPrices("binance")).thenReturn(new TickerPriceList(List.of()));
+
+    mockMvc.perform(followTicker("DOGE/USDT")).andExpect(status().isCreated());
+    mockMvc.perform(followTicker("doge/usdt")).andExpect(status().isCreated());
+
+    verify(followedTickerService, times(2)).followTicker("binance", "DOGEUSDT");
+  }
+
+  @Test
   void refusesABadlyWrittenOrUnknownTicker() throws Exception {
     mockMvc.perform(followTicker("sol-usdt")).andExpect(status().isBadRequest());
+    mockMvc.perform(followTicker("/USDT")).andExpect(status().isBadRequest());
+    mockMvc.perform(followTicker("DOGE/USDT/")).andExpect(status().isBadRequest());
+    mockMvc.perform(followTicker("DOGE//USDT")).andExpect(status().isBadRequest());
     verifyNoInteractions(followedTickerService);
 
     when(followedTickerService.followTicker("binance", "NOPEUSDT"))

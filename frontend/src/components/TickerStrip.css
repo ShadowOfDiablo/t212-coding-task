@@ -6,6 +6,46 @@
   gap: 20px;
 }
 
+.ticker-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pin-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pin-button svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.pin-button:hover:not(:disabled),
+.pin-button:focus-visible {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.pin-button.is-pinned {
+  color: var(--brand);
+}
+
+.pin-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .ticker-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-hover);

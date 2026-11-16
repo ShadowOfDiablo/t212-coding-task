@@ -9,6 +9,8 @@ import { OrdersCard } from './components/OrdersCard.jsx'
 import { RunsPanel } from './components/RunsPanel.jsx'
 import { TestOrderCard } from './components/TestOrderCard.jsx'
 import { TickerStrip } from './components/TickerStrip.jsx'
+import { TickerSideList } from './components/tickerstrip/TickerSideList.jsx'
+import { usePinnedTickers } from './hooks/usePinnedTickers.js'
 import { TrainingPanel } from './components/TrainingPanel.jsx'
 import { useBotMode } from './hooks/useBotMode.js'
 import { useSavedAlgorithms } from './hooks/useSavedAlgorithms.js'
@@ -57,6 +59,7 @@ function App() {
   const [trainingForm, setTrainingForm] = useState(null)
   const tickers = usePolling(api.getTickers, TICKER_REFRESH_MS)
   const balances = usePolling(api.getBalances, ACCOUNT_REFRESH_MS)
+  const { pinned, togglePin } = usePinnedTickers()
   const history = usePolling(api.getOrderHistory, ACCOUNT_REFRESH_MS)
   const rejected = usePolling(api.getRejectedOrders, ACCOUNT_REFRESH_MS)
   const open = usePolling(api.getOpenOrders, ACCOUNT_REFRESH_MS)
@@ -108,39 +111,53 @@ function App() {
           <BrokerUnavailable label={brokerInfo.label} onBack={() => setBroker(BROKERS[0].id)} />
         </main>
       ) : (
-        <main className="layout">
-          <TickerStrip tickers={tickerList} onFollowed={tickers.refresh} />
-          <SectionTabs section={section} onSelect={setSection} />
-          <div hidden={section !== 'live'}>
-            <LiveBotPanel
-              algorithms={algorithms}
-              mode={botMode.mode}
-              runs={runs.data?.runs}
-              saved={saved}
-              currentSettings={trainingForm}
-            />
-          </div>
-          <div hidden={section !== 'training'}>
-            <TrainingPanel
-              algorithms={algorithms}
+        <div className="with-ticker-list">
+          <TickerSideList
+            tickers={tickerList}
+            balances={balances.data?.balances}
+            pinned={pinned}
+            onTogglePin={togglePin}
+            onFollowed={tickers.refresh}
+          />
+          <main className="layout">
+            <TickerStrip
               tickers={tickerList}
-              mode={botMode.mode}
-              onRunRecorded={runs.refresh}
-              saved={saved}
-              onFormChange={setTrainingForm}
+              balances={balances.data?.balances}
+              pinned={pinned}
+              onTogglePin={togglePin}
             />
-          </div>
-          <div hidden={section !== 'runs'}>
-            <RunsPanel runs={runs} />
-          </div>
-          <div className="columns">
-            <OrdersCard history={history} rejected={rejected} open={open} />
-            <div className="side-column">
-              <HoldingsCard balances={balances} tickers={tickerList} />
-              <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
+            <SectionTabs section={section} onSelect={setSection} />
+            <div hidden={section !== 'live'}>
+              <LiveBotPanel
+                algorithms={algorithms}
+                mode={botMode.mode}
+                runs={runs.data?.runs}
+                saved={saved}
+                currentSettings={trainingForm}
+              />
             </div>
-          </div>
-        </main>
+            <div hidden={section !== 'training'}>
+              <TrainingPanel
+                algorithms={algorithms}
+                tickers={tickerList}
+                mode={botMode.mode}
+                onRunRecorded={runs.refresh}
+                saved={saved}
+                onFormChange={setTrainingForm}
+              />
+            </div>
+            <div hidden={section !== 'runs'}>
+              <RunsPanel runs={runs} />
+            </div>
+            <div className="columns">
+              <OrdersCard history={history} rejected={rejected} open={open} />
+              <div className="side-column">
+                <HoldingsCard balances={balances} tickers={tickerList} />
+                <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
+              </div>
+            </div>
+          </main>
+        </div>
       )}
     </div>
   )

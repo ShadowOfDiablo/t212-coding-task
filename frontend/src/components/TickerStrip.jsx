@@ -1,10 +1,12 @@
 import './TickerStrip.css'
-import { FollowTickerCard } from './FollowTickerCard.jsx'
 import { TickerCard } from './TickerCard.jsx'
+import { PinButton } from './tickerstrip/PinButton.jsx'
+import { arePinsFull, stripOrder } from './tickerstrip/stripOrder.js'
 
 const PLACEHOLDER_CARDS = 2
 
-export function TickerStrip({ tickers, onFollowed }) {
+/** The four tickers on top: pinned ones first, then the biggest holdings. */
+export function TickerStrip({ tickers, balances, pinned, onTogglePin }) {
   if (!tickers) {
     return (
       <section className="ticker-strip" aria-label="Followed tickers">
@@ -17,12 +19,26 @@ export function TickerStrip({ tickers, onFollowed }) {
       </section>
     )
   }
+  const { shown } = stripOrder(tickers, pinned, balances)
+  const pinsFull = arePinsFull(tickers, pinned)
+
   return (
     <section className="ticker-strip" aria-label="Followed tickers">
-      {tickers.map(({ ticker, quote }) => (
-        <TickerCard key={ticker} ticker={ticker} quote={quote} />
+      {shown.map(({ ticker, quote }) => (
+        <TickerCard
+          key={ticker}
+          ticker={ticker}
+          quote={quote}
+          headAction={
+            <PinButton
+              ticker={ticker}
+              pinned={pinned.includes(ticker)}
+              disabled={pinsFull && !pinned.includes(ticker)}
+              onToggle={onTogglePin}
+            />
+          }
+        />
       ))}
-      <FollowTickerCard onFollowed={onFollowed} />
     </section>
   )
 }

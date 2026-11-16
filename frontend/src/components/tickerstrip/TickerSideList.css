@@ -1,0 +1,109 @@
+/*
+ * The list sits in the free space left of the centred app column, so the app keeps its width.
+ * Where that space is too narrow, it becomes one wrapped row above the page.
+ */
+.with-ticker-list {
+  position: relative;
+}
+
+.ticker-side-list {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 24px);
+  bottom: 0;
+  width: 200px;
+}
+
+.ticker-side-inner {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.ticker-side-title {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ticker-side-list ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticker-side-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  animation: ticker-row-in 0.25s var(--ease);
+  transition: background-color 0.2s var(--ease);
+}
+
+.ticker-side-list li:hover {
+  background: var(--surface-raised);
+}
+
+.ticker-side-symbol {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticker-side-price {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes ticker-row-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-side-list li {
+    animation: none;
+  }
+}
+
+/* App column (1240px) plus the list and its gap on both sides. */
+@media (max-width: 1740px) {
+  .ticker-side-list {
+    position: static;
+    width: auto;
+    margin-bottom: 20px;
+  }
+
+  .ticker-side-inner {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ticker-side-list ul {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .ticker-side-list li {
+    grid-template-columns: auto auto auto;
+  }
+
+  .ticker-side-inner .follow-card {
+    max-width: 320px;
+  }
+}

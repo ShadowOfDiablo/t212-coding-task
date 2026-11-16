@@ -1101,7 +1101,7 @@ flowchart TB
 
 `POST /api/brokers/{broker}/tickers` with `{"ticker": "SOLUSDT"}` follows one more ticker on top of the configured ones.
 
-1. The body is checked with `@Valid`: 2 to 20 capital letters or digits.
+1. The body is checked with `@Valid`: 2 to 20 letters or digits, with an optional `/` between base and quote. `DOGE/USDT`, `doge/usdt` and `DOGEUSDT` are the same ticker: the slash is dropped and the letters are capitalised before anything else.
 2. `FollowedTickerService` asks the exchange for one page of candles. A 4xx answer means the exchange doesn't list the ticker (400); any other failure is 502. Nothing is stored in either case.
 3. The ticker row gets a `followed_at` once (§11); a ticker stored only for its candles has none.
 4. The broker adds it to its ticker price map, and the candle feeder reopens its connections with the new streams.
@@ -1399,13 +1399,22 @@ flowchart LR
   - **Lot step:** the smallest amount a coin quantity can change by, from the ticker's `LOT_SIZE` filter. Binance only takes base quantities that are a multiple of it: for BTCUSDT the step is 0.00001 BTC, so 0.123456 BTC is sent as 0.12345 BTC. `BinanceTradingGateway` reads the step once per ticker from `/api/v3/exchangeInfo` and rounds a base quantity down to it; if the step can't be read, nothing is sent. A sell closes the bot's position, and the rest below one step stays in the account.
   - **Stop** removes the listener, lets queued prices finish (up to 10 seconds) and records the end as `STOPPED`, with the final value at the latest price. On shutdown, running bots are stopped the same way.
   - **Mode switch:** refused with 409 while a bot runs.
+  - **Pause and resume:** the bot keeps a `paused` flag in memory. While paused, it places **no orders at all**, not even a stop loss or take profit. Prices are still evaluated for the parts that don't trade: MAE and MFE, and the portfolio chart (the coins held still change in value). Signals are not computed. The run stays `STARTED` in the database, so no migration is needed. Pausing a paused bot or resuming a running one changes nothing. A settings change while paused keeps the bot paused. Stop works from either state. A restart forgets the flag, which is fine because running bots are stopped on shutdown.
+  - **Account value:** the live chart and the start and final values of live runs show the **whole account** in USDT: every balance (free + locked) times its last `<ASSET>USDT` price, USDT itself at 1. `USDCUSDT` is followed by default (`binance.market-data.tickers`), so the USDC half of the demo account has a price. A balance whose ticker isn't followed has no price; it is left out and logged once. Example: 5,000 USDT + 5,000 USDC at 1.00078 = 10,003.90 USDT.
+  - **Reset** (only while no bot runs; the button is hidden while one runs). Binance's demo account has no reset endpoint ("You can reset your balance whenever you want via the UI", Demo Mode docs), so the reset itself happens on Binance's page:
+    1. `POST /brokers/{broker}/account/reset` empties the account into USDT with market orders: every balance except USDT is sold, USDC included (`USDCUSDT`), through `OrderService`, so the sells land in the order history. A coin worth less than the minimum order value, or without a USDT ticker, stays and is listed in the answer.
+    2. The same call closes every position still `OPEN` in the database (positions of stopped runs are never reloaded), at the sell's average price, with its realised P&L.
+    3. The dashboard opens `https://demo.binance.com/en/my/wallet/demo/main`, where the user presses Binance's reset. The balances go back to 5,000 USDT and 5,000 USDC.
+  - **Reset marker:** the balance cache keeps updating from the user data stream as usual. When the balances change to exactly the demo starting balances (5,000 USDT, 5,000 USDC, nothing else) from something else, that time is recorded as a reset (V11: `account_reset(id, broker_id, reset_at)`). The live chart draws a marker at each reset. `GET /brokers/{broker}/account/resets` lists them. No backend change.
 
 ```mermaid
 flowchart LR
     Feeder["CandleFeeder<br/>1-minute updates"] -- "liveOnTick" --> Queue["bounded queue"]
     Timer["timer<br/>every updateTimeSeconds"] -- "latest price" --> Queue
     Queue --> Worker["LiveTradingBot<br/>worker thread"]
-    Worker --> Stop{"stop loss<br/>reached?"}
+    Worker --> Paused{"paused?"}
+    Paused -- yes --> Track["MAE / MFE<br/>portfolio point<br/>no orders"]
+    Paused -- no --> Stop{"stop loss<br/>reached?"}
     Stop -- yes --> Placer["OrderCheckerService<br/>checks, then places"]
     Stop -- no --> Source["LiveSignalSource<br/>closed candles from the store<br/>+ forming candle"]
     Source -- "BUY / SELL" --> Placer
@@ -1458,8 +1467,9 @@ stateDiagram-v2
 | POST | `/brokers/{broker}/training/tunings` | Tune settings automatically and record the best one as a training run (§16.7). Same 409s as a training run |
 | GET | `/brokers/{broker}/training` | `running` while a training run or a tuning goes on; `tuningProgressPercent` while a tuning runs |
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
-| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `currentParameters`, counts |
+| GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `paused`, `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
+| POST | `/brokers/{broker}/bot/pause`, `/bot/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
 

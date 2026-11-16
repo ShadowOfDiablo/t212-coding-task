@@ -22,7 +22,7 @@ binance:
   stream-url: wss://demo-stream.binance.com
   rest-url: https://data-api.binance.vision
   interval: ONE_MINUTE
-  tickers: [BTCUSDT, ETHUSDT]
+  tickers: [BTCUSDT, ETHUSDT, USDCUSDT]
   trading:
     rest-url: https://demo-api.binance.com
     demo-host: demo-api.binance.com

@@ -1,6 +1,9 @@
 package com.tihomir.t212.tradingbot.bot.live.queue;
 
-/** What evaluates the prices of one ticker; a worker calls it for each message of that ticker. */
+/**
+ * What evaluates the prices of one ticker; a worker calls it for each message of that ticker,
+ * holding the handler's own lock (`synchronized` on it) for the whole message.
+ */
 public interface PriceMessageHandler {
 
   /** Evaluates the price. A failure is thrown, so the worker can retry the message. */

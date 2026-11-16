@@ -11,7 +11,9 @@ import com.tihomir.t212.tradingbot.order.model.OrderAmountType;
 import com.tihomir.t212.tradingbot.order.model.OrderSide;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class BalanceCachingTradingGatewayTest {
@@ -21,6 +23,13 @@ class BalanceCachingTradingGatewayTest {
       List.of(
           new AssetBalance("BTC", new BigDecimal("0.00012987"), BigDecimal.ZERO),
           new AssetBalance("USDT", new BigDecimal("90"), BigDecimal.ZERO));
+  private static final Instant RESET_TIME = Instant.ofEpochMilli(3_000);
+  private static final StartingBalances STARTING_BALANCES =
+      new StartingBalances(Map.of("USDT", new BigDecimal("100")));
+  private static final List<AssetBalance> BACK_TO_START =
+      List.of(
+          new AssetBalance("BTC", BigDecimal.ZERO, BigDecimal.ZERO),
+          new AssetBalance("USDT", new BigDecimal("100.00"), BigDecimal.ZERO));
   private static final MarketOrderRequest BUY =
       new MarketOrderRequest(
           "BTCUSDT", OrderSide.BUY, BigDecimal.TEN, OrderAmountType.QUOTE_AMOUNT);
@@ -87,5 +96,38 @@ class BalanceCachingTradingGatewayTest {
     assertThatThrownBy(gateway::accountBalances).isInstanceOf(ExchangeUnavailableException.class);
 
     assertThat(gateway.accountBalances().balances()).isEqualTo(FakeExchangeTradingGateway.BALANCES);
+  }
+
+  @Test
+  void reportsAResetWhenTheBalancesGoBackToTheStartingOnesButNotAtFirstSight() {
+    List<Instant> resets = new ArrayList<>();
+    BalanceCachingTradingGateway detecting =
+        new BalanceCachingTradingGateway(exchange, STARTING_BALANCES, resets::add);
+
+    detecting.accountBalances();
+    detecting.applyBalanceUpdate(LATER, AFTER_BUY);
+    detecting.applyBalanceUpdate(RESET_TIME, BACK_TO_START);
+    detecting.applyBalanceUpdate(RESET_TIME.plusSeconds(1), BACK_TO_START);
+
+    assertThat(resets).containsExactly(RESET_TIME);
+  }
+
+  @Test
+  void keepsCachingWhenTheResetCannotBeRecorded() {
+    BalanceCachingTradingGateway detecting =
+        new BalanceCachingTradingGateway(
+            exchange,
+            STARTING_BALANCES,
+            resetAt -> {
+              throw new IllegalStateException("database down");
+            });
+
+    detecting.accountBalances();
+    detecting.applyBalanceUpdate(LATER, AFTER_BUY);
+    detecting.applyBalanceUpdate(RESET_TIME, BACK_TO_START);
+
+    assertThat(detecting.accountBalances().balances())
+        .extracting(AssetBalance::asset)
+        .containsExactly("USDT");
   }
 }

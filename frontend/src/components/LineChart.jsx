@@ -12,6 +12,7 @@ const TIME_TICKS = 5
 const VALUE_MARGIN = 0.08
 const PERCENT = 100
 const TOOLTIP_FLIP_SHARE = 0.6
+const MARKER_LABEL_GAP = 4
 
 const timeOf = (point) => new Date(point.time).getTime()
 
@@ -118,9 +119,16 @@ function Tooltip({ point, coordinate, baseline }) {
 
 /**
  * Portfolio value over time as a smooth line. `baseline` (the starting value) is drawn dashed and
- * sets the colour of the change; `comparePoints` adds a second, dashed line.
+ * sets the colour of the change; `comparePoints` adds a second, dashed line. `markers` ({time,
+ * label}) are vertical lines at moments inside the chart's time range, such as account resets.
  */
-export function LineChart({ points, comparePoints = null, baseline = null, emptyText = 'No data yet.' }) {
+export function LineChart({
+  points,
+  comparePoints = null,
+  baseline = null,
+  markers = [],
+  emptyText = 'No data yet.',
+}) {
   const [hoverIndex, setHoverIndex] = useState(null)
   const gradientId = useId()
 
@@ -145,6 +153,10 @@ export function LineChart({ points, comparePoints = null, baseline = null, empty
       ? [scale.first]
       : Array.from({ length: TIME_TICKS }, (_, step) => scale.first + (span * step) / (TIME_TICKS - 1))
   const hovered = hoverIndex == null ? null : points[hoverIndex]
+  const shownMarkers = markers.filter((marker) => {
+    const time = timeOf(marker)
+    return time >= scale.first && time <= scale.last
+  })
 
   const onMove = (event) => {
     const box = event.currentTarget.getBoundingClientRect()
@@ -201,6 +213,19 @@ export function LineChart({ points, comparePoints = null, baseline = null, empty
               y2={scale.y(baseline)}
             />
           )}
+          {shownMarkers.map((marker) => (
+            <g key={marker.time} className="chart-marker">
+              <line
+                x1={scale.x(timeOf(marker))}
+                x2={scale.x(timeOf(marker))}
+                y1={PADDING.top}
+                y2={bottom}
+              />
+              <text x={scale.x(timeOf(marker)) - MARKER_LABEL_GAP} y={PADDING.top} dy="0.9em" textAnchor="end">
+                {marker.label}
+              </text>
+            </g>
+          ))}
           <g key={points[0].time} className="chart-series">
             <path className="chart-area" d={area} fill={`url(#${gradientId})`} />
             {compareLine && <path className="chart-line-compare" d={compareLine} />}

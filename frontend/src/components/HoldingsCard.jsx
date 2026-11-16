@@ -2,6 +2,7 @@ import './HoldingsCard.css'
 import { useRef } from 'react'
 import { baseAsset, formatPrice, formatQuantity, QUOTE_ASSET } from '../format.js'
 import { useRowsThatFit } from '../hooks/useRowsThatFit.js'
+import { AccountValueChart } from './accountvalue/AccountValueChart.jsx'
 
 const TRADING_OFF_STATUS = 409
 
@@ -43,7 +44,7 @@ function followedNotHeld(tickers, holdings) {
  * The account's balances by value. With `fill`, a card stretched beside a taller one lists followed
  * currencies at zero too, as many as fit, up to five currencies in all.
  */
-export function HoldingsCard({ balances, tickers, fill = false }) {
+export function HoldingsCard({ balances, tickers, valuePoints, fill = false }) {
   const cardRef = useRef(null)
   const listRef = useRef(null)
   const loadedHoldings = balances.data ? holdingsWithValue(balances.data.balances, tickers) : []
@@ -90,6 +91,7 @@ export function HoldingsCard({ balances, tickers, fill = false }) {
       <p className="total">
         {formatPrice(total)} <span className="muted">{QUOTE_ASSET}</span>
       </p>
+      <AccountValueChart points={valuePoints} />
       {holdings.length === 0 ? (
         <p className="empty">No holdings yet.</p>
       ) : (

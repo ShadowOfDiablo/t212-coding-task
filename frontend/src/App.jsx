@@ -20,6 +20,7 @@ import './styles.css'
 
 const TICKER_REFRESH_MS = 2000
 const ACCOUNT_REFRESH_MS = 5000
+const ACCOUNT_VALUE_REFRESH_MS = 60000
 const RUNS_REFRESH_MS = 10000
 
 const SECTIONS = [
@@ -61,6 +62,7 @@ function App() {
   const [trainingForm, setTrainingForm] = useState(null)
   const tickers = usePolling(api.getTickers, TICKER_REFRESH_MS)
   const balances = usePolling(api.getBalances, ACCOUNT_REFRESH_MS)
+  const accountValue = usePolling(api.getAccountValuePoints, ACCOUNT_VALUE_REFRESH_MS)
   const { pinned, togglePin } = usePinnedTickers()
   const history = usePolling(api.getOrderHistory, ACCOUNT_REFRESH_MS)
   const rejected = usePolling(api.getRejectedOrders, ACCOUNT_REFRESH_MS)
@@ -85,6 +87,9 @@ function App() {
   const tickerList = tickers.data?.tickers
   // Reviewing a run shows Holdings beside it and hides the live orders.
   const reviewing = (section === 'training' && trainingReviewing) || (section === 'runs' && runsReviewing)
+  const reviewHoldings = (
+    <HoldingsCard balances={balances} tickers={tickerList} valuePoints={accountValue.data?.points} fill />
+  )
   const brokerInfo = BROKERS.find((candidate) => candidate.id === broker)
   const connected = brokerInfo.connected && tickers.data !== null && tickers.error === null
   const refreshAccount = () => {
@@ -148,14 +153,14 @@ function App() {
                 onRunRecorded={runs.refresh}
                 saved={saved}
                 onFormChange={setTrainingForm}
-              reviewAside={<HoldingsCard balances={balances} tickers={tickerList} fill />}
-              onReviewingChange={setTrainingReviewing}
+                reviewAside={reviewHoldings}
+                onReviewingChange={setTrainingReviewing}
               />
             </div>
             <div hidden={section !== 'runs'}>
               <RunsPanel
                 runs={runs}
-                reviewAside={<HoldingsCard balances={balances} tickers={tickerList} fill />}
+                reviewAside={reviewHoldings}
                 onReviewingChange={setRunsReviewing}
               />
             </div>
@@ -163,7 +168,11 @@ function App() {
               <div className="columns">
                 <OrdersCard history={history} rejected={rejected} open={open} />
                 <div className="side-column">
-                  <HoldingsCard balances={balances} tickers={tickerList} />
+                  <HoldingsCard
+                    balances={balances}
+                    tickers={tickerList}
+                    valuePoints={accountValue.data?.points}
+                  />
                   <TestOrderCard tickers={tickerList} onPlaced={refreshAccount} />
                 </div>
               </div>

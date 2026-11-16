@@ -12,6 +12,7 @@ public record AlgorithmResponse(
     AlgorithmType type,
     String name,
     String displayName,
+    String description,
     List<AlgorithmSettingDefinitionResponse> settings) {
 
   static AlgorithmResponse of(TradingAlgorithm algorithm) {
@@ -19,6 +20,7 @@ public record AlgorithmResponse(
         algorithm.type(),
         algorithm.name(),
         algorithm.displayName(),
+        algorithm.description(),
         algorithm.settingDefinitions().definitions().stream()
             .map(AlgorithmSettingDefinitionResponse::of)
             .toList());

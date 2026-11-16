@@ -47,19 +47,23 @@ public abstract class TradingAlgorithm {
   private final AlgorithmType type;
   private final String name;
   private final String displayName;
+  private final String description;
   private final AlgorithmSettingDefinitionList optionDefinitions;
 
   /**
    * @param name the algorithm's text name, e.g. {@code example-strategy-SMA}
+   * @param description what the algorithm does, in a sentence or two for the dashboard
    */
   protected TradingAlgorithm(
       AlgorithmType type,
       String name,
       String displayName,
+      String description,
       AlgorithmSettingDefinitionList optionDefinitions) {
     this.type = type;
     this.name = name;
     this.displayName = displayName;
+    this.description = description;
     this.optionDefinitions = optionDefinitions;
   }
 
@@ -73,6 +77,10 @@ public abstract class TradingAlgorithm {
 
   public final String displayName() {
     return displayName;
+  }
+
+  public final String description() {
+    return description;
   }
 
   public final AlgorithmSettingDefinitionList optionDefinitions() {

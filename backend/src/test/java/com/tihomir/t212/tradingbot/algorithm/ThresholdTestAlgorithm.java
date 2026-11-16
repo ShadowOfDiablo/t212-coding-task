@@ -15,6 +15,7 @@ final class ThresholdTestAlgorithm extends TradingAlgorithm {
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-threshold",
         "Threshold test",
+        "A test algorithm.",
         new AlgorithmSettingDefinitionList(
             List.of(
                 AlgorithmSettingDefinition.requiredWholeNumber(WINDOW, "Window", 5, 1, 10),

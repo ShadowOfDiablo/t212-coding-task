@@ -20,6 +20,7 @@ final class ScriptedTestAlgorithm extends TradingAlgorithm {
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         "test-scripted",
         "Scripted signals",
+        "A test algorithm.",
         AlgorithmSettingDefinitionList.NONE);
     this.signals = List.copyOf(signals);
     this.onEveryPrice = onEveryPrice;

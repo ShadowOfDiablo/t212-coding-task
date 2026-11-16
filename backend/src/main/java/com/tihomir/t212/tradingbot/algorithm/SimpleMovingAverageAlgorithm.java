@@ -15,7 +15,9 @@ public class SimpleMovingAverageAlgorithm extends TradingAlgorithm {
     super(
         AlgorithmType.SIMPLE_MOVING_AVERAGE,
         NAME,
-        "Example: price vs. SMA",
+        "SMA",
+        "Mean reversion around a simple moving average of the last time period candles: buys when"
+            + " the price closes below the average, sells when it closes back above it.",
         AlgorithmSettingDefinitionList.NONE);
   }
 

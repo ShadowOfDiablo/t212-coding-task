@@ -1,12 +1,6 @@
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bot_mode') THEN
-        CREATE TYPE bot_mode AS ENUM ('TRADING', 'TRAINING');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'run_status') THEN
-        CREATE TYPE run_status AS ENUM ('STARTED', 'COMPLETED', 'STOPPED', 'FAILED');
-    END IF;
-END $$;
+CREATE TYPE bot_mode AS ENUM ('TRADING', 'TRAINING');
+
+CREATE TYPE run_status AS ENUM ('STARTED', 'COMPLETED', 'STOPPED', 'FAILED');
 
 -- Written when the run starts and updated once when it ends.
 CREATE TABLE IF NOT EXISTS algorithm_run (

@@ -11,6 +11,7 @@ import java.util.Optional;
  * @param cost the USDT spent on all its buys, fees included
  * @param mae the worst unrealised P&L while it was open, zero or below
  * @param mfe the best unrealised P&L while it was open, zero or above
+ * @param prices empty for positions stored before quantities and prices were kept
  */
 public record Position(
     long runId,
@@ -22,4 +23,31 @@ public record Position(
     BigDecimal cost,
     BigDecimal realisedPnl,
     BigDecimal mae,
-    BigDecimal mfe) {}
+    BigDecimal mfe,
+    Optional<PositionPrices> prices) {
+
+  public Position(
+      long runId,
+      String broker,
+      String ticker,
+      PositionStatus status,
+      Instant openedAt,
+      Optional<Instant> closedAt,
+      BigDecimal cost,
+      BigDecimal realisedPnl,
+      BigDecimal mae,
+      BigDecimal mfe) {
+    this(
+        runId,
+        broker,
+        ticker,
+        status,
+        openedAt,
+        closedAt,
+        cost,
+        realisedPnl,
+        mae,
+        mfe,
+        Optional.empty());
+  }
+}

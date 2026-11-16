@@ -1403,9 +1403,9 @@ flowchart LR
   - **Account value:** the live chart and the start and final values of live runs show the **whole account** in USDT: every balance (free + locked) times its last `<ASSET>USDT` price, USDT itself at 1. `USDCUSDT` is followed by default (`binance.market-data.tickers`), so the USDC half of the demo account has a price. A balance whose ticker isn't followed has no price; it is left out and logged once. Example: 5,000 USDT + 5,000 USDC at 1.00078 = 10,003.90 USDT.
   - **Reset** (only while no bot runs; the button is hidden while one runs). Binance's demo account has no reset endpoint ("You can reset your balance whenever you want via the UI", Demo Mode docs), so the reset itself happens on Binance's page:
     1. `POST /brokers/{broker}/account/reset` empties the account into USDT with market orders: every balance except USDT is sold, USDC included (`USDCUSDT`), through `OrderService`, so the sells land in the order history. A coin worth less than the minimum order value, or without a USDT ticker, stays and is listed in the answer.
-    2. The same call closes every position still `OPEN` in the database (positions of stopped runs are never reloaded), at the sell's average price, with its realised P&L.
+    2. The same call closes every position still `OPEN` in the database (positions of stopped runs are never reloaded) at the reset time. Their realised P&L stays as recorded: positions keep no quantity, so the sale can't be split between them. A live bot running refuses the call with 409.
     3. The dashboard opens `https://demo.binance.com/en/my/wallet/demo/main`, where the user presses Binance's reset. The balances go back to 5,000 USDT and 5,000 USDC.
-  - **Reset marker:** the balance cache keeps updating from the user data stream as usual. When the balances change to exactly the demo starting balances (5,000 USDT, 5,000 USDC, nothing else) from something else, that time is recorded as a reset (V11: `account_reset(id, broker_id, reset_at)`). The live chart draws a marker at each reset. `GET /brokers/{broker}/account/resets` lists them. No backend change.
+  - **Reset marker:** the balance cache keeps updating from the user data stream as usual. When the balances change to exactly the demo starting balances (5,000 USDT, 5,000 USDC, nothing else) from something else, that time is recorded as a reset (V11: `account_reset(id, broker_id, reset_at)`). The live chart draws a marker at each reset. `GET /brokers/{broker}/account/resets` lists them.
 
 ```mermaid
 flowchart LR
@@ -1469,6 +1469,8 @@ stateDiagram-v2
 | GET | `/brokers/{broker}/runs`, `/runs/{id}` | Recorded runs, live and training, with their settings history and (training) chart points |
 | GET | `/brokers/{broker}/bot` | Live bot status (run fields null while it doesn't run), `paused`, `currentParameters`, counts |
 | POST | `/brokers/{broker}/bot/start`, `/bot/stop` | Start (409 outside `TRADING` or while it runs) or stop the live bot (409 when it doesn't run). Stop answers with the recorded run |
+| POST | `/brokers/{broker}/account/reset` | Empty the account into USDT and close the open positions, before a reset on Binance (409 while the live bot runs). Answers `{soldBalances, keptBalances, closedPositionCount}` |
+| GET | `/brokers/{broker}/account/resets` | `{"resetTimes": […]}`, the detected account resets, oldest first |
 | POST | `/brokers/{broker}/bot/pause`, `/bot/resume` | Stop or restart placing orders (409 when the bot doesn't run). Both answer with the bot status |
 | PUT | `/brokers/{broker}/bot/current-parameters` | Save new live settings (409 when the bot doesn't run) |
 | PUT | `/bot/mode` | Switch the mode (409 while a live bot runs) |
@@ -1529,3 +1531,18 @@ sequenceDiagram
 - **Tune automatically** below the form holds **Tune on the first (% of the range)** (default 70) and **Tries** (default 50).
 - While it runs, every field and both buttons are disabled, and the panel shows "Tuning in progress. Currently X% done, please wait" over a progress bar that moves smoothly between polls.
 - When it ends, the tuned settings replace the form's settings, and the result card shows **old vs tuned**: final value, return and buys/sells of both on the check range, and one chart with the tuned line and the old settings dashed.
+
+### 16.8 Trade history and price chart
+
+The run's positions table is the trade history. Every position is a **buy** at Opened and a **sell** at Closed, and it already carries the dates, P&L, MAE and MFE. V12 adds what a trade still needs (plain `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, NULL for older rows):
+
+| Column | Meaning |
+|---|---|
+| `quantity` | coins bought over all the position's buys |
+| `entry_price` | their average price in USDT, buy fees included |
+| `exit_price` | average price of its sells so far; NULL before the first sell |
+
+- `PositionTracker` adds up what it bought and sold and puts them on every position it writes as `PositionPrices`, so live and training runs both get them, in the same write as the rest of the position.
+- `GET /brokers/{broker}/runs/{id}/positions` returns `quantity`, `entryPrice` and `exitPrice` (null for older positions).
+- **Price chart:** `GET /brokers/{broker}/runs/{id}/candles` returns `{"points": [{time, price}]}`: the closing prices of the run's ticker on its timeframe, from the candle store, over the replayed range of a training run or from start to end (or now) of a live run. Thinned evenly to at most 1,000 points, the last one always kept.
+- **Dashboard:** the run's positions table shows Quantity, Entry price and Exit price. A price chart above it has a **Show trades** checkbox, off by default: ticked, a green ▲ marks each position's open and a red ▼ its close, at that time and price.

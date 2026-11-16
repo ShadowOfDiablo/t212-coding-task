@@ -68,6 +68,28 @@ class PositionTrackerTest {
   }
 
   @Test
+  void keepsTheBoughtQuantityAndTheAverageBuyAndSellPrices() {
+    PositionWrite bought =
+        tracker
+            .recordExecutedOrder(order(OrderSide.BUY, "1", "100", "100", FIRST_BUY))
+            .orElseThrow();
+    tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "120", "120", SECOND_BUY));
+    tracker.recordExecutedOrder(order(OrderSide.SELL, "1", "130", "130", SELL));
+    PositionWrite closed =
+        tracker
+            .recordExecutedOrder(order(OrderSide.SELL, "1", "150", "150", SECOND_SELL))
+            .orElseThrow();
+
+    assertThat(bought.position().prices().orElseThrow().exitPrice()).isEmpty();
+    assertThat(closed.position().status()).isEqualTo(PositionStatus.CLOSED);
+    PositionPrices prices = closed.position().prices().orElseThrow();
+    assertThat(prices.quantity()).isEqualByComparingTo("2");
+    assertThat(prices.entryPrice()).isEqualByComparingTo("110");
+    assertThat(prices.exitPrice())
+        .hasValueSatisfying(price -> assertThat(price).isEqualByComparingTo("140"));
+  }
+
+  @Test
   void keepsTheAverageEntryPriceAfterAPartialSell() {
     tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "100", "100", FIRST_BUY));
     tracker.recordExecutedOrder(order(OrderSide.BUY, "1", "120", "120", SECOND_BUY));

@@ -12,6 +12,15 @@ const TIME_TICKS = 5
 const VALUE_MARGIN = 0.08
 const PERCENT = 100
 const TOOLTIP_FLIP_SHARE = 0.6
+const MARKER_LABEL_GAP = 4
+const TRADE_MARK_SIZE = 7
+const TRADE_HIT_RADIUS = 11
+
+/** A triangle pointing up for a buy and down for a sell, centred on the trade. */
+function tradeMarkPath(x, y, side) {
+  const tip = side === 'BUY' ? -TRADE_MARK_SIZE : TRADE_MARK_SIZE
+  return `M${x},${y + tip} L${x - TRADE_MARK_SIZE},${y - tip / 2} L${x + TRADE_MARK_SIZE},${y - tip / 2} Z`
+}
 
 const timeOf = (point) => new Date(point.time).getTime()
 
@@ -118,9 +127,21 @@ function Tooltip({ point, coordinate, baseline }) {
 
 /**
  * Portfolio value over time as a smooth line. `baseline` (the starting value) is drawn dashed and
- * sets the colour of the change; `comparePoints` adds a second, dashed line.
+ * sets the colour of the change; `comparePoints` adds a second, dashed line. `markers` ({time,
+ * label}) are vertical lines at moments inside the chart's time range, such as account resets.
+ * `trades` ({time, price, side}) are drawn as ▲ for a buy and ▼ for a sell at their own price.
  */
-export function LineChart({ points, comparePoints = null, baseline = null, emptyText = 'No data yet.' }) {
+export function LineChart({
+  points,
+  comparePoints = null,
+  baseline = null,
+  markers = [],
+  trades = [],
+  activeTradeId = null,
+  onTradeHover = () => {},
+  onTradeSelect = () => {},
+  emptyText = 'No data yet.',
+}) {
   const [hoverIndex, setHoverIndex] = useState(null)
   const gradientId = useId()
 
@@ -128,7 +149,9 @@ export function LineChart({ points, comparePoints = null, baseline = null, empty
     return <p className="empty chart-empty">{emptyText}</p>
   }
 
-  const scale = scaleFor([...points, ...(comparePoints ?? [])], baseline)
+  const tradePoints = trades.map((trade) => ({ time: trade.time, value: Number(trade.price) }))
+  const scale = scaleFor([...points, ...(comparePoints ?? []), ...tradePoints], baseline)
+  const activePair = trades.filter((trade) => activeTradeId != null && trade.id === activeTradeId)
   const coordinates = toCoordinates(points, scale)
   const line = smoothPath(coordinates)
   const bottom = PADDING.top + PLOT_HEIGHT
@@ -145,6 +168,10 @@ export function LineChart({ points, comparePoints = null, baseline = null, empty
       ? [scale.first]
       : Array.from({ length: TIME_TICKS }, (_, step) => scale.first + (span * step) / (TIME_TICKS - 1))
   const hovered = hoverIndex == null ? null : points[hoverIndex]
+  const shownMarkers = markers.filter((marker) => {
+    const time = timeOf(marker)
+    return time >= scale.first && time <= scale.last
+  })
 
   const onMove = (event) => {
     const box = event.currentTarget.getBoundingClientRect()
@@ -201,11 +228,59 @@ export function LineChart({ points, comparePoints = null, baseline = null, empty
               y2={scale.y(baseline)}
             />
           )}
+          {shownMarkers.map((marker) => (
+            <g key={marker.time} className="chart-marker">
+              <line
+                x1={scale.x(timeOf(marker))}
+                x2={scale.x(timeOf(marker))}
+                y1={PADDING.top}
+                y2={bottom}
+              />
+              <text x={scale.x(timeOf(marker)) - MARKER_LABEL_GAP} y={PADDING.top} dy="0.9em" textAnchor="end">
+                {marker.label}
+              </text>
+            </g>
+          ))}
           <g key={points[0].time} className="chart-series">
             <path className="chart-area" d={area} fill={`url(#${gradientId})`} />
             {compareLine && <path className="chart-line-compare" d={compareLine} />}
             <path className="chart-line" d={line} pathLength="1" />
           </g>
+          {activePair.length === 2 && (
+            <line
+              className="chart-trade-pair"
+              x1={scale.x(timeOf(activePair[0]))}
+              y1={scale.y(Number(activePair[0].price))}
+              x2={scale.x(timeOf(activePair[1]))}
+              y2={scale.y(Number(activePair[1].price))}
+            />
+          )}
+          {trades.map((trade) => (
+            <g
+              key={`${trade.side}-${trade.time}`}
+              className="chart-trade-target"
+              onMouseEnter={() => onTradeHover(trade.id)}
+              onMouseLeave={() => onTradeHover(null)}
+              onClick={() => onTradeSelect(trade.id)}
+            >
+              <circle
+                className="chart-trade-hit"
+                cx={scale.x(timeOf(trade))}
+                cy={scale.y(Number(trade.price))}
+                r={TRADE_HIT_RADIUS}
+              />
+              <path
+                className={`chart-trade chart-trade-${trade.side === 'BUY' ? 'buy' : 'sell'} ${
+                  trade.id === activeTradeId ? 'is-active' : ''
+                }`}
+                d={tradeMarkPath(scale.x(timeOf(trade)), scale.y(Number(trade.price)), trade.side)}
+              />
+              <title>
+                {trade.side === 'BUY' ? 'Buy' : 'Sell'} at {formatPrice(trade.price)} USDT,{' '}
+                {formatUtcDateTime(trade.time)}
+              </title>
+            </g>
+          ))}
           {hovered && (
             <g className="chart-hover">
               <line

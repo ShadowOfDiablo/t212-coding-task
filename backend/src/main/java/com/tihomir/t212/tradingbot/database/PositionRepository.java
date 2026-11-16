@@ -1,11 +1,13 @@
 package com.tihomir.t212.tradingbot.database;
 
 import com.tihomir.t212.tradingbot.position.Position;
+import com.tihomir.t212.tradingbot.position.PositionPrices;
 import com.tihomir.t212.tradingbot.position.PositionStatus;
 import com.tihomir.t212.tradingbot.position.PositionStore;
 import com.tihomir.t212.tradingbot.position.PositionWrite;
 import com.tihomir.t212.tradingbot.position.StoredPosition;
 import com.tihomir.t212.tradingbot.position.StoredPositionList;
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -77,13 +79,33 @@ public class PositionRepository implements PositionStore {
             .list());
   }
 
+  @Override
+  public int closeOpenPositions(String broker, Instant closedAt) {
+    return jdbcClient
+        .sql(
+            """
+            UPDATE position SET status = CAST(? AS position_status), closed_at = ?
+            WHERE status = CAST(? AS position_status)
+              AND run_id IN (SELECT r.id FROM algorithm_run r
+                             JOIN ticker t ON t.id = r.ticker_id
+                             JOIN brokers b ON b.broker_id = t.broker_id
+                             WHERE b.name = ?)
+            """)
+        .param(PositionStatus.CLOSED.name())
+        .param(toUtcTimestamp(closedAt))
+        .param(PositionStatus.OPEN.name())
+        .param(broker)
+        .update();
+  }
+
   private int updatePosition(Position position) {
     return jdbcClient
         .sql(
             """
             UPDATE position
             SET status = CAST(? AS position_status),
-                closed_at = ?, cost = ?, realised_pnl = ?, mae = ?, mfe = ?
+                closed_at = ?, cost = ?, realised_pnl = ?, mae = ?, mfe = ?,
+                quantity = ?, entry_price = ?, exit_price = ?
             WHERE run_id = ? AND opened_at = ?
             """)
         .param(position.status().name())
@@ -92,6 +114,9 @@ public class PositionRepository implements PositionStore {
         .param(position.realisedPnl())
         .param(position.mae())
         .param(position.mfe())
+        .param(toOptionalNumber(position.prices().map(PositionPrices::quantity)))
+        .param(toOptionalNumber(position.prices().map(PositionPrices::entryPrice)))
+        .param(toOptionalNumber(position.prices().flatMap(PositionPrices::exitPrice)))
         .param(position.runId())
         .param(toUtcTimestamp(position.openedAt()))
         .update();
@@ -102,8 +127,8 @@ public class PositionRepository implements PositionStore {
         .sql(
             """
             INSERT INTO position (run_id, status, opened_at, closed_at, cost,
-                                  realised_pnl, mae, mfe)
-            VALUES (?, CAST(? AS position_status), ?, ?, ?, ?, ?, ?)
+                                  realised_pnl, mae, mfe, quantity, entry_price, exit_price)
+            VALUES (?, CAST(? AS position_status), ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)
         .param(position.runId())
         .param(position.status().name())
@@ -113,6 +138,9 @@ public class PositionRepository implements PositionStore {
         .param(position.realisedPnl())
         .param(position.mae())
         .param(position.mfe())
+        .param(toOptionalNumber(position.prices().map(PositionPrices::quantity)))
+        .param(toOptionalNumber(position.prices().map(PositionPrices::entryPrice)))
+        .param(toOptionalNumber(position.prices().flatMap(PositionPrices::exitPrice)))
         .update();
   }
 
@@ -130,7 +158,24 @@ public class PositionRepository implements PositionStore {
             row.getBigDecimal("cost"),
             row.getBigDecimal("realised_pnl"),
             row.getBigDecimal("mae"),
-            row.getBigDecimal("mfe")));
+            row.getBigDecimal("mfe"),
+            readPrices(row)));
+  }
+
+  /** Empty for a position stored before quantities and prices were kept (V12). */
+  private static Optional<PositionPrices> readPrices(ResultSet row) throws SQLException {
+    BigDecimal quantity = row.getBigDecimal("quantity");
+    BigDecimal entryPrice = row.getBigDecimal("entry_price");
+    if (quantity == null || entryPrice == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new PositionPrices(
+            quantity, entryPrice, Optional.ofNullable(row.getBigDecimal("exit_price"))));
+  }
+
+  private static SqlParameterValue toOptionalNumber(Optional<BigDecimal> number) {
+    return new SqlParameterValue(Types.NUMERIC, number.orElse(null));
   }
 
   private static OffsetDateTime toUtcTimestamp(Instant instant) {

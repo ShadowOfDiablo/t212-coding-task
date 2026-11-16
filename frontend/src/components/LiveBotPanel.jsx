@@ -14,6 +14,19 @@ import { LineChart } from './LineChart.jsx'
 import { SettingsForm } from './SettingsForm.jsx'
 
 const BOT_REFRESH_MS = 2000
+const RESETS_REFRESH_MS = 10000
+const BINANCE_DEMO_WALLET_URL = 'https://demo.binance.com/en/my/wallet/demo/main'
+const RESET_QUESTION =
+  'Sell every coin in the demo account to USDT (USDC too) and close the open positions? ' +
+  'Binance Demo then opens in a new tab, where you press Reset.'
+
+const assetList = (balances) => balances.map((balance) => `${balance.free} ${balance.asset}`).join(', ')
+
+function emptiedText(emptied) {
+  const sold = emptied.soldBalances.length ? `Sold ${assetList(emptied.soldBalances)}.` : 'Nothing to sell.'
+  const kept = emptied.keptBalances.length ? ` Kept ${assetList(emptied.keptBalances)}.` : ''
+  return `${sold}${kept} Closed ${emptied.closedPositionCount} open positions. Reset the account on Binance now.`
+}
 
 const CHART_RANGES = [
   { id: 'all', label: 'All live runs' },
@@ -78,6 +91,8 @@ function Counts({ bot }) {
  */
 export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSettings }) {
   const bot = usePolling(api.getBot, BOT_REFRESH_MS)
+  const resets = usePolling(api.getAccountResets, RESETS_REFRESH_MS)
+  const [resetResult, setResetResult] = useState(null)
   const [chartRange, setChartRange] = useState('all')
   const [ticker, setTicker] = useState('')
   const [draft, setDraft] = useState(null)
@@ -115,6 +130,23 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
       setEditStep('readOnly')
     })
   const togglePause = () => act(() => (status.paused ? api.resumeBot() : api.pauseBot()))
+  // The tab opens before any await, or the browser blocks it as a popup; it gets Binance's page
+  // only once the account is empty.
+  const resetAccount = () => {
+    if (!window.confirm(RESET_QUESTION)) {
+      return
+    }
+    const binanceTab = window.open('', '_blank')
+    act(async () => {
+      try {
+        setResetResult(emptiedText(await api.emptyAccount()))
+        binanceTab?.location.assign(BINANCE_DEMO_WALLET_URL)
+      } catch (failure) {
+        binanceTab?.close()
+        throw failure
+      }
+    })
+  }
   const beginEdit = () => {
     setDraft(settingsFromResponse(status.currentParameters))
     setEditStep('editing')
@@ -165,6 +197,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
         {running && status.paused && (
           <p className="notice">Paused: no orders are placed, not even a stop loss or take profit.</p>
         )}
+        {resetResult && !running && <p className="notice">{resetResult}</p>}
         {editStep === 'confirm' && (
           <p className="notice">
             Apply these settings to the running bot? They are recorded and take effect from the
@@ -185,6 +218,11 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
               onClick={start}
             >
               Start bot
+            </button>
+          )}
+          {!running && (
+            <button type="button" className="button" disabled={busy} onClick={resetAccount}>
+              Reset account
             </button>
           )}
           {running && editStep === 'readOnly' && (
@@ -263,6 +301,7 @@ export function LiveBotPanel({ algorithms, tickers, mode, runs, saved, currentSe
           key={chartRange}
           points={chartPoints}
           baseline={chartPoints?.[0]?.value ?? null}
+          markers={(resets.data?.resetTimes ?? []).map((time) => ({ time, label: 'Reset' }))}
           emptyText={chartEmptyText(chartRange, running)}
         />
         {running && <Counts bot={status} />}

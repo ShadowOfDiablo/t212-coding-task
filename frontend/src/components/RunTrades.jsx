@@ -2,7 +2,7 @@ import './RunTrades.css'
 import { useState } from 'react'
 import { api } from '../api.js'
 import { formatDuration, formatPrice, formatUtcClock, formatUtcDate } from '../format.js'
-import { HeaderHint } from './HeaderHint.jsx'
+import { LineChart } from './LineChart.jsx'
 
 const TRADES_PER_PAGE = 10
 
@@ -12,6 +12,90 @@ function TradeTime({ iso }) {
       <span>{formatUtcDate(iso)}</span>
       <span className="trade-clock">{formatUtcClock(iso)}</span>
     </span>
+  )
+}
+
+/** The average buy price over the average sell price; positions stored before V12 have none. */
+function TradePrices({ position }) {
+  if (position.entryPrice == null) {
+    return '–'
+  }
+  return (
+    <span className="trade-stack">
+      <span>Buy {formatPrice(position.entryPrice)}</span>
+      {position.exitPrice != null && (
+        <span className="trade-clock">Sell {formatPrice(position.exitPrice)}</span>
+      )}
+    </span>
+  )
+}
+
+/** Each position as a buy at its open and, once sold, a sell at its close, for the price chart. */
+function tradeMarkers(positions) {
+  return positions
+    .filter((position) => position.entryPrice != null)
+    .flatMap((position) => [
+      { id: position.id, time: position.openedAt, price: position.entryPrice, side: 'BUY' },
+      ...(position.closedAt && position.exitPrice != null
+        ? [{ id: position.id, time: position.closedAt, price: position.exitPrice, side: 'SELL' }]
+        : []),
+    ])
+}
+
+function SelectedTrade({ position }) {
+  return (
+    <p className="selected-trade small">
+      <span className="change-up">
+        Buy {position.quantity} at {formatPrice(position.entryPrice)}
+      </span>{' '}
+      on {formatUtcDate(position.openedAt)} {formatUtcClock(position.openedAt)}
+      {position.closedAt && position.exitPrice != null && (
+        <>
+          {' → '}
+          <span className="change-down">sell at {formatPrice(position.exitPrice)}</span> on{' '}
+          {formatUtcDate(position.closedAt)} {formatUtcClock(position.closedAt)}
+        </>
+      )}
+      {' · '}
+      <span className={pnlClass(position.realisedPnl)}>
+        P&amp;L {signed(position.realisedPnl)} ({signed(position.realisedPnlPercent, '%')})
+      </span>
+    </p>
+  )
+}
+
+/**
+ * The run's instrument price. With Show trades ticked, each position's buy and sell are marked;
+ * hovering one highlights its pair, and a click selects the trade and shows its details.
+ */
+function PriceChart({ prices, positions }) {
+  const [showTrades, setShowTrades] = useState(false)
+  const [hoveredId, setHoveredId] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
+  if (prices.length === 0) {
+    return null
+  }
+  const selected = positions.find((position) => position.id === selectedId)
+  const toggleSelected = (id) => setSelectedId(id === selectedId ? null : id)
+  return (
+    <div className="run-price-chart">
+      <div className="run-price-chart-head">
+        <h3 className="small">Instrument price over time</h3>
+        <label className="check-label small">
+          <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)} />
+          Show trades
+        </label>
+      </div>
+      <LineChart
+        points={prices.map((point) => ({ time: point.time, value: point.price }))}
+        trades={showTrades ? tradeMarkers(positions) : []}
+        activeTradeId={hoveredId ?? selectedId}
+        onTradeHover={setHoveredId}
+        onTradeSelect={toggleSelected}
+        emptyText="No prices for this run."
+      />
+      {showTrades && selected && <SelectedTrade position={selected} />}
+    </div>
   )
 }
 
@@ -75,19 +159,11 @@ function TradesTable({ positions }) {
           <tr>
             <th scope="col">Opened (UTC)</th>
             <th scope="col">Closed</th>
-            <th scope="col">Held</th>
-            <th scope="col" className="numeric">Cost</th>
             <th scope="col" className="numeric">P&amp;L</th>
-            <HeaderHint className="numeric" label="MAE" title="Maximum adverse excursion">
-              The worst the trade stood while open: its lowest unrealised P&amp;L, measured from the
-              entry price on every price seen. It shows how much loss the trade sat through before
-              it closed, and helps set a stop loss.
-            </HeaderHint>
-            <HeaderHint className="numeric" label="MFE" title="Maximum favourable excursion">
-              The best the trade stood while open: its highest unrealised P&amp;L. Compare it with
-              the P&amp;L to see how much profit was given back before the sell, and to set a take
-              profit.
-            </HeaderHint>
+            <th scope="col" className="numeric">Quantity</th>
+            <th scope="col" className="numeric">Price</th>
+            <th scope="col" className="numeric">Cost</th>
+            <th scope="col">Held</th>
           </tr>
         </thead>
         <tbody>
@@ -99,16 +175,18 @@ function TradesTable({ positions }) {
               <td>
                 {position.closedAt ? <TradeTime iso={position.closedAt} /> : <span className="trade-open">open</span>}
               </td>
-              <td>{formatDuration(position.durationSeconds)}</td>
-              <td className="numeric">{formatPrice(position.cost)}</td>
               <td className={`numeric ${pnlClass(position.realisedPnl)}`}>
                 <span className="trade-stack">
                   <span>{signed(position.realisedPnl)}</span>
                   <span className="trade-percent">{signed(position.realisedPnlPercent, '%')}</span>
                 </span>
               </td>
-              <td className="numeric change-down">{formatPrice(position.mae)}</td>
-              <td className="numeric change-up">{formatPrice(position.mfe)}</td>
+              <td className="numeric">{position.quantity ?? '–'}</td>
+              <td className="numeric">
+                <TradePrices position={position} />
+              </td>
+              <td className="numeric">{formatPrice(position.cost)}</td>
+              <td>{formatDuration(position.durationSeconds)}</td>
             </tr>
           ))}
         </tbody>
@@ -121,6 +199,7 @@ function TradesTable({ positions }) {
 export function RunTrades({ runId }) {
   const [open, setOpen] = useState(false)
   const [positions, setPositions] = useState(null)
+  const [prices, setPrices] = useState([])
   const [error, setError] = useState(null)
 
   const toggle = async () => {
@@ -128,6 +207,7 @@ export function RunTrades({ runId }) {
     if (open || positions) {
       return
     }
+    const pricesLoad = api.getRunPrices(runId).catch(() => ({ points: [] }))
     try {
       const list = await api.getRunPositions(runId)
       setPositions(list.positions)
@@ -135,6 +215,7 @@ export function RunTrades({ runId }) {
     } catch (failure) {
       setError(failure)
     }
+    setPrices((await pricesLoad).points)
   }
 
   return (
@@ -147,6 +228,7 @@ export function RunTrades({ runId }) {
         <div className="run-trades-body">
           {error && <p className="form-error small">Could not load the trades: {error.message}</p>}
           {!error && !positions && <p className="skeleton skeleton-line" />}
+          {positions && <PriceChart prices={prices} positions={positions} />}
           {positions && <TradesPage positions={positions} />}
         </div>
       )}

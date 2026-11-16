@@ -3,12 +3,14 @@ package com.tihomir.t212.tradingbot.api;
 import com.tihomir.t212.tradingbot.api.request.TrainingRunRequestBody;
 import com.tihomir.t212.tradingbot.api.request.TuningRequestBody;
 import com.tihomir.t212.tradingbot.api.response.PositionListResponse;
+import com.tihomir.t212.tradingbot.api.response.PricePointListResponse;
 import com.tihomir.t212.tradingbot.api.response.RecordedRunListResponse;
 import com.tihomir.t212.tradingbot.api.response.RunDetailsResponse;
 import com.tihomir.t212.tradingbot.api.response.TrainingStatusResponse;
 import com.tihomir.t212.tradingbot.api.response.TuningResponse;
 import com.tihomir.t212.tradingbot.api.response.UnrecordedRunResponse;
 import com.tihomir.t212.tradingbot.bot.run.AlgorithmRunService;
+import com.tihomir.t212.tradingbot.bot.run.RunPriceService;
 import com.tihomir.t212.tradingbot.bot.training.TrainingService;
 import com.tihomir.t212.tradingbot.bot.tuning.TuningResult;
 import com.tihomir.t212.tradingbot.bot.tuning.TuningService;
@@ -35,14 +37,17 @@ public class RunController {
   private final TrainingService trainingService;
   private final TuningService tuningService;
   private final AlgorithmRunService runService;
+  private final RunPriceService runPriceService;
 
   public RunController(
       TrainingService trainingService,
       TuningService tuningService,
-      AlgorithmRunService runService) {
+      AlgorithmRunService runService,
+      RunPriceService runPriceService) {
     this.trainingService = trainingService;
     this.tuningService = tuningService;
     this.runService = runService;
+    this.runPriceService = runPriceService;
   }
 
   /** Runs a training to the end and answers with the recorded run. */
@@ -86,6 +91,12 @@ public class RunController {
   @GetMapping("/runs/{runId}/positions")
   public PositionListResponse getPositions(@PathVariable String broker, @PathVariable long runId) {
     return PositionListResponse.of(runService.getPositions(broker, runId));
+  }
+
+  @GetMapping("/runs/{runId}/candles")
+  public PricePointListResponse getRunPrices(
+      @PathVariable String broker, @PathVariable long runId) {
+    return PricePointListResponse.of(runPriceService.getRunPrices(broker, runId));
   }
 
   @GetMapping("/runs/{runId}/positions/worst")

@@ -10,6 +10,9 @@ import com.tihomir.t212.tradingbot.account.AccountReset;
 import com.tihomir.t212.tradingbot.account.AccountResetList;
 import com.tihomir.t212.tradingbot.account.AccountResetService;
 import com.tihomir.t212.tradingbot.account.EmptiedAccount;
+import com.tihomir.t212.tradingbot.account.value.AccountValuePoint;
+import com.tihomir.t212.tradingbot.account.value.AccountValuePointList;
+import com.tihomir.t212.tradingbot.account.value.AccountValueService;
 import com.tihomir.t212.tradingbot.bot.exception.LiveBotRunningException;
 import com.tihomir.t212.tradingbot.order.balance.AssetBalance;
 import java.math.BigDecimal;
@@ -29,6 +32,7 @@ class AccountControllerTest {
   @Autowired MockMvc mockMvc;
 
   @MockitoBean AccountResetService accountResetService;
+  @MockitoBean AccountValueService accountValueService;
 
   @Test
   void emptiesTheAccountAndAnswersConflictWhileTheBotRuns() throws Exception {
@@ -58,5 +62,21 @@ class AccountControllerTest {
         .perform(get(ACCOUNT + "/resets"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.resetTimes[0]").value("2026-11-16T09:30:00Z"));
+  }
+
+  @Test
+  void listsTheAccountValuePoints() throws Exception {
+    when(accountValueService.getAccountValuePoints("binance"))
+        .thenReturn(
+            new AccountValuePointList(
+                List.of(
+                    new AccountValuePoint(
+                        Instant.parse("2026-11-16T12:00:00Z"), new BigDecimal("10004.5")))));
+
+    mockMvc
+        .perform(get(ACCOUNT + "/value-points"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.points[0].time").value("2026-11-16T12:00:00Z"))
+        .andExpect(jsonPath("$.points[0].value").value(10004.5));
   }
 }

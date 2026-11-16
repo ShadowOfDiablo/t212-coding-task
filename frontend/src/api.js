@@ -45,6 +45,7 @@ export const api = {
   deleteSavedAlgorithm: (id) => request(`/api/algorithms/saved/${id}`, { method: 'DELETE' }),
   emptyAccount: () => request(`${BROKER_PATH}/account/reset`, { method: 'POST' }),
   getAccountResets: () => request(`${BROKER_PATH}/account/resets`),
+  getAccountValuePoints: () => request(`${BROKER_PATH}/account/value-points`),
   getTickerSettings: () => request(`${BROKER_PATH}/ticker-settings`),
   assignTickerSettings: (ticker, settings, budget) =>
     send('PUT', `${BROKER_PATH}/ticker-settings/${ticker}`, { settings, budget }),

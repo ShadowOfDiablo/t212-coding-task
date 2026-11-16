@@ -356,7 +356,7 @@ export function LiveBotPanel({ algorithms, mode, runs, saved, currentSettings })
           key={`${chosenTicker}-${chartRange}-${timeRange}`}
           points={chartPoints}
           baseline={chartPoints?.[0]?.value ?? null}
-          markers={(resets.data?.resetTimes ?? []).map((time) => ({ time, label: 'Reset' }))}
+          markers={(resets.data?.resetTimes ?? []).map((time) => ({ time, label: 'Account reset' }))}
           emptyText={chartEmptyText(chartRange, timeRange, running)}
         />
         <TimeRangePicker value={timeRange} onChange={setTimeRange} />

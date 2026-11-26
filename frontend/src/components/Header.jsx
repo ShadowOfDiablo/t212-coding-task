@@ -10,7 +10,7 @@ export function Header({ theme, onToggleTheme, connected, botMode, broker, broke
         <div className="brand">
           <Logo />
           <div>
-            <h1>Trading Bot 212</h1>
+            <h1>Trading Bot</h1>
             <p className="subtitle">{brokerLabel} demo account</p>
           </div>
         </div>
